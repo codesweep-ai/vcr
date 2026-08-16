@@ -1,0 +1,16 @@
+{
+  "id": "VCR-001",
+  "title": "Initial implementation",
+  "type": "improvement",
+  "severity": "low",
+  "status": "open",
+  "foundBy": "the repository's first commit",
+  "opened": "2026-08-16",
+  "resolved": null,
+  "stint": null,
+  "evidence": { "commits": [], "integrated": [], "verified": null },
+  "resolution": null,
+  "details": "Record and replay the traffic between AI coding agents and LLM providers — so no API key ever enters a sandbox, and CI runs the whole agent loop for $0.",
+  "notes": [],
+  "links": []
+}

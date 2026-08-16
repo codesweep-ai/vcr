@@ -1,0 +1,12 @@
+# A cassette is compared byte for byte on replay, and the scripts here carry a
+# `#!/usr/bin/env bash` shebang. A checkout on Windows applies core.autocrlf and
+# rewrites every text file to CRLF, which breaks both: a recorded body no longer
+# matches what the client sent, and executing a script fails with
+#
+#     /usr/bin/env: 'bash\r': No such file or directory
+#
+# which names the interpreter rather than the script, and so reads as though the
+# script itself were missing.
+#
+# text=auto still lets git detect and leave binaries alone.
+* text=auto eol=lf

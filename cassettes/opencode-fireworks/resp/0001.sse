@@ -1,0 +1,18 @@
+data: {"id":"chatcmpl-203bfbb98507481fbdc71670b01eb9ef","object":"chat.completion.chunk","created":1786844978,"model":"accounts/fireworks/models/kimi-k3","choices":[{"index":0,"delta":{"role":"assistant"},"finish_reason":null,"raw_output":null}],"usage":null}
+
+data: {"choices":[{"delta":{"reasoning_content":"Create hello.txt file"},"finish_reason":null,"index":0,"raw_output":null}],"created":1786844978,"id":"chatcmpl-203bfbb98507481fbdc71670b01eb9ef","model":"accounts/fireworks/models/kimi-k3","object":"chat.completion.chunk","usage":null}
+
+data: {"id":"chatcmpl-203bfbb98507481fbdc71670b01eb9ef","object":"chat.completion.chunk","created":1786844978,"model":"accounts/fireworks/models/kimi-k3","choices":[{"index":0,"delta":{"content":"Create"},"finish_reason":null,"raw_output":null}],"usage":null}
+
+data: {"id":"chatcmpl-203bfbb98507481fbdc71670b01eb9ef","object":"chat.completion.chunk","created":1786844978,"model":"accounts/fireworks/models/kimi-k3","choices":[{"index":0,"delta":{"content":" hello"},"finish_reason":null,"raw_output":null}],"usage":null}
+
+data: {"id":"chatcmpl-203bfbb98507481fbdc71670b01eb9ef","object":"chat.completion.chunk","created":1786844978,"model":"accounts/fireworks/models/kimi-k3","choices":[{"index":0,"delta":{"content":".txt"},"finish_reason":null,"raw_output":null}],"usage":null}
+
+data: {"id":"chatcmpl-203bfbb98507481fbdc71670b01eb9ef","object":"chat.completion.chunk","created":1786844978,"model":"accounts/fireworks/models/kimi-k3","choices":[{"index":0,"delta":{"content":" file"},"finish_reason":null,"raw_output":null}],"usage":null}
+
+data: {"id":"chatcmpl-203bfbb98507481fbdc71670b01eb9ef","object":"chat.completion.chunk","created":1786844978,"model":"accounts/fireworks/models/kimi-k3","choices":[{"index":0,"delta":{},"finish_reason":"stop","raw_output":null}],"usage":null}
+
+data: {"id":"chatcmpl-203bfbb98507481fbdc71670b01eb9ef","object":"chat.completion.chunk","created":1786844978,"model":"accounts/fireworks/models/kimi-k3","choices":[],"usage":{"prompt_tokens":636,"total_tokens":657,"completion_tokens":21,"prompt_tokens_details":{"cached_tokens":0}}}
+
+data: [DONE]
+

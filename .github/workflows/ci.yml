@@ -1,0 +1,185 @@
+# Build, unit tests and the live tests, on every host cs-vcr is driven from.
+# All of it blocks.
+#
+# cs-vcr is a plain userspace binary with no engine dependency: it records HTTP
+# and replays it. So the matrix is just the hosts it ships for, plus three jobs
+# that need no matrix at all: the prose rules, the cassette gate, and the
+# integration tier, which drives the three real agents against the committed
+# cassettes on one Linux runner.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-test:
+    name: build-test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # The two tools `make check` shells out to. golangci-lint is pinned
+      # because it gains checks between releases: unpinned, somebody else's
+      # release becomes a red build on a pull request that touched nothing.
+      - name: linters
+        run: |
+          set -euo pipefail
+          go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.2
+          go install golang.org/x/tools/cmd/deadcode@latest
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
+      # fmt, vet, the Go linters and the unit tests: the same target a
+      # contributor runs before pushing (CONTRIBUTING.md).
+      - name: make check
+        run: make check
+
+      - name: build
+        run: make build-go
+
+      # Schema only: this validates the manifest, and does not prove a release
+      # can be cut. `make snapshot` does that, locally.
+      - name: goreleaser check
+        uses: goreleaser/goreleaser-action@v7
+        with:
+          version: "~> v2"
+          args: check
+
+  # The prose rules from CONTRIBUTING.md. Its own job because it needs no Go
+  # toolchain and no matrix, so it answers in seconds and answers even when the
+  # tests are failing. `make check` runs it too, for the contributor who runs
+  # one command before pushing.
+  docs:
+    name: docs prose
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - run: make docs
+
+  # The rules this repository has to satisfy as a published project: the
+  # licence, the document set, what must never reach a public commit, the
+  # release path, and what a stranger's clone can do with it. fetch-depth: 0
+  # because half of them read the history, and a shallow checkout would let
+  # them pass by seeing nothing.
+  oss:
+    name: open-source readiness
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - run: make oss
+
+  # The ledger's freshness gate. CONTRIBUTING.md asks for a render and a check
+  # before every commit that touches ledger/, and nothing enforced it until
+  # this job did.
+  ledger:
+    name: ledger check
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: install cs-ledger
+        run: go install github.com/codesweep-ai/ledger/cmd/cs-ledger@latest
+      - run: cs-ledger check ledger
+
+  # A merge gate: a cassette that would no longer match must block
+  # the merge rather than surface as a mysterious replay failure later. Runs
+  # against this repo's own cassettes.
+  cassettes:
+    name: cassette verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      - run: make build-go
+      - name: verify cassettes against the current ruleset
+        run: ./bin/cs-vcr cassette verify
+      - name: no credential or address in a committed cassette
+        run: ./bin/cs-vcr cassette scrub
+
+  # The claim on the front page, run on every push: real Claude Code, real
+  # Codex, real OpenCode, replaying the committed cassettes with fabricated
+  # credentials and no provider reachable.
+  #
+  # The agents are pinned to the versions the fixtures were recorded with, from
+  # test/agents/fixtures.json. An agent's own version is in its prompt, so a
+  # newer one asks a different question and the run would skip — which is why
+  # CS_VCR_AGENTS_STRICT turns a skip into a failure here. Bumping a version is
+  # a re-recording (`make fixtures`), not an edit to this file.
+  integration:
+    name: integration (ubuntu-latest)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+
+      - name: install the pinned agents
+        run: |
+          set -euo pipefail
+          make agent-versions | while read -r name version; do
+            case "$name" in
+              claude)   npm install -g "@anthropic-ai/claude-code@$version" ;;
+              codex)    npm install -g "@openai/codex@$version" ;;
+              opencode) curl -fsSL https://opencode.ai/install | VERSION="$version" bash ;;
+              *) echo "no installer for $name" >&2; exit 1 ;;
+            esac
+          done
+          echo "$HOME/.opencode/bin" >> "$GITHUB_PATH"
+
+      # Codex sandboxes the shell tool it runs with bubblewrap, which needs an
+      # unprivileged user namespace. Ubuntu 24.04 denies those to a binary with
+      # no AppArmor profile of its own, and the copy Codex bundles has none — so
+      # the replay serves every step, the model asks to write a file, and the
+      # write fails. Without the step below, the two Codex scenarios fail there
+      # and the rest pass.
+      #
+      # Both halves of the fix are here because they cover different copies. The
+      # packaged bwrap comes with the profile that permits it, and Codex prefers
+      # it over its bundled one; the sysctl covers the bundled copy, and is
+      # tolerated as missing on an image that never restricted it.
+      - name: let Codex sandbox its shell tool
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq bubblewrap
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
+          bwrap --dev-bind / / --chdir /tmp -- /bin/true && echo "user namespaces: ok"
+
+      # No credential of any kind is set for this step, which is the point: the
+      # suite fabricates what each agent needs, and a replay server has nowhere
+      # to send a request even if one were real.
+      - name: replay the fixtures
+        run: make test-integration
+        env:
+          CS_VCR_AGENTS_STRICT: "1"

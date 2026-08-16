@@ -1,0 +1,113 @@
+# goreleaser config for cs-vcr: a CGO_ENABLED=0 static
+# multi-arch binary, checksummed + SBOM'd + cosign-signed releases (supply chain).
+#
+#   goreleaser check                               # validate this file
+#   goreleaser build --single-target --snapshot --clean --output bin/cs-vcr
+#   goreleaser release --snapshot --clean          # full local dry-run (dist/)
+#   goreleaser release --clean                     # tagged release (needs a git tag)
+version: 2
+
+project_name: cs-vcr
+
+before:
+  hooks:
+    - go mod tidy
+    - go vet ./...
+    - go test ./...
+
+builds:
+  - id: cs-vcr
+    main: ./cmd/cs-vcr
+    binary: cs-vcr
+    env:
+      - CGO_ENABLED=0 # static, no cgo
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+      - -X github.com/codesweep-ai/vcr/internal/cli.Version={{ .Version }}
+    # Linux and macOS, both architectures: darwin/amd64 costs nothing to add and
+    # is what an Intel Mac still needs.
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    mod_timestamp: "{{ .CommitTimestamp }}" # reproducible builds
+
+archives:
+  - id: cs-vcr
+    ids:
+      - cs-vcr
+    formats:
+      - tar.gz
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+    files:
+      - README.md
+      - INSTALL.md
+      - MANUAL.md
+      - SPEC.md
+      - CONTRIBUTING.md
+      - LICENSE
+      # And the pod spec, which is a deliverable rather than documentation:
+      # `podman kube play` needs the file itself.
+      - src: deploy/vcr.yaml
+        info:
+          mode: 0644
+
+checksum:
+  name_template: checksums.txt
+  algorithm: sha256
+
+# Software bill of materials per archive (supply chain). Requires cyclonedx-gomod:
+#   go install github.com/CycloneDX/cyclonedx-gomod/cmd/cyclonedx-gomod@latest
+sboms:
+  - id: archive
+    artifacts: archive
+    documents:
+      - "{{ .ArtifactName }}.sbom.json"
+    cmd: cyclonedx-gomod
+    args: ["app", "-json", "-output", "$document", "-main", "cmd/cs-vcr", "../../.."]
+
+# Keyless cosign signing of the checksums (supply chain). Requires cosign; runs
+# in release mode. Uses ambient OIDC (CI) — set COSIGN_EXPERIMENTAL=1 locally.
+signs:
+  - id: cosign
+    cmd: cosign
+    signature: "${artifact}.sig"
+    certificate: "${artifact}.pem"
+    args:
+      - sign-blob
+      - "--output-signature=${signature}"
+      - "--output-certificate=${certificate}"
+      - "${artifact}"
+      - "--yes"
+    artifacts: checksum
+    output: true
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-snapshot-{{ .ShortCommit }}"
+
+changelog:
+  sort: asc
+  use: git
+  filters:
+    exclude:
+      - "^docs:"
+      - "^chore:"
+      - "^test:"
+      - "merge conflict"
+
+release:
+  draft: true
+  name_template: "cs-vcr {{ .Tag }}"
+  header: |
+    ## cs-vcr {{ .Tag }}
+
+    Record and replay the traffic between AI coding agents and LLM providers, so
+    a run can exercise the whole agent loop without contacting one. cs-vcr holds
+    no credential: an agent's own login is forwarded untouched.
+
+    Static `CGO_ENABLED=0` binaries; verify with `checksums.txt` (+ cosign `.sig`).

@@ -1,0 +1,20 @@
+# Config and credentials live in the user's XDG dirs (see internal/paths),
+# never the source tree. Cassettes DO live in the tree — they are the reviewed
+# artifact — so they are deliberately not ignored here.
+
+# Go build output
+/bin/
+
+# goreleaser release artifacts
+/dist/
+
+# Local credentials and env config
+/.env
+*.key
+
+# Private terms scripts/lint-oss.py scans for. The file names exactly what this
+# project considers private, so committing it would publish the list itself.
+/.leakterms
+
+# Python bytecode, written when anything imports scripts/lint-docs.py
+__pycache__/

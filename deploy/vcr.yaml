@@ -1,0 +1,79 @@
+# cs-vcr as a pod: build or download the binary to ./bin/cs-vcr, then
+# `podman kube play deploy/vcr.yaml`.
+#
+# No cs-vcr image is published. The release ships a static binary, so this
+# mounts that binary into a base image holding nothing else, rather than asking
+# you to pull something that does not exist.
+#
+# `replay` is the command a pod runs: it serves from the cassette and is built
+# without anywhere to send a request, so nothing here can make it spend money.
+#
+# There is nothing to configure and no secret to mount: cs-vcr holds no
+# credential. The agent keeps its own login and only its base URL changes.
+#
+# To make it a sidecar, add an agent container to this pod. Containers in a pod
+# share one network namespace, so the agent reaches cs-vcr on localhost.
+#
+# Two things this file cannot decide for you. VCR_CASSETTE below names a
+# cassette in YOUR store, and `build` is only an example. The store itself has
+# to be readable by uid 65532, which under rootless podman means the host
+# directory belongs to a uid that maps into the container's range.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: cs-vcr
+  labels:
+    app: cs-vcr
+spec:
+  containers:
+    - name: vcr
+      # Nothing but a filesystem layout and the nonroot user 65532 the
+      # securityContext below runs as.
+      image: gcr.io/distroless/static-debian12:nonroot
+      command: ["/usr/local/bin/cs-vcr"]
+      args: ["replay"]
+      env:
+        # Where the store is mounted, below. Without it cs-vcr resolves the
+        # store against its working directory, which is a read-only / here, and
+        # exits before it listens.
+        - name: CS_VCR_CASSETTES
+          value: /cassettes
+        - name: VCR_CASSETTE
+          value: build
+        - name: VCR_LISTEN
+          value: 0.0.0.0:8080
+        # /healthz only, and deliberately not published: it exists so something
+        # can wait for the proxy before starting the build.
+        - name: VCR_ADMIN
+          value: 127.0.0.1:8081
+      ports:
+        - containerPort: 8080
+          hostPort: 8080
+      volumeMounts:
+        - name: cassettes
+          mountPath: /cassettes
+        - name: binary
+          mountPath: /usr/local/bin/cs-vcr
+          readOnly: true
+      livenessProbe:
+        httpGet:
+          path: /healthz
+          port: 8081
+        initialDelaySeconds: 1
+        periodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities:
+          drop: ["ALL"]
+  volumes:
+    - name: cassettes
+      hostPath:
+        path: ./cassettes
+        type: DirectoryOrCreate
+    - name: binary
+      hostPath:
+        path: ./bin/cs-vcr
+        type: File

@@ -1,0 +1,313 @@
+package proxy
+
+import (
+	"encoding/json"
+	"io"
+	"log/slog"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
+	"sync"
+	"testing"
+
+	"github.com/codesweep-ai/vcr/internal/config"
+)
+
+// A credential a real agent would be holding — an API key, or the OAuth token
+// a Claude Pro/Max login leaves behind. cs-vcr treats both as opaque: it does
+// not read, validate, store or replace either.
+const clientCred = "sk-ant-oat01-CLIENT-CREDENTIAL"
+
+// What the one asserted bit means at a call site. There is no mode: naming a
+// cassette is what asks for recording, and this says whether a request with no
+// recording may reach a provider.
+const (
+	online  = false
+	offline = true
+)
+
+// logBuffer is the log sink these tests read back. Guarded, because a test that
+// drives the server over a real socket has net/http's goroutine writing to it
+// while the test goroutine reads what it wrote.
+type logBuffer struct {
+	mu sync.Mutex
+	b  strings.Builder
+}
+
+func (l *logBuffer) Write(p []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.b.Write(p)
+}
+
+func (l *logBuffer) String() string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.b.String()
+}
+
+func newTestServer(t *testing.T, offline bool, clients []*config.Client, upstream http.HandlerFunc) (*Server, *logBuffer) {
+	t.Helper()
+	up := httptest.NewServer(upstream)
+	t.Cleanup(up.Close)
+
+	cfg := config.Default()
+	cfg.Providers["anthropic"] = &config.Provider{BaseURL: up.URL}
+	cfg.Providers["openai"] = &config.Provider{BaseURL: up.URL}
+	cfg.Clients = clients
+	if err := cfg.Resolve(); err != nil {
+		t.Fatal(err)
+	}
+	logs := &logBuffer{}
+	srv := New(cfg, slog.New(slog.NewTextHandler(logs, &slog.HandlerOptions{Level: slog.LevelDebug})), offline)
+	return srv, logs
+}
+
+func post(t *testing.T, s *Server, path string, hdr map[string]string, body string) *httptest.ResponseRecorder {
+	t.Helper()
+	r := httptest.NewRequest(http.MethodPost, path, strings.NewReader(body))
+	for k, v := range hdr {
+		r.Header.Set(k, v)
+	}
+	w := httptest.NewRecorder()
+	s.ServeHTTP(w, r)
+	return w
+}
+
+// get is for the bodiless requests an agent makes around its prompts — the
+// model list, a startup probe — which a session needs replayed just as much.
+func get(t *testing.T, s *Server, path string) *httptest.ResponseRecorder {
+	t.Helper()
+	w := httptest.NewRecorder()
+	s.ServeHTTP(w, httptest.NewRequest(http.MethodGet, path, http.NoBody))
+	return w
+}
+
+// The core contract: what the client sent is what upstream gets. cs-vcr is a
+// recorder, so anything it changed on the way through would be a difference
+// between the recording and the interaction it claims to have recorded.
+func TestHeadersCrossUnchanged(t *testing.T) {
+	var got http.Header
+	s, _ := newTestServer(t, online, nil, func(w http.ResponseWriter, r *http.Request) {
+		got = r.Header.Clone()
+		_, _ = io.WriteString(w, `{"ok":true}`)
+	})
+
+	sent := map[string]string{
+		"authorization":     "Bearer " + clientCred,
+		"anthropic-version": "2023-06-01",
+		"anthropic-beta":    "claude-code-20250219,interleaved-thinking-2025-05-14",
+		"x-app":             "cli",
+	}
+	w := post(t, s, "/v1/messages", sent, `{"model":"claude-sonnet-5"}`)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body %s)", w.Code, w.Body)
+	}
+	for k, v := range sent {
+		if got.Get(k) != v {
+			t.Errorf("upstream %s = %q, want %q unchanged", k, got.Get(k), v)
+		}
+	}
+}
+
+// A request with no credential at all is forwarded too, and upstream decides.
+// cs-vcr has no opinion about whether a caller is authenticated: inventing one
+// would mean maintaining a second, worse copy of each provider's auth rules.
+func TestRequestWithNoCredentialIsStillForwarded(t *testing.T) {
+	reached := false
+	s, _ := newTestServer(t, online, nil, func(w http.ResponseWriter, r *http.Request) {
+		reached = true
+		w.WriteHeader(http.StatusUnauthorized)
+	})
+	w := post(t, s, "/v1/messages", nil, `{}`)
+	if !reached {
+		t.Fatal("cs-vcr rejected a request instead of letting upstream answer")
+	}
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("status = %d, want upstream's own 401 passed back", w.Code)
+	}
+}
+
+// Replay mode never reaches upstream, whatever else is configured.
+// Asserted with an upstream that fails the test if it is dialled at all —
+// forwarding a miss upstream is how a $0 bill becomes a surprise invoice.
+func TestReplayModeNeverContactsUpstream(t *testing.T) {
+	s, _ := newTestServer(t, offline, nil, func(w http.ResponseWriter, r *http.Request) {
+		t.Error("replay mode contacted the provider")
+	})
+	w := post(t, s, "/v1/messages", map[string]string{"authorization": "Bearer " + clientCred}, `{}`)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", w.Code)
+	}
+	var body errorBody
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("miss response is not the structured error clients parse: %v", err)
+	}
+	if body.Error.Type != "cassette_miss" {
+		t.Errorf("error type = %q, want cassette_miss", body.Error.Type)
+	}
+}
+
+// routed by path, so the same surface is recognized whichever agent
+// produced it — OpenCode pointed at Anthropic uses the Claude Code surface, and
+// "which agent is this" has no answer.
+func TestRoutingBySurface(t *testing.T) {
+	cases := []struct {
+		path    string
+		hdr     map[string]string
+		surface Surface
+	}{
+		{"/v1/messages", map[string]string{"x-api-key": "k"}, SurfaceAnthropicMessages},
+		{"/v1/messages", map[string]string{"authorization": "Bearer k"}, SurfaceAnthropicMessages},
+		{"/v1/responses", map[string]string{"authorization": "Bearer k"}, SurfaceOpenAIResponses},
+		{"/v1/chat/completions", map[string]string{"authorization": "Bearer k"}, SurfaceOpenAIChat},
+		{"/v1/something/new", map[string]string{"authorization": "Bearer k"}, SurfaceUnknown},
+		// The same surfaces unversioned, which is how they arrive when the
+		// provider's own path has no /v1: Codex signed in with ChatGPT is
+		// pointed at chatgpt.com/backend-api/codex and asks for /responses.
+		{"/responses", map[string]string{"authorization": "Bearer k"}, SurfaceOpenAIResponses},
+		{"/messages", map[string]string{"authorization": "Bearer k"}, SurfaceAnthropicMessages},
+		{"/chat/completions", map[string]string{"authorization": "Bearer k"}, SurfaceOpenAIChat},
+		// Only /v1 is optional, not any prefix: a version cs-vcr does not model
+		// is a surface it does not know, and reading it as v1 would key a
+		// request against a shape nobody checked it against.
+		{"/v2/responses", map[string]string{"authorization": "Bearer k"}, SurfaceUnknown},
+		{"/v1beta/responses", map[string]string{"authorization": "Bearer k"}, SurfaceUnknown},
+	}
+	for _, c := range cases {
+		r := httptest.NewRequest(http.MethodPost, c.path, http.NoBody)
+		for k, v := range c.hdr {
+			r.Header.Set(k, v)
+		}
+		if got := classify(r, "anthropic").Surface; got != c.surface {
+			t.Errorf("classify(%s) = %s, want %s", c.path, got, c.surface)
+		}
+	}
+}
+
+// An unrecognized path goes where the configuration says. No header identifies
+// a provider well enough to guess from: a Pro/Max subscription login sends
+// `Authorization: Bearer` exactly like an OpenAI client, so reading that as
+// OpenAI sends an Anthropic client's startup probe to api.openai.com.
+//
+// The one exception cannot misroute anything: anthropic-version is Anthropic's
+// own API-versioning header, so a request carrying it is Anthropic's by
+// definition, and honouring it only helps a listener serving both.
+func TestUnknownPathGoesToTheConfiguredProvider(t *testing.T) {
+	cases := []struct {
+		hdr      map[string]string
+		dflt     string
+		provider string
+	}{
+		// Definitional, so honoured whatever the default is.
+		{map[string]string{"authorization": "Bearer oat", "anthropic-version": "2023-06-01"}, "openai", "anthropic"},
+		{map[string]string{"x-api-key": "sk-ant"}, "openai", "anthropic"},
+		// A bearer token says nothing: it is what BOTH clients send.
+		{map[string]string{"authorization": "Bearer sk-oai"}, "anthropic", "anthropic"},
+		{map[string]string{"authorization": "Bearer sk-oai"}, "openai", "openai"},
+		// Claude Code's startup probe, exactly as it arrives: the runtime's own
+		// fetch, with nothing Anthropic about it. Guessing sends it to OpenAI;
+		// the configured provider is the only thing that can be right.
+		{map[string]string{"user-agent": "Bun/1.4.0", "accept": "*/*"}, "anthropic", "anthropic"},
+	}
+	for _, c := range cases {
+		r := httptest.NewRequest(http.MethodGet, "/api/hello", http.NoBody)
+		for k, v := range c.hdr {
+			r.Header.Set(k, v)
+		}
+		if got := classify(r, c.dflt).Provider; got != c.provider {
+			t.Errorf("classify(/api/hello) with %v, default %s = %s, want %s", c.hdr, c.dflt, got, c.provider)
+		}
+	}
+}
+
+// an unrecognized path is still proxied, and the fact is logged at
+// WARN. Measured against the real client: Claude Code probes /api/hello at
+// startup, which is exactly this case.
+func TestUnknownPathIsProxiedAndWarned(t *testing.T) {
+	reached := false
+	s, logs := newTestServer(t, online, nil, func(w http.ResponseWriter, r *http.Request) {
+		reached = true
+	})
+	w := post(t, s, "/api/hello", map[string]string{"authorization": "Bearer " + clientCred}, `{}`)
+	if w.Code != http.StatusOK || !reached {
+		t.Fatalf("status = %d reached = %v, want the request passed through", w.Code, reached)
+	}
+	if !strings.Contains(logs.String(), "unrecognized path") {
+		t.Errorf("unrecognized path was not noted: %s", logs)
+	}
+}
+
+// The copy a recording keeps is bounded, and the response the client gets is
+// not.
+//
+// A stream runs for as long as the model keeps talking, and nothing in HTTP
+// obliges it to end. Without a bound, one long turn grows the recorder's buffer
+// for the life of the request and the session dies to the out-of-memory killer
+// mid-recording — a failure that reports nothing and loses everything already
+// captured. With one, the cassette is short by a stated number of bytes and the
+// run says so.
+func TestTheRecordingCopyIsBoundedAndTheClientStillGetsEverything(t *testing.T) {
+	restore := maxBody
+	maxBody = 64
+	t.Cleanup(func() { maxBody = restore })
+
+	const answer = "0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF" +
+		"THIS-TAIL-IS-PAST-THE-LIMIT"
+	dir := filepath.Join(t.TempDir(), "oversized")
+	rec, logs := cassetteServer(t, dir, online, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, answer)
+	})
+	live := post(t, rec, "/v1/messages", nil, `{"model":"claude-sonnet-5"}`)
+
+	// The client is served in full. A recorder that truncated the traffic it
+	// was observing would change the session it exists to reproduce.
+	if got := live.Body.String(); got != answer {
+		t.Errorf("the client received %d bytes, want the whole %d-byte response", len(got), len(answer))
+	}
+	// The cassette holds the cap and no more.
+	body, err := os.ReadFile(filepath.Join(dir, "resp", "0001.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(body) != maxBody {
+		t.Errorf("the cassette kept %d bytes, want the %d-byte cap", len(body), maxBody)
+	}
+	if strings.Contains(string(body), "PAST-THE-LIMIT") {
+		t.Error("the cassette kept bytes past the cap")
+	}
+	// Loudly, because half an answer replays as half an answer.
+	if !strings.Contains(logs.String(), "outgrew the capture limit") {
+		t.Errorf("a truncated recording was not reported:\n%s", logs)
+	}
+}
+
+// The bound costs an ordinary response nothing: it is not a chunking rule, and
+// a recording that fits keeps every byte and reports nothing.
+func TestAResponseUnderTheLimitIsRecordedWhole(t *testing.T) {
+	restore := maxBody
+	maxBody = 64
+	t.Cleanup(func() { maxBody = restore })
+
+	const answer = `{"ok":true}`
+	dir := filepath.Join(t.TempDir(), "ordinary")
+	rec, logs := cassetteServer(t, dir, online, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, answer)
+	})
+	post(t, rec, "/v1/messages", nil, `{"model":"claude-sonnet-5"}`)
+
+	body, err := os.ReadFile(filepath.Join(dir, "resp", "0001.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(body) != answer {
+		t.Errorf("recorded %q, want the response whole", body)
+	}
+	if strings.Contains(logs.String(), "outgrew the capture limit") {
+		t.Errorf("a response that fit was reported as truncated:\n%s", logs)
+	}
+}
