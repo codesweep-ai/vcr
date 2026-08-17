@@ -3,18 +3,25 @@
   "title": "Reaching a second cassette needs a clients block, so a scenario cannot be added by base URL alone",
   "type": "improvement",
   "severity": "med",
-  "status": "in-progress",
+  "status": "closed",
   "foundBy": "user report (jsd): selecting a cassette by URL pattern \"wasn't convenient at all\"",
   "opened": "2026-08-17",
-  "resolved": null,
+  "resolved": "2026-08-17",
   "stint": "2026-08-17 session: name the cassette on the base URL",
   "evidence": {
-    "commits": [],
+    "commits": [
+      "bb90fcb6eb71a2008b3ed3d345fb13e0550e8147"
+    ],
     "integrated": [],
-    "verified": null
+    "verified": "make check passes with and without -race, and both documentation linters pass. make test-integration replays 8/8 fixtures with the real agents while each is driven at /c/<scenario> and the proxy is started with no --cassette at all, so the prefix is the only thing that could have selected the cassette. By hand against a fake provider: two scenarios recorded through one cs-vcr with nothing declared, both replaying with upstream calls 0 while that provider was still listening, 404 unknown_cassette for a name the store does not hold, and 400 for /c/..%2F..%2Fetc."
   },
-  "resolution": null,
+  "resolution": "A /c/<name> prefix names the cassette directly. The clients block is gone; the provider pin it carried is now a cassette_provider map keyed by cassette name, and the name is validated because it becomes a directory. Replay opens a cassette that must already exist, so a base URL with a typo in it is reported rather than answered with a session that misses every request.",
   "details": "A `/c/<name>` prefix on the base URL tells cs-vcr which cassette a request belongs to, but the prefix reaches a cassette only through a `clients:` entry in the configuration file. Each entry pairs a label, a path prefix and a cassette, so adding one scenario means editing two things that have to agree: the agent's base URL and cs-vcr's own config.\n\nThat cost lands hardest where the mechanism is most useful. A build that wants a cassette per test has to declare every test in the config file before any of them can run, and a test added later fails with `unknown_client` until somebody remembers the second edit.\n\nThe prefix already carries the name. Nothing else in the entry is needed to find the cassette: the label only appears in logs, and the `cassette:` field restates what the prefix said. So the design is to let the prefix name the cassette directly, with nothing declaring it, and to keep the one thing an entry carried that a prefix cannot — a pinned provider — as a map keyed by cassette name.\n\nA request header was weighed against this and measured first: all three agents can send one from an environment variable, and `ANTHROPIC_CUSTOM_HEADERS`, `env_http_headers` and OpenCode's `{env:...}` interpolation were each confirmed on the wire. The prefix won on two counts. It costs one setting rather than two, and it rides on requests that carry no headers at all: Claude Code opens a connection with a bare `HEAD /api/hello` preconnect built from a method and nothing else.",
-  "notes": [],
+  "notes": [
+    {
+      "date": "2026-08-17",
+      "text": "cs-vcr config <agent> came out of this: where the prefix goes relative to the /v1 a client appends differs per client, and that rule had no single place to live. It prints a runnable command per agent."
+    }
+  ],
   "links": []
 }

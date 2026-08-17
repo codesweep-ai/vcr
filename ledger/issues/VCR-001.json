@@ -3,13 +3,19 @@
   "title": "Initial implementation",
   "type": "improvement",
   "severity": "low",
-  "status": "open",
+  "status": "closed",
   "foundBy": "the repository's first commit",
   "opened": "2026-08-16",
-  "resolved": null,
-  "stint": null,
-  "evidence": { "commits": [], "integrated": [], "verified": null },
-  "resolution": null,
+  "resolved": "2026-08-17",
+  "stint": "2026-08-17 session: name the cassette on the base URL",
+  "evidence": {
+    "commits": [
+      "9db7450a4a38585a64ef3f5ef761bfcacd53680d"
+    ],
+    "integrated": [],
+    "verified": "At that commit, go test ./... passes for every package, and make test-smoke replays 3/3 scenarios with the real Claude Code 2.1.232, Codex 0.145.0 and OpenCode 1.18.11 in 5.95s, each reporting upstream calls 0 and misses 0."
+  },
+  "resolution": "Record and replay ship: the proxy, the cassette format, the command tree and a live agent suite covering all three clients across the three surfaces cs-vcr routes.",
   "details": "Record and replay the traffic between AI coding agents and LLM providers — so no API key ever enters a sandbox, and CI runs the whole agent loop for $0.",
   "notes": [],
   "links": []
