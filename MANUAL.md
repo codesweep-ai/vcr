@@ -16,7 +16,7 @@ cs-vcr cassette verify [NAME...]
 cs-vcr cassette scrub [NAME...] [--force] [--from-env VAR,...]
 cs-vcr cassette prune NAME [--force]
 cs-vcr calibrate NAME MISSDIR
-cs-vcr config
+cs-vcr config [AGENT] [--cassette NAME] [--url URL] [--env-only]
 cs-vcr manual
 cs-vcr version
 
@@ -112,8 +112,24 @@ paths where what differs is something the world decides rather than something th
 
 ### config
 
-Prints the resolved configuration, including which file it came from. There is no credential in the
-output, because cs-vcr holds none.
+```
+cs-vcr config                                  # what cs-vcr resolved
+cs-vcr config claude --cassette refactor-auth  # how to point an agent at it
+```
+
+With no argument, prints the resolved configuration, including which file it came from. There is no
+credential in the output, because cs-vcr holds none.
+
+With an agent, prints how to point that client at this cs-vcr and at one cassette. It prints a
+command to run, the environment to set instead, and the file to pin it in. The agents it knows are
+`claude`, `codex` and `opencode`. Where the `/c/<name>` prefix goes relative to the `/v1` a client
+appends differs by client, and this is what says which.
+
+`--env-only` prints just the `VAR=VALUE` lines, so a build can source them:
+
+```bash
+set -a; . <(cs-vcr config claude --cassette refactor-auth --env-only); set +a
+```
 
 ### manual
 
@@ -129,7 +145,7 @@ cs-vcr has the reference, with no checkout to read and no page to fetch.
 
 | Option | Applies to | Meaning |
 |---|---|---|
-| `--cassette NAME` | record, replay | The cassette this session reads and writes. |
+| `--cassette NAME` | record, replay, config | The cassette a request with no `/c/<name>` prefix belongs to. |
 | `--cassettes DIR` | record, replay | The directory holding cassettes. Default `./cassettes`. |
 | `--listen ADDR` | record, replay | Proxied port. Default `127.0.0.1:8080`. |
 | `--admin ADDR` | record, replay | Admin port, serving `/healthz`. Default `127.0.0.1:8081`. |
@@ -137,6 +153,8 @@ cs-vcr has the reference, with no checkout to read and no page to fetch.
 | `--json` | cassette ls | Machine-readable output. |
 | `--force` | cassette scrub, prune | Remove rather than report. |
 | `--from-env VAR,...` | cassette scrub | Environment variables holding secrets to look for. |
+| `--url URL` | config AGENT | Where the agent reaches cs-vcr. Default: derived from `listen`. |
+| `--env-only` | config AGENT | Print only the `VAR=VALUE` lines. |
 | `--config FILE` | all | Config file path. |
 | `-v`, `--verbose` | all | Debug logging. |
 | `-q`, `--quiet` | all | Errors only. |
@@ -187,21 +205,39 @@ ANTHROPIC_BASE_URL=http://127.0.0.1:8080/v1 opencode run --model anthropic/claud
 OPENAI_BASE_URL=http://127.0.0.1:8080/v1 opencode run --model openai/gpt-5 "…"
 ```
 
-**Several agents at once.** Give each a `/c/<name>` prefix and a client entry with its own cassette:
-
-```yaml
-clients:
-  - label: feature
-    match: {path_prefix: /c/feature}
-    cassette: refactor-auth
-    provider: anthropic
-```
+**Naming the cassette on the base URL.** Add `/c/<name>` and the traffic belongs to the cassette
+`<name>`. Nothing declares it: `record` creates it on the first request, and `replay` serves it.
 
 ```bash
-ANTHROPIC_BASE_URL=http://127.0.0.1:8080/c/feature claude
+ANTHROPIC_BASE_URL=http://127.0.0.1:8080/c/refactor-auth claude
 ```
 
-The prefix goes before the `/v1` where a client wants one.
+The prefix goes before the `/v1` where a client wants one, which is what `cs-vcr config <agent>`
+prints. That is how several agents share one cs-vcr, and how a build gives each test its own
+cassette without restarting anything:
+
+```bash
+# Claude Code
+ANTHROPIC_BASE_URL=http://127.0.0.1:8080/c/$TEST claude -p "…"
+
+# Codex, without touching config.toml
+codex exec -c 'model_provider="cs-vcr"' \
+  -c 'model_providers.cs-vcr={name="cs-vcr", base_url="http://127.0.0.1:8080/c/'$TEST'/v1", env_key="OPENAI_API_KEY", wire_api="responses"}' \
+  "…"
+
+# OpenCode
+ANTHROPIC_BASE_URL=http://127.0.0.1:8080/c/$TEST/v1 opencode run --model anthropic/claude-sonnet-5 "…"
+```
+
+A cassette name is one path segment of letters, digits, dot, dash or underscore.
+
+**Pinning a provider.** Some traffic does not route by path. An OpenAI-shaped request to a provider
+that is not OpenAI is one, so name the provider for that cassette:
+
+```yaml
+cassette_provider:
+  opencode-fireworks: fireworks
+```
 
 ## Files
 
@@ -221,7 +257,7 @@ The prefix goes before the `/v1` where a client wants one.
 |---|---|
 | `CS_VCR_CONFIG` | Config file path. |
 | `CS_VCR_CASSETTES` | Cassette store directory. |
-| `VCR_CASSETTE` | Cassette this session uses. |
+| `VCR_CASSETTE` | Cassette a request with no `/c/<name>` prefix belongs to. |
 | `VCR_LISTEN`, `VCR_ADMIN` | Listen addresses. |
 | `VCR_ROOT` | Checkout root, where it is not the working directory. |
 
@@ -242,8 +278,14 @@ recorded request, and the paths that disagreed. If what differs is something the
 rather than the agent, declare it under `normalize.volatile`, or run `calibrate` to have the rule
 proposed for you.
 
-**`unknown_client`** — the path matched no configured client. The cause is usually a base URL
-missing its `/c/<name>` prefix.
+**`unknown_cassette`** — the base URL named a cassette that is not in the store, and `replay` will
+not create one. Check the name against `cs-vcr cassette ls`.
+
+**`bad_cassette_name`** — the `/c/` prefix was followed by something that is not a cassette name, or
+by nothing at all. A base URL ending in `/c/` is the usual cause.
+
+**`cassette_unusable`** — the cassette is there and will not open. The usual cause is a
+`format_version` or `normalize_version` from another build, which `cassette verify` reports.
 
 **`cassette was recorded by a different build`** — the cassette's `format_version` or
 `normalize_version` is not this build's. Delete it and record again. `cassette verify` shows what

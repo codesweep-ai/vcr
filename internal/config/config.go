@@ -15,6 +15,7 @@ package config
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"os"
 	"regexp"
@@ -25,59 +26,57 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Client is one caller cs-vcr can tell apart, and where its recording goes.
+// CassettePrefix marks a base URL that names the cassette its traffic belongs
+// to. `ANTHROPIC_BASE_URL=http://127.0.0.1:8080/c/refactor-auth` makes every
+// request on it a step of the cassette `refactor-auth`, and running a second
+// agent against a second cassette is a second base URL and nothing else.
 //
-// Identity comes from the CONNECTION, so that telling two agents apart costs
-// nothing but a base URL and touches no credential. An agent keeps whatever
-// login it already had — including a Claude Pro/Max subscription, which has no
-// token anyone else could mint or check.
-type Client struct {
-	Label string      `yaml:"label"`
-	Match ClientMatch `yaml:"match"`
-	// Cassette this client records into and replays from. Empty uses the
-	// session's, which is the whole point of naming clients: two test suites
-	// through one proxy, each with its own recording.
-	Cassette string `yaml:"cassette"`
-	// Provider every request on this prefix goes to, whatever its path.
-	//
-	// A prefix is a base URL a client was configured with, and a client
-	// configures one base URL per provider — so `ANTHROPIC_BASE_URL=http://
-	// vcr:8080/c/feature` makes every request on /c/feature Anthropic's, by
-	// construction. Measured, not assumed: Claude Code 2.1.219 carries the
-	// prefix on everything, including the `HEAD /api/hello` probe that has no
-	// header identifying where it was going.
-	//
-	// So where this is set there is nothing to infer, which matters because
-	// inference gets that probe wrong and sends it to the other provider. Empty
-	// keeps the path-based routing, for a client that really does speak to
-	// several providers through one prefix.
-	Provider string `yaml:"provider"`
-}
-
-// ClientMatch is how a request is attributed to a client.
+// The prefix names the cassette directly. There is nothing to declare: a
+// scenario exists as soon as an agent asks for it, which is what lets one
+// cs-vcr serve a whole suite of them.
 //
-// A path prefix on the base URL, verified to survive: Claude Code 2.1.219 with
-// ANTHROPIC_BASE_URL=http://host:8080/c/feature issues
-// `POST /c/feature/v1/messages?beta=true`. One mechanism that works identically
-// in a pod, in a cs-sandbox fabric and on a laptop — unlike a source address,
-// which cannot tell apart two containers sharing a network namespace.
-type ClientMatch struct {
-	PathPrefix string `yaml:"path_prefix"`
-}
+// Identity comes from the CONNECTION, so telling two agents apart costs nothing
+// but a base URL and touches no credential. An agent keeps whatever login it
+// already had, including a Claude Pro/Max subscription, which has no token
+// anyone else could mint or check. Measured, not assumed: Claude Code 2.1.232
+// with a prefixed base URL issues `POST /c/refactor-auth/v1/messages?beta=true`
+// and carries the prefix on everything, including the bodiless startup probes
+// that set no headers a request could have been identified by instead.
+const CassettePrefix = "/c/"
 
-// CatchAll reports whether this client matches anything not claimed by another.
-// A client with no match is the escape hatch for a caller that cannot be given
-// a prefix.
-func (m ClientMatch) CatchAll() bool { return m.PathPrefix == "" }
+// cassetteName is what a cassette may be called. It is checked rather than
+// trusted because the name arrives in a URL and becomes a directory: without
+// this, `/c/../../etc` is a request that reads outside the cassette store.
+//
+// One path segment, starting with an alphanumeric so that a name can never be
+// read as a flag or a dotfile.
+var cassetteName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
+
+// CheckCassetteName reports whether a name may be used as a cassette.
+func CheckCassetteName(name string) error {
+	switch {
+	case name == "":
+		return errors.New("a cassette name is required")
+	case len(name) > 128:
+		return fmt.Errorf("cassette name is %d characters; the limit is 128", len(name))
+	case !cassetteName.MatchString(name):
+		return fmt.Errorf("cassette name %q must be one segment of letters, digits, dot, dash or underscore, starting with a letter or digit", name)
+	}
+	return nil
+}
 
 // Config is the resolved configuration.
 type Config struct {
 	// Cassettes is the directory holding cassette directories.
 	Cassettes string `yaml:"cassettes"`
-	// Cassette names the one this session reads and writes. Naming one is what
-	// asks for recording: there is no separate mode for it, because "record"
-	// versus "just proxy" is not a decision, it is a consequence of whether
-	// there is anywhere to record into.
+	// Cassette names the one a request goes to when its base URL names none.
+	// Naming one is what asks for recording: there is no separate mode for it,
+	// because "record" versus "just proxy" is not a decision, it is a
+	// consequence of whether there is anywhere to record into.
+	//
+	// A base URL carrying CassettePrefix overrides it, which is how several
+	// agents share one cs-vcr. This is the fallback, and it is what the single
+	// agent deployment uses: one cassette, no prefix, no configuration.
 	Cassette string `yaml:"cassette"`
 	// Listen is the proxied port; Admin carries /healthz on a separate
 	// listener, because an unrecognized path on the proxied one is forwarded
@@ -92,21 +91,31 @@ type Config struct {
 
 	// DefaultProvider takes a request whose provider cannot be told from the
 	// request itself. Claude Code opens a session with `HEAD /api/hello`, and
-	// that probe carries no Anthropic header at all — not anthropic-version,
-	// not x-api-key, not even the SDK's user agent, since it is issued by the
-	// runtime's own fetch (`User-Agent: Bun/1.4.0`). Nothing in it identifies
-	// where it was going. What identified it was the base URL the client was
-	// pointed at, and origin mode has already thrown that away by serving every
-	// provider on one listener.
+	// that probe carries no header at all — not anthropic-version, not
+	// x-api-key, not even the SDK's user agent, because it is a bare preconnect
+	// the runtime issues with a method and nothing else. Nothing in it
+	// identifies where it was going. What identified it was the base URL the
+	// client was pointed at, and origin mode has already thrown that away by
+	// serving every provider on one listener.
 	//
 	// So it is configuration rather than a guess: an unidentifiable request
 	// goes where this says, and a deployment that fronts a different provider
 	// says so once.
 	DefaultProvider string `yaml:"default_provider"`
 
-	// Clients are the callers cs-vcr can tell apart, matched in order. Empty
-	// means one unnamed client — attribution is off, everything else works.
-	Clients []*Client `yaml:"clients"`
+	// CassetteProvider pins the provider for one cassette, whatever the path
+	// says. It is keyed by cassette name because a cassette is reached through
+	// one prefix, a prefix is a base URL, and a client configures one base URL
+	// per provider — so naming the cassette has already named the provider.
+	//
+	// It exists for recording several agents at once. Codex opens with
+	// `GET /models`, which cs-vcr does not model and which carries nothing
+	// Anthropic-shaped, so without a pin it follows DefaultProvider into
+	// whichever provider the other agent is using.
+	//
+	// Empty leaves a request to be routed by its path, then by its headers,
+	// then by DefaultProvider.
+	CassetteProvider map[string]string `yaml:"cassette_provider"`
 
 	// Lookahead is how far past the expected step replay will look for an entry
 	// that matches, which is what lets a client pipeline: Codex issues two
@@ -691,142 +700,72 @@ func (c *Config) Resolve() error {
 	if err := c.Normalize.Compile(); err != nil {
 		return err
 	}
-	return c.resolveClients()
-}
-
-func (c *Config) resolveClients() error {
-	seen := map[string]bool{}
-	catchAll := -1
-	for i, cl := range c.Clients {
-		if cl.Label == "" {
-			return fmt.Errorf("clients[%d]: label is required — it is what appears in the logs and the summary", i)
-		}
-		if seen[cl.Label] {
-			return fmt.Errorf("clients: duplicate label %q", cl.Label)
-		}
-		seen[cl.Label] = true
-		if p := cl.Match.PathPrefix; p != "" && !strings.HasPrefix(p, "/") {
-			return fmt.Errorf("client %s: path_prefix %q must start with /", cl.Label, p)
-		}
-		// A named provider that does not exist is a typo that would otherwise
-		// surface as a 502 on the first request of a recording session.
-		if cl.Provider != "" {
-			if _, ok := c.Providers[cl.Provider]; !ok {
-				return fmt.Errorf("client %s: no provider named %q is configured", cl.Label, cl.Provider)
-			}
-		}
-		// One catch-all at most, and it must be last, or the clients declared
-		// after it could never match and the config would silently mean
-		// something other than what it reads like.
-		if cl.Match.CatchAll() {
-			if catchAll >= 0 {
-				return fmt.Errorf("clients: %q and %q both match everything", c.Clients[catchAll].Label, cl.Label)
-			}
-			catchAll = i
-		} else if catchAll >= 0 {
-			return fmt.Errorf("client %q can never match: %q before it matches everything",
-				cl.Label, c.Clients[catchAll].Label)
+	if c.Cassette != "" {
+		if err := CheckCassetteName(c.Cassette); err != nil {
+			return err
 		}
 	}
-	return c.checkCassettesAreDistinct()
+	return c.resolvePins()
 }
 
-// checkCassettesAreDistinct refuses a config where two clients would record
-// into the same cassette.
-//
-// Naming clients is how two agents are told apart, and the cassette is where
-// that distinction is kept: the key is the normalized request, so two agents
-// sharing a cassette share a namespace. That is not a theoretical clash. In a
-// campaign, an orchestrator and the member it delegates to are handed the same
-// opening prompt — "read this dispatch file and follow it" — differing only in
-// the dispatch id, which normalization blanks so that the pair replays at all.
-// Their first requests then normalize to the same bytes.
-//
-// The damage lands while RECORDING, which is why it must be a config error and
-// not a replay-time diff: a hit is served from the cassette rather than fetched
-// again, so the second agent was handed the first agent's response and never
-// reached the provider. One turn-1 request was recorded where two were sent,
-// and the recording looked complete.
-func (c *Config) checkCassettesAreDistinct() error {
-	if len(c.Clients) < 2 {
-		return nil
-	}
-	by := map[string]string{}
-	for _, cl := range c.Clients {
-		name := cl.Cassette
-		if name == "" {
-			name = c.Cassette
+// resolvePins checks the provider pins before the first request, so a typo
+// fails at startup rather than as a 502 partway through a recording session.
+func (c *Config) resolvePins() error {
+	for name, provider := range c.CassetteProvider {
+		if err := CheckCassetteName(name); err != nil {
+			return fmt.Errorf("cassette_provider: %w", err)
 		}
-		if name == "" {
-			continue
+		if _, ok := c.Providers[provider]; !ok {
+			return fmt.Errorf("cassette_provider %s: no provider named %q is configured", name, provider)
 		}
-		if other, dup := by[name]; dup {
-			return fmt.Errorf("clients %q and %q both record into cassette %q: "+
-				"give each client its own `cassette:`, or their requests share a key and "+
-				"one agent will be served the other's responses", other, cl.Label, name)
-		}
-		by[name] = cl.Label
 	}
 	return nil
 }
 
-// CassetteFor is the cassette a client records into: its own where it names
-// one, the session's otherwise.
-func (c *Config) CassetteFor(cl *Client) string {
-	if cl != nil && cl.Cassette != "" {
-		return cl.Cassette
+// ProviderFor is the provider pinned for a cassette, or "" where none is.
+func (c *Config) ProviderFor(cassette string) string {
+	if cassette == "" {
+		return ""
 	}
-	return c.Cassette
+	return c.CassetteProvider[cassette]
 }
 
-// MatchClient attributes a request path to a client, returning the client and
-// the path with its prefix removed — what upstream should see.
+// RouteCassette reads a request path and answers two things: the cassette the
+// request belongs in, and the path upstream should see.
 //
-// With no clients configured every request belongs to one unnamed client, so
-// the simple deployment needs no configuration at all. With clients
-// configured, an unmatched request is NOT quietly bucketed as "unknown": that
-// would make a mistyped base URL look like it worked while its traffic missed
-// the cassette it was supposed to land in.
-func (c *Config) MatchClient(path string) (*Client, string, bool) {
-	if len(c.Clients) == 0 {
-		return nil, path, true
+// A path under CassettePrefix names its own cassette. Anything else belongs to
+// the session's, so the single-agent deployment needs no prefix and no
+// configuration at all.
+//
+// The name is checked rather than trusted, because it arrives in a URL and is
+// about to become a directory. An unusable one is reported rather than quietly
+// falling back to the session's cassette: a request that asked for one cassette
+// and was answered from another is the failure this mechanism exists to prevent.
+func (c *Config) RouteCassette(path string) (name, rest string, err error) {
+	named, rest, prefixed := splitCassettePath(path)
+	if !prefixed {
+		return c.Cassette, path, nil
 	}
-	for _, cl := range c.Clients {
-		if cl.Match.CatchAll() {
-			return cl, path, true
-		}
-		if rest, ok := trimPrefixPath(path, cl.Match.PathPrefix); ok {
-			return cl, rest, true
-		}
+	if err := CheckCassetteName(named); err != nil {
+		return "", "", err
 	}
-	return nil, path, false
+	return named, rest, nil
 }
 
-// trimPrefixPath removes a path prefix on a segment boundary, so /c/feat does
-// not match a client declared as /c/feature.
-func trimPrefixPath(path, prefix string) (string, bool) {
-	prefix = strings.TrimSuffix(prefix, "/")
-	if !strings.HasPrefix(path, prefix) {
-		return "", false
+// splitCassettePath takes the cassette name off a path, on a segment boundary
+// so that /c/featurex is not read as the cassette `feature`.
+//
+// A bare prefix reports an empty name rather than no prefix at all, so a base
+// URL ending in /c/ is refused as the mistake it is instead of quietly becoming
+// the session's cassette.
+func splitCassettePath(path string) (name, rest string, prefixed bool) {
+	if !strings.HasPrefix(path, CassettePrefix) {
+		return "", path, false
 	}
-	rest := path[len(prefix):]
-	if rest == "" {
-		return "/", true
+	after := path[len(CassettePrefix):]
+	if slash := strings.IndexByte(after, '/'); slash >= 0 {
+		return after[:slash], after[slash:], true
 	}
-	if rest[0] != '/' {
-		return "", false
-	}
-	return rest, true
-}
-
-// Prefixes lists the configured path prefixes, for an error message that tells
-// a caller what it could have said instead.
-func (c *Config) Prefixes() []string {
-	out := make([]string, 0, len(c.Clients))
-	for _, cl := range c.Clients {
-		if !cl.Match.CatchAll() {
-			out = append(out, cl.Match.PathPrefix)
-		}
-	}
-	return out
+	// Nothing after the name: a request for the provider's own root.
+	return after, "/", true
 }

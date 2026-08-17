@@ -17,6 +17,9 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/codesweep-ai/vcr/internal/cassette"
+	"github.com/codesweep-ai/vcr/internal/config"
 )
 
 // These tests drive the real `record`/`replay` commands over a real socket,
@@ -28,6 +31,26 @@ import (
 // online server, logged `offline=true` from its own flag and sent every miss to
 // the provider would satisfy every one of them. Nothing below the command can
 // observe that, so the test belongs here.
+
+// cassetteArgs lists the cassettes named on a command line.
+func cassetteArgs(args []string) []string {
+	var out []string
+	for i, a := range args {
+		if a == "--cassette" && i+1 < len(args) {
+			out = append(out, args[i+1])
+		}
+	}
+	return out
+}
+
+// emptyCassette creates a cassette with no steps, which is what a session that
+// replays and misses everything is replaying from.
+func emptyCassette(t *testing.T, dir string) {
+	t.Helper()
+	if _, err := cassette.Create(dir, Version, config.Default().Normalize.Version, time.Unix(0, 0).UTC()); err != nil {
+		t.Fatal(err)
+	}
+}
 
 // port reserves a free port and releases it. The race is theoretical and the
 // alternative — plumbing the bound address back out of the command — would add
@@ -42,10 +65,11 @@ func port(t *testing.T) string {
 	return l.Addr().String()
 }
 
-// serveInBackground runs a serve command until the test ends, and returns the
-// address to send requests to once /healthz answers.
-func serveInBackground(t *testing.T, cfgYAML string, args ...string) string {
-	return serveSession(t, cfgYAML, args...).addr
+// serveInBackground runs a serve command against providers that cannot be
+// dialled, until the test ends, and returns the address to send requests to
+// once /healthz answers.
+func serveInBackground(t *testing.T, args ...string) string {
+	return serveSession(t, unreachableProviders, args...).addr
 }
 
 // session is a serve command under test, for the cases that end it themselves
@@ -58,6 +82,12 @@ type session struct {
 }
 
 func serveSession(t *testing.T, cfgYAML string, args ...string) session {
+	return serveSessionOver(t, cfgYAML, nil, args...)
+}
+
+// serveSessionOver is serveSession with cassettes that already exist, for the
+// replay tests that reach several of them through prefixes.
+func serveSessionOver(t *testing.T, cfgYAML string, existing []string, args ...string) session {
 	t.Helper()
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "config.yaml")
@@ -68,6 +98,13 @@ func serveSession(t *testing.T, cfgYAML string, args ...string) session {
 
 	out := &bytes.Buffer{}
 	cassettes := filepath.Join(dir, "cassettes")
+	// `replay` refuses a cassette that is not there, so a replay test has to
+	// have one: it never recorded anything, and nothing else would have made it.
+	if args[0] == "replay" {
+		for _, name := range append(cassetteArgs(args), existing...) {
+			emptyCassette(t, filepath.Join(cassettes, name))
+		}
+	}
 	app := &App{Getenv: func(string) string { return "" }}
 	cmd := newRootCmd(app)
 	cmd.SetOut(out)
@@ -121,8 +158,14 @@ const unreachableProviders = `providers:
 `
 
 func postMessages(t *testing.T, addr, body string) (int, string) {
+	return postPath(t, addr, "/v1/messages", body)
+}
+
+// postPath is postMessages to a chosen path, for the cases where the path is
+// the thing under test — a cassette prefix in front of the surface.
+func postPath(t *testing.T, addr, path, body string) (int, string) {
 	t.Helper()
-	req, err := http.NewRequest(http.MethodPost, "http://"+addr+"/v1/messages", strings.NewReader(body))
+	req, err := http.NewRequest(http.MethodPost, "http://"+addr+path, strings.NewReader(body))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -148,7 +191,7 @@ func postMessages(t *testing.T, addr, body string) (int, string) {
 // practice — not with a miss, but with the provider's own error handed back to
 // the agent, which retries it as a transient server fault and hangs the run.
 func TestReplayNeverContactsAProvider(t *testing.T) {
-	addr := serveInBackground(t, unreachableProviders, "replay", "--cassette", "empty")
+	addr := serveInBackground(t, "replay", "--cassette", "empty")
 
 	status, body := postMessages(t, addr, `{"model":"claude-3-5-sonnet","messages":[{"role":"user","content":"hello"}]}`)
 
@@ -177,7 +220,7 @@ func TestReplayNeverContactsAProvider(t *testing.T) {
 // tried. One address, two commands, opposite behaviour — which is the whole
 // claim the two commands make.
 func TestRecordDoesContactAProvider(t *testing.T) {
-	addr := serveInBackground(t, unreachableProviders, "record", "--cassette", "empty")
+	addr := serveInBackground(t, "record", "--cassette", "empty")
 
 	status, body := postMessages(t, addr, `{"model":"claude-3-5-sonnet","messages":[{"role":"user","content":"hello"}]}`)
 
@@ -192,7 +235,7 @@ func TestRecordDoesContactAProvider(t *testing.T) {
 // A miss must say enough to fix it. "Cassette miss" against a cassette of
 // fifteen entries, with nothing else, says only that something is wrong.
 func TestReplayMissNamesTheRequest(t *testing.T) {
-	addr := serveInBackground(t, unreachableProviders, "replay", "--cassette", "empty")
+	addr := serveInBackground(t, "replay", "--cassette", "empty")
 
 	_, body := postMessages(t, addr, `{"model":"claude-3-5-sonnet","messages":[{"role":"user","content":"hello"}]}`)
 
@@ -206,7 +249,7 @@ func TestReplayMissNamesTheRequest(t *testing.T) {
 // /healthz is on its own listener so that a readiness probe is not a request to
 // Anthropic. Asserted from the proxied port: it must not answer there.
 func TestHealthzIsNotOnTheProxiedPort(t *testing.T) {
-	addr := serveInBackground(t, unreachableProviders, "replay", "--cassette", "empty")
+	addr := serveInBackground(t, "replay", "--cassette", "empty")
 
 	resp, err := http.Get("http://" + addr + "/healthz")
 	if err != nil {
@@ -218,20 +261,13 @@ func TestHealthzIsNotOnTheProxiedPort(t *testing.T) {
 	}
 }
 
-// Two agents, two cassettes, one server: the campaigns run several members
-// through a single cs-vcr, told apart by a prefix on the base URL. A request
-// carrying no prefix must be refused rather than silently recorded as somebody
-// else, because the failure it causes otherwise appears one run later.
-func TestClientPrefixesSeparateAgents(t *testing.T) {
-	cfg := unreachableProviders + `clients:
-  - label: orchestrator
-    match: {path_prefix: /c/orchestrator}
-    cassette: orchestrator
-  - label: worker
-    match: {path_prefix: /c/worker}
-    cassette: worker
-`
-	addr := serveInBackground(t, cfg, "replay", "--cassette", "empty")
+// Two agents, two cassettes, one server: a campaign runs several members
+// through a single cs-vcr, told apart by a prefix on the base URL. Nothing
+// declares either cassette — the prefix names it, and the session opens it on
+// the first request that asks for it.
+func TestCassettePrefixesSeparateAgents(t *testing.T) {
+	addr := serveSessionOver(t, unreachableProviders,
+		[]string{"orchestrator", "worker"}, "replay", "--cassette", "empty").addr
 
 	// Each prefix is accepted and reported as a miss against its own cassette.
 	for _, prefix := range []string{"/c/orchestrator", "/c/worker"} {
@@ -251,10 +287,28 @@ func TestClientPrefixesSeparateAgents(t *testing.T) {
 		}
 	}
 
-	// And an unprefixed request belongs to no one.
+	// And an unprefixed request falls back to the session's own cassette,
+	// which is where the requests that cannot carry a prefix have to land.
 	status, body := postMessages(t, addr, `{"model":"m","messages":[]}`)
-	if status != http.StatusNotFound || !strings.Contains(body, "unknown_client") {
-		t.Errorf("an unprefixed request was accepted: %d %s", status, body)
+	if status != http.StatusBadRequest || !strings.Contains(body, `cassette \"empty\"`) {
+		t.Errorf("an unprefixed request did not fall back to the session cassette: %d %s", status, body)
+	}
+
+	// A prefix naming a cassette the store does not hold is refused, and named,
+	// rather than being created and then missing on every request.
+	req, err := http.NewRequest(http.MethodPost, "http://"+addr+"/c/never-recorded/v1/messages",
+		strings.NewReader(`{"model":"m","messages":[]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	b, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusNotFound || !strings.Contains(string(b), "unknown_cassette") {
+		t.Errorf("an unrecorded cassette was accepted: %d %s", resp.StatusCode, b)
 	}
 }
 
@@ -440,6 +494,7 @@ func TestReplaySummaryReportsMisses(t *testing.T) {
 	out := &bytes.Buffer{}
 	cmd.SetOut(out)
 	cmd.SetErr(out)
+	emptyCassette(t, filepath.Join(dir, "cassettes", "empty"))
 	cmd.SetArgs([]string{"--config", cfgPath, "replay",
 		"--cassette", "empty", "--cassettes", filepath.Join(dir, "cassettes"),
 		"--listen", listen, "--admin", admin})
@@ -466,5 +521,78 @@ func TestReplaySummaryReportsMisses(t *testing.T) {
 
 	if got := out.String(); !strings.Contains(got, strconv.Itoa(1)) || !strings.Contains(strings.ToLower(got), "miss") {
 		t.Errorf("the summary does not report the miss:\n%s", got)
+	}
+}
+
+// A prefix may name a cassette that does not exist yet, and `record` creates
+// it. That is what lets a build record a new scenario without anything having
+// declared it, which is the whole of the configuration this replaced.
+func TestRecordCreatesACassetteAPrefixNames(t *testing.T) {
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"ok":true}`)
+	}))
+	defer up.Close()
+
+	sess := serveSession(t, providers(up.URL), "record")
+	if status, body := postPath(t, sess.addr, "/c/on-demand/v1/messages",
+		`{"model":"m","messages":[]}`); status != http.StatusOK {
+		t.Fatalf("status = %d (%s)", status, body)
+	}
+	sess.stop()
+
+	index := filepath.Join(sess.cassettes, "on-demand", "index.jsonl")
+	b, err := os.ReadFile(index)
+	if err != nil {
+		t.Fatalf("the named cassette was not written: %v", err)
+	}
+	if n := len(strings.Split(strings.TrimSpace(string(b)), "\n")); n != 1 {
+		t.Errorf("index has %d steps, want 1:\n%s", n, b)
+	}
+	// And the summary attributes it by cassette, which is what a reader of a CI
+	// log uses to tell one scenario's traffic from another's.
+	if got := sess.out.String(); !strings.Contains(got, "cassette on-demand") {
+		t.Errorf("the summary does not attribute the traffic:\n%s", got)
+	}
+}
+
+// Replay refuses a cassette that is not in the store, and does not reach a
+// provider to find out. Creating one instead would answer every request with a
+// miss, which reads as an agent that diverged rather than as a name that was
+// wrong.
+func TestReplayRefusesACassetteThatWasNeverRecorded(t *testing.T) {
+	addr := serveSession(t, unreachableProviders, "replay", "--cassette", "empty").addr
+	status, body := postPath(t, addr, "/c/never-recorded/v1/messages", `{"model":"m","messages":[]}`)
+	if status != http.StatusNotFound {
+		t.Errorf("status = %d, want 404 — a 502 would mean it tried the provider", status)
+	}
+	if !strings.Contains(body, "unknown_cassette") || !strings.Contains(body, "never-recorded") {
+		t.Errorf("the error does not name what was missing: %s", body)
+	}
+}
+
+// A cassette from another build is not a cassette that is missing, and saying
+// so sends the reader to look for a directory that is sitting right there.
+func TestReplayNamesACassetteItCannotRead(t *testing.T) {
+	sess := serveSessionOver(t, unreachableProviders, []string{"stale"}, "replay", "--cassette", "empty")
+
+	// Age it under the running session, which is when a prefix first reaches
+	// for it: the store is consulted on the request, not at startup.
+	meta := filepath.Join(sess.cassettes, "stale", "cassette.yaml")
+	b, err := os.ReadFile(meta)
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := regexp.MustCompile(`normalize_version: \d+`).ReplaceAll(b, []byte("normalize_version: 1"))
+	if err := os.WriteFile(meta, old, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	status, body := postPath(t, sess.addr, "/c/stale/v1/messages", `{"model":"m","messages":[]}`)
+	if status != http.StatusInternalServerError {
+		t.Errorf("status = %d, want 500 — a stale cassette is not a missing one", status)
+	}
+	if !strings.Contains(body, "cassette_unusable") || !strings.Contains(body, "stale") {
+		t.Errorf("the error does not say what is wrong: %s", body)
 	}
 }

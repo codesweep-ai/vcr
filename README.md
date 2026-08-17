@@ -21,7 +21,7 @@ link against or patch, and it often runs in another VM.
 ```
 ┌────────────────┐        ┌──────────────────────────┐        ┌──────────────┐
 │  agent         │  HTTP  │  cs-vcr                  │  HTTPS │  provider    │
-│                ├───────►│  identify by /c/<name>   ├───────►│  (Anthropic, │
+│                ├───────►│  cassette by /c/<name>   ├───────►│  (Anthropic, │
 │  keeps its own │        │  match · record · replay │        │   OpenAI,    │
 │  login, sends  │◄───────┤  cassette store          │◄───────┤   Zen, …)    │
 │  it unchanged  │        └──────────────────────────┘        └──────────────┘
@@ -67,7 +67,7 @@ If the session diverged from the recording, the build fails with the reason rath
 calling a provider:
 
 ```
-no recording for /v1/messages at step 4 of cassette "build" (client default), and `replay` never contacts a provider
+no recording for /v1/messages at step 4 of cassette "build", and `replay` never contacts a provider
 step 4 was recorded as POST /v1/messages (anthropic.messages)
   messages[2].content
     recorded: Refactor the auth module
@@ -77,8 +77,20 @@ step 4 was recorded as POST /v1/messages (anthropic.messages)
 **A replay session starts and serves with no provider credential configured at all.** A
 misconfigured CI job cannot spend money, because it has nothing to spend with.
 
-To run several agents through one cs-vcr, give each a `/c/<name>` prefix — see
-[MANUAL.md](MANUAL.md#pointing-an-agent-at-it).
+To give a build a cassette per test, or to run several agents through one cs-vcr, put the cassette
+name on the base URL:
+
+```bash
+ANTHROPIC_BASE_URL=http://127.0.0.1:8080/c/refactor-auth claude -p "…"
+```
+
+The cassette `refactor-auth` is declared nowhere. `record` creates it on the first request that
+names it, and `replay` serves it. Where the prefix goes relative to the `/v1` a client appends differs by client,
+so cs-vcr prints it:
+
+```console
+$ cs-vcr config codex --cassette refactor-auth
+```
 
 ## Two commands
 

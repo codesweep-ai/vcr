@@ -54,6 +54,11 @@ func cassetteServer(t *testing.T, dir string, offline bool, upstream http.Handle
 	// Both, or an unrecognized path routes to the real api.openai.com.
 	cfg.Providers["anthropic"] = &config.Provider{BaseURL: up.URL}
 	cfg.Providers["openai"] = &config.Provider{BaseURL: up.URL}
+	// The session's own cassette, which is what a request carrying no /c/<name>
+	// prefix belongs to. The store below is opened in dir rather than under
+	// this name: what maps a name to a directory is the command, and serve_test
+	// is where that is asserted.
+	cfg.Cassette = "session"
 	if err := cfg.Resolve(); err != nil {
 		t.Fatal(err)
 	}
@@ -440,11 +445,11 @@ func TestRecordedBodiesAreNotCompressed(t *testing.T) {
 	r.Header.Set("Accept-Encoding", "gzip")
 	rec.ServeHTTP(httptest.NewRecorder(), r)
 
-	entries, err := rec.cassette.Cassette().Entries()
+	entries, err := sessionStore(t, rec).Cassette().Entries()
 	if err != nil || len(entries) != 1 {
 		t.Fatalf("entries = %v (%v)", entries, err)
 	}
-	body, err := rec.cassette.Response(entries[0])
+	body, err := sessionStore(t, rec).Response(entries[0])
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -535,14 +540,14 @@ func TestAnUnlabelledStreamIsStillRecordedAsAStream(t *testing.T) {
 	})
 	post(t, rec, "/responses", nil, `{"stream":true}`)
 
-	entries, err := rec.cassette.Cassette().Entries()
+	entries, err := sessionStore(t, rec).Cassette().Entries()
 	if err != nil || len(entries) != 1 {
 		t.Fatalf("entries = %v (%v)", entries, err)
 	}
 	if !entries[0].Streaming {
 		t.Fatalf("entry recorded as non-streaming: %+v", entries[0])
 	}
-	if _, err := os.Stat(rec.cassette.Cassette().ResponsePath(entries[0].Seq, true)); err != nil {
+	if _, err := os.Stat(sessionStore(t, rec).Cassette().ResponsePath(entries[0].Seq, true)); err != nil {
 		t.Errorf("stream was not stored as .sse: %v", err)
 	}
 
@@ -569,14 +574,14 @@ func TestAnUnlabelledBodyIsNotMistakenForAStream(t *testing.T) {
 	})
 	post(t, rec, "/responses", nil, `{"stream":false}`)
 
-	entries, err := rec.cassette.Cassette().Entries()
+	entries, err := sessionStore(t, rec).Cassette().Entries()
 	if err != nil || len(entries) != 1 {
 		t.Fatalf("entries = %v (%v)", entries, err)
 	}
 	if entries[0].Streaming {
 		t.Fatalf("a JSON body was recorded as a stream: %+v", entries[0])
 	}
-	if _, err := os.Stat(rec.cassette.Cassette().ResponsePath(entries[0].Seq, false)); err != nil {
+	if _, err := os.Stat(sessionStore(t, rec).Cassette().ResponsePath(entries[0].Seq, false)); err != nil {
 		t.Errorf("body was not stored as .json: %v", err)
 	}
 }
@@ -631,14 +636,14 @@ func TestAHangUpMidStreamStillRecordsWhatTheClientReceived(t *testing.T) {
 	if n := rec.Snapshot().Recorded; n != 1 {
 		t.Fatalf("recorded = %d, want the interaction the client hung up on\nlogs: %s", n, logs)
 	}
-	entries, err := rec.cassette.Cassette().Entries()
+	entries, err := sessionStore(t, rec).Cassette().Entries()
 	if err != nil || len(entries) != 1 {
 		t.Fatalf("entries = %v (%v)", entries, err)
 	}
 	if !entries[0].Streaming {
 		t.Errorf("recorded as non-streaming: %+v", entries[0])
 	}
-	body, err := rec.cassette.Response(entries[0])
+	body, err := sessionStore(t, rec).Response(entries[0])
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -814,11 +819,11 @@ func TestTheToolSchemaIsNotRewrittenByTheTimingRules(t *testing.T) {
 	})
 	post(t, rec, "/responses", nil, schema)
 
-	entries, err := rec.cassette.Cassette().Entries()
+	entries, err := sessionStore(t, rec).Cassette().Entries()
 	if err != nil || len(entries) != 1 {
 		t.Fatalf("entries = %v (%v)", entries, err)
 	}
-	b, err := os.ReadFile(rec.cassette.Cassette().RequestPath(entries[0].Seq))
+	b, err := os.ReadFile(sessionStore(t, rec).Cassette().RequestPath(entries[0].Seq))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -876,11 +881,11 @@ func TestNormalizedPlaceholdersAreVisibleInTheRecording(t *testing.T) {
 	post(t, rec, "/v1/messages", nil,
 		`{"messages":[{"role":"user","content":"Today's date is 2026-08-12."}]}`)
 
-	entries, err := rec.cassette.Cassette().Entries()
+	entries, err := sessionStore(t, rec).Cassette().Entries()
 	if err != nil || len(entries) != 1 {
 		t.Fatalf("entries = %v (%v)", entries, err)
 	}
-	b, err := os.ReadFile(rec.cassette.Cassette().RequestPath(entries[0].Seq))
+	b, err := os.ReadFile(sessionStore(t, rec).Cassette().RequestPath(entries[0].Seq))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -976,11 +981,11 @@ func TestResponsePathsRoundTripThroughTheCassette(t *testing.T) {
 	post(t, rec, "/v1/messages", nil, `{"messages":[{"role":"user","content":"read it"}]}`)
 
 	// The cassette must hold the placeholder, or it is not portable.
-	entries, err := rec.cassette.Cassette().Entries()
+	entries, err := sessionStore(t, rec).Cassette().Entries()
 	if err != nil || len(entries) != 1 {
 		t.Fatalf("entries = %v (%v)", entries, err)
 	}
-	stored, err := os.ReadFile(rec.cassette.Cassette().ResponsePath(entries[0].Seq, false))
+	stored, err := os.ReadFile(sessionStore(t, rec).Cassette().ResponsePath(entries[0].Seq, false))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1034,11 +1039,11 @@ func TestToolCallPathIsRewrittenForTheReplayingMachine(t *testing.T) {
 	post(t, rec, "/v1/messages", nil, `{"messages":[{"role":"user","content":"read it"}]}`)
 
 	// The cassette must hold neither the laptop's path nor a split one.
-	entries, err := rec.cassette.Cassette().Entries()
+	entries, err := sessionStore(t, rec).Cassette().Entries()
 	if err != nil || len(entries) != 1 {
 		t.Fatalf("entries = %v (%v)", entries, err)
 	}
-	stored, err := os.ReadFile(rec.cassette.Cassette().ResponsePath(entries[0].Seq, true))
+	stored, err := os.ReadFile(sessionStore(t, rec).Cassette().ResponsePath(entries[0].Seq, true))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1135,8 +1140,8 @@ func TestCaptureGroupScopesWhatIsBlanked(t *testing.T) {
 	}
 	post(t, rec, "/v1/messages", nil, body("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"))
 
-	entries, _ := rec.cassette.Cassette().Entries()
-	stored, err := os.ReadFile(rec.cassette.Cassette().RequestPath(entries[0].Seq))
+	entries, _ := sessionStore(t, rec).Cassette().Entries()
+	stored, err := os.ReadFile(sessionStore(t, rec).Cassette().RequestPath(entries[0].Seq))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -11,6 +11,7 @@ package proxy
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -28,18 +29,46 @@ import (
 	"github.com/codesweep-ai/vcr/internal/config"
 )
 
+// ErrNoSuchCassette is what an opener returns when the cassette a request named
+// is not in the store. Replay reports it rather than creating one: an empty
+// cassette answers every request with a miss, which reads as a session that
+// diverged rather than as a base URL with a typo in it.
+var ErrNoSuchCassette = errors.New("no such cassette")
+
+// OpenCassette produces the store for a named cassette. It is injected because
+// what a missing one means is the command's business: `record` creates it,
+// `replay` refuses.
+type OpenCassette func(name string) (*cassette.Store, error)
+
 // Server is the origin-mode HTTP handler.
 type Server struct {
 	cfg *config.Config
 	log *slog.Logger
-	// cassette is what this session records into and replays from, used by any
-	// request not attributed to a client that names its own.
-	cassette *cassette.Store
-	// cassettes is the one per client label, for the campaign case: several
-	// agents through one cs-vcr, each with its own recording. Sharing one would
-	// share a key namespace, and two agents given the same opening prompt
-	// normalize to the same request — see Config.checkCassettesAreDistinct.
-	cassettes map[string]*cassette.Store
+	// open produces the store for a cassette this session has not used yet, so
+	// one cs-vcr serves as many cassettes as the base URLs pointed at it name.
+	// Nil leaves the server with only the stores it was given.
+	open OpenCassette
+
+	// storeMu guards stores and failed, separately from mu because opening a
+	// cassette reads the disk and the counters must not wait behind that.
+	storeMu sync.Mutex
+	// stores are the cassettes this session has opened, by name. Opening is
+	// cached rather than repeated: a store holds the cursor into its own
+	// script, so a second store for one cassette would replay it from the
+	// beginning halfway through a session.
+	//
+	// Several agents through one cs-vcr must not share one, and with the name
+	// coming from the prefix they cannot: two agents given the same opening
+	// prompt normalize to the same request, so sharing a cassette would serve
+	// the second agent the first one's response and record one turn where two
+	// were sent.
+	stores map[string]*cassette.Store
+	// failed remembers a name that could not be opened, so a client retrying it
+	// is answered from memory rather than stat-ing the store once per request.
+	// A cassette that appears after a session asked for it is therefore not
+	// picked up until the session restarts, which is the right way round: the
+	// set of cassettes a replay session serves is fixed when it starts.
+	failed map[string]error
 	// offline is set by the command that built this server, and nothing else
 	// can change it: `replay` constructs an offline server, `record` an online
 	// one. Reaching a provider is then a property of which binary invocation you
@@ -66,11 +95,13 @@ type Server struct {
 // CI log shows and what decides the exit code.
 type Stats struct {
 	Requests int `json:"requests"`
-	// Unmatched counts requests whose path belonged to no configured client —
-	// almost always a base URL missing its prefix, which is worth its own
-	// counter because it looks like silence rather than like an error.
-	Unmatched int `json:"unmatched"`
-	Upstream  int `json:"upstream"`
+	// UnknownCassette counts requests whose base URL named a cassette cs-vcr
+	// could not use: a name that is not a name, or one the store does not hold.
+	// Worth its own counter because it looks like silence rather than like an
+	// error — the agent was configured, it sent what it was told to, and
+	// nothing was recorded.
+	UnknownCassette int `json:"unknown_cassette"`
+	Upstream        int `json:"upstream"`
 	// Replayed and Recorded are the two numbers that say whether a session did
 	// what it was asked to. Misses is the third: in replay mode it is the one
 	// that fails the build.
@@ -89,9 +120,9 @@ type Stats struct {
 	// at the END, where it is no longer a request in flight but an interaction
 	// the session walked out on: the entry is written once the response is done,
 	// so each one left here is a provider call whose answer nothing kept.
-	InFlight  int            `json:"in_flight"`
-	BySurface map[string]int `json:"by_surface"`
-	ByLabel   map[string]int `json:"by_label"`
+	InFlight   int            `json:"in_flight"`
+	BySurface  map[string]int `json:"by_surface"`
+	ByCassette map[string]int `json:"by_cassette"`
 }
 
 // New builds a server. The logger is required: every rejection path logs, and
@@ -108,32 +139,57 @@ func New(cfg *config.Config, log *slog.Logger, offline bool) *Server {
 		log:     log,
 		offline: offline,
 		now:     time.Now,
-		stats:   Stats{BySurface: map[string]int{}, ByLabel: map[string]int{}},
+		stores:  map[string]*cassette.Store{},
+		failed:  map[string]error{},
+		stats:   Stats{BySurface: map[string]int{}, ByCassette: map[string]int{}},
 	}
 }
 
-// WithCassette attaches the cassette this session records into and replays from.
-func (s *Server) WithCassette(t *cassette.Store) *Server { s.cassette = t; return s }
-
-// WithClientCassette attaches the cassette a labelled client records into.
-func (s *Server) WithClientCassette(label string, t *cassette.Store) *Server {
-	if s.cassettes == nil {
-		s.cassettes = map[string]*cassette.Store{}
-	}
-	s.cassettes[label] = t
+// WithCassette attaches the store for the session's own cassette, already open,
+// which is what a request whose base URL names none is served from.
+func (s *Server) WithCassette(t *cassette.Store) *Server {
+	s.storeMu.Lock()
+	defer s.storeMu.Unlock()
+	s.stores[s.cfg.Cassette] = t
 	return s
 }
 
-// cassetteFor is the cassette a request from this client belongs in.
+// WithOpener supplies the function that opens a cassette this session has not
+// seen before, which is what lets one cs-vcr serve a whole suite of them.
+func (s *Server) WithOpener(open OpenCassette) *Server { s.open = open; return s }
+
+// storeFor is the cassette a request belongs in, opened on first use.
 //
 // Callers name the result `store`, after its type, rather than `cassette`:
 // this package calls into the cassette package throughout, and a local of that
 // name would shadow it. The domain word is used everywhere it can be.
-func (s *Server) cassetteFor(label string) *cassette.Store {
-	if t, ok := s.cassettes[label]; ok {
-		return t
+//
+// A nil store with no error is a session that records nowhere — cs-vcr as a
+// plain proxy, which is what naming no cassette asks for.
+func (s *Server) storeFor(name string) (*cassette.Store, error) {
+	// No cassette named and none configured: this session records nowhere, and
+	// cs-vcr is a plain proxy for the request.
+	if name == "" {
+		return nil, nil
 	}
-	return s.cassette
+	s.storeMu.Lock()
+	defer s.storeMu.Unlock()
+	if t, ok := s.stores[name]; ok {
+		return t, nil
+	}
+	if err, ok := s.failed[name]; ok {
+		return nil, err
+	}
+	if s.open == nil {
+		return nil, nil
+	}
+	t, err := s.open(name)
+	if err != nil {
+		s.failed[name] = err
+		return nil, err
+	}
+	s.stores[name] = t
+	return t, nil
 }
 
 // WithMissDump writes each missed request's normalized body into dir, named by
@@ -151,7 +207,7 @@ func (s *Server) Snapshot() Stats {
 	defer s.mu.Unlock()
 	cp := s.stats
 	cp.BySurface = copyCounts(s.stats.BySurface)
-	cp.ByLabel = copyCounts(s.stats.ByLabel)
+	cp.ByCassette = copyCounts(s.stats.ByCassette)
 	return cp
 }
 
@@ -168,38 +224,38 @@ func (s *Server) count(f func(*Stats)) {
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	// WHO first, and from the connection: a path prefix on the base URL. It
-	// costs a client nothing but its base URL, and works for a caller that has
-	// no token to be identified by.
-	client, rest, matched := s.cfg.MatchClient(r.URL.Path)
-	if !matched {
-		s.count(func(st *Stats) { st.Requests++; st.Unmatched++ })
-		s.log.Warn("rejected: no client matches this path",
-			slog.String("path", r.URL.Path), slog.String("remote", r.RemoteAddr))
-		writeError(w, http.StatusNotFound, "unknown_client",
-			"no client is configured for this path; expected a base URL ending in one of: "+strings.Join(s.cfg.Prefixes(), ", "))
+	// WHICH CASSETTE first, and from the connection: a /c/<name> prefix on the
+	// base URL names it. That costs a client nothing but its base URL, works
+	// for a caller with no token to be identified by, and rides on every
+	// request a client makes — including the bodiless startup probes, which
+	// carry no header that could have said it instead.
+	name, rest, err := s.cfg.RouteCassette(r.URL.Path)
+	if err != nil {
+		s.count(func(st *Stats) { st.Requests++; st.UnknownCassette++; st.Rejected++ })
+		s.log.Warn("rejected: the base URL does not name a usable cassette",
+			slog.String("path", r.URL.Path), slog.String("remote", r.RemoteAddr),
+			slog.Any("err", err))
+		writeError(w, http.StatusBadRequest, "bad_cassette_name", err.Error())
 		return
 	}
 	// Upstream must see the provider's own path, not cs-vcr's addressing, and
 	// the strip has to happen before anything else reads the path or every
 	// request would classify as an unrecognized surface.
-	stripClientPrefix(r, rest)
+	stripCassettePrefix(r, rest)
 
-	label := "default"
-	if client != nil {
-		label = client.Label
-	}
 	route := classify(r, s.cfg.DefaultProvider)
-	// A client that names its provider has already answered the question, for
-	// every path it sends: the prefix is a base URL, and a client configures one
-	// base URL per provider. Nothing about the request itself can override that.
-	if client != nil && client.Provider != "" {
-		route.Provider = client.Provider
+	// A cassette that pins its provider has already answered the question, for
+	// every path on it: the prefix is a base URL, and a client configures one
+	// base URL per provider. Nothing about the request itself can override
+	// that, which matters because inference gets a bodiless probe wrong and
+	// sends it to the other provider.
+	if p := s.cfg.ProviderFor(name); p != "" {
+		route.Provider = p
 	}
 	s.count(func(st *Stats) {
 		st.Requests++
 		st.BySurface[string(route.Surface)]++
-		st.ByLabel[label]++
+		st.ByCassette[orNone(name)]++
 	})
 
 	if !route.Surface.Recordable() {
@@ -210,7 +266,31 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// Claude Code run diverged for exactly that reason: its /api/hello
 		// probe succeeded while recording and errored while replaying.
 		s.log.Debug("unrecognized path: proxying and recording anyway",
-			slog.String("path", r.URL.Path), slog.String("label", label))
+			slog.String("path", r.URL.Path), slog.String("cassette", orNone(name)))
+	}
+
+	// Opened here, before anything is forwarded or served, so a name the store
+	// does not answer to fails this request rather than becoming a recording
+	// nobody asked for or a session that misses every step.
+	store, err := s.storeFor(name)
+	if err != nil {
+		s.count(func(st *Stats) { st.UnknownCassette++; st.Rejected++ })
+		s.log.Error("cannot use the cassette this request named",
+			slog.String("cassette", name), slog.Any("err", err))
+		// Absent and unusable are different answers to different mistakes. A
+		// cassette that is not there is a name typed wrongly into an agent's
+		// configuration; one that will not open is a cassette from another
+		// build, and reporting that as missing sends the reader to look for a
+		// directory that is sitting right there.
+		if errors.Is(err, ErrNoSuchCassette) {
+			writeError(w, http.StatusNotFound, "unknown_cassette",
+				fmt.Sprintf("no cassette named %q is in the store, and %s%s on the base URL asked for it",
+					name, config.CassettePrefix, name))
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "cassette_unusable",
+			fmt.Sprintf("the cassette %q cannot be used: %v", name, err))
+		return
 	}
 
 	prov, err := s.provider(route.Provider)
@@ -234,8 +314,6 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// two requests differing only in it are two interactions.
 	key := cassette.Normalize(r.Method, requestTarget(r), body, &s.cfg.Normalize)
 
-	store := s.cassetteFor(label)
-
 	// Replay takes the next entry of the script, and there is no code path from
 	// here to a socket: the safety is structural rather than a branch further
 	// down.
@@ -249,7 +327,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			// A miss like any other: there is nothing to serve, and the client
 			// needs the same answer whether the cassette is empty or absent.
 			s.count(func(st *Stats) { st.Rejected++; st.Misses++ })
-			s.reportMiss(w, nil, &cassette.Miss{Expected: 1}, key, label, r.URL.Path)
+			s.reportMiss(w, nil, &cassette.Miss{Expected: 1}, key, name, r.URL.Path)
 			return
 		}
 		sel, miss := store.Next(cassette.Request{
@@ -263,10 +341,10 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			// /v1/messages?beta=true then reads as "this run asked for
 			// /v1/messages instead", and the reader goes looking for a routing
 			// fault that is not there.
-			s.reportMiss(w, store, miss, key, label, key.Target)
+			s.reportMiss(w, store, miss, key, name, key.Target)
 			return
 		}
-		s.serveFromCassette(w, store, sel, label, key.Captured)
+		s.serveFromCassette(w, store, sel, name, key.Captured)
 		return
 	}
 
@@ -275,7 +353,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	s.count(func(st *Stats) { st.Upstream++; st.InFlight++ })
 	defer s.count(func(st *Stats) { st.InFlight-- })
 	s.forward(w, r, prov, recordCtx{
-		on: store != nil, store: store, key: key, route: route, label: label,
+		on: store != nil, store: store, key: key, route: route, cassette: name,
 		// key.Target, not the target as it arrived: the index records what the
 		// entry is keyed on, so a stripped query parameter is absent from both
 		// or from neither.
@@ -315,7 +393,7 @@ func readAndRestoreBody(r *http.Request) ([]byte, error) {
 // A rate limit is the case those reasons do not cover. It is recorded as a step
 // like any other, so it replays, and the client's next move is the wait the
 // header names.
-func (s *Server) serveFromCassette(w http.ResponseWriter, store *cassette.Store, sel *cassette.Selection, label string, captured map[string]string) {
+func (s *Server) serveFromCassette(w http.ResponseWriter, store *cassette.Store, sel *cassette.Selection, name string, captured map[string]string) {
 	entry := sel.Entry
 	body, err := store.Response(entry)
 	if err == nil {
@@ -334,7 +412,7 @@ func (s *Server) serveFromCassette(w http.ResponseWriter, store *cassette.Store,
 	}
 	s.count(func(st *Stats) { st.Replayed++ })
 	s.log.Info("replayed", slog.Int("seq", entry.Seq),
-		slog.String("label", label), slog.Bool("streaming", entry.Streaming))
+		slog.String("cassette", orNone(name)), slog.Bool("streaming", entry.Streaming))
 
 	// The session was supposed to reproduce the recorded order. Where it did
 	// not, say so: clients pipeline, so this is usually benign, and a run that
@@ -344,7 +422,7 @@ func (s *Server) serveFromCassette(w http.ResponseWriter, store *cassette.Store,
 		s.count(func(st *Stats) { st.OutOfOrder++ })
 		s.log.Warn("served out of recorded order",
 			slog.Int("expected", sel.Expected), slog.Int("served", entry.Seq),
-			slog.String("label", label))
+			slog.String("cassette", orNone(name)))
 	}
 	// What differed under a volatile path is the world answering differently.
 	// Accepted, never silent: it is how an environment that moved under a
@@ -387,20 +465,23 @@ func (s *Server) serveFromCassette(w http.ResponseWriter, store *cassette.Store,
 // single most likely cause of this tool being abandoned. The reply names the
 // nearest recorded request and shows how it differs, so the usual cause — a
 // prompt that changed by one line — is visible without opening the cassette.
-func (s *Server) reportMiss(w http.ResponseWriter, store *cassette.Store, miss *cassette.Miss, key cassette.Key, label, target string) {
+func (s *Server) reportMiss(w http.ResponseWriter, store *cassette.Store, miss *cassette.Miss, key cassette.Key, name, target string) {
 	// The request is named in the reply, not only in the log. An agent shows its
 	// user the message body and nothing else, so a miss that says only that it
 	// missed sends whoever is watching to go and find the server's log — which,
 	// in a sandbox, is on the other side of a network namespace.
-	name := s.cfg.Cassette
 	if store != nil {
 		name = filepath.Base(store.Cassette().Dir)
 	}
-	msg := fmt.Sprintf("no recording for %s at step %d of cassette %q (client %s), and `replay` never contacts a provider",
-		target, miss.Expected, name, label)
+	msg := fmt.Sprintf("no recording for %s at step %d of cassette %q, and `replay` never contacts a provider",
+		target, miss.Expected, name)
+	if name == "" {
+		msg = fmt.Sprintf("no cassette to serve %s from: this session names none, and the base URL carries no %s<name> prefix",
+			target, config.CassettePrefix)
+	}
 	detail := explain(miss, target)
 	s.log.Error("cassette miss",
-		slog.Int("expected", miss.Expected), slog.String("label", label),
+		slog.Int("expected", miss.Expected), slog.String("cassette", orNone(name)),
 		slog.String("target", target), slog.String("why", detail))
 	s.dumpMiss(miss, key, target)
 	// 400, and the status is chosen by what the client does with it rather than
@@ -513,7 +594,7 @@ type recordCtx struct {
 	store        *cassette.Store
 	key          cassette.Key
 	route        Route
-	label        string
+	cassette     string
 	method, path string
 }
 
@@ -607,7 +688,7 @@ func (s *Server) record(t *tap, rec recordCtx, started time.Time, complete, clie
 		// same: a request that went upstream and left no entry is exactly the
 		// silence this deferred write exists to end.
 		s.log.Warn("upstream produced no response; nothing to record",
-			slog.String("hash", rec.key.Hash[:12]), slog.String("label", rec.label))
+			slog.String("hash", rec.key.Hash[:12]), slog.String("cassette", orNone(rec.cassette)))
 		return
 	}
 	if !complete {
@@ -624,7 +705,7 @@ func (s *Server) record(t *tap, rec recordCtx, started time.Time, complete, clie
 			reason = "the client closed the connection before the response ended"
 		}
 		s.log.Warn("recording an interrupted response: "+reason,
-			slog.String("hash", rec.key.Hash[:12]), slog.String("label", rec.label),
+			slog.String("hash", rec.key.Hash[:12]), slog.String("cassette", orNone(rec.cassette)),
 			slog.Int("events", t.events), slog.Int("bytes", t.body.Len()))
 	}
 	if t.dropped > 0 {
@@ -635,7 +716,7 @@ func (s *Server) record(t *tap, rec recordCtx, started time.Time, complete, clie
 		// because half an answer replays as half an answer, and a client waiting
 		// for the end of a stream that never arrives hangs to its own timeout.
 		s.log.Warn("the response outgrew the capture limit; this step replays truncated, so re-record it",
-			slog.String("hash", rec.key.Hash[:12]), slog.String("label", rec.label),
+			slog.String("hash", rec.key.Hash[:12]), slog.String("cassette", orNone(rec.cassette)),
 			slog.Int("kept", t.body.Len()), slog.Int("dropped", t.dropped))
 	}
 	// Record everything except what a client would retry.
@@ -654,7 +735,7 @@ func (s *Server) record(t *tap, rec recordCtx, started time.Time, complete, clie
 		// also a sign the recording was made against a provider having a bad
 		// moment. Re-record if that is not the session you meant to keep.
 		s.log.Warn("recording a transient failure as a step of the session",
-			slog.Int("status", t.status), slog.String("label", rec.label))
+			slog.Int("status", t.status), slog.String("cassette", orNone(rec.cassette)))
 	}
 	entry := cassette.Entry{
 		Hash:        rec.key.Hash,
@@ -690,7 +771,7 @@ func (s *Server) record(t *tap, rec recordCtx, started time.Time, complete, clie
 	}
 	s.count(func(st *Stats) { st.Recorded++ })
 	s.log.Info("recorded", slog.Int("seq", written.Seq),
-		slog.String("label", rec.label), slog.String("model", entry.Model),
+		slog.String("cassette", orNone(rec.cassette)), slog.String("model", entry.Model),
 		slog.Bool("streaming", entry.Streaming), slog.Int("events", t.events))
 }
 
@@ -746,13 +827,23 @@ func requestTarget(r *http.Request) string {
 	return r.URL.Path + "?" + r.URL.RawQuery
 }
 
-// stripClientPrefix rewrites the request path to what upstream should see,
-// after the client's prefix has identified it.
+// orNone names the cassette a request belonged to, for a log line or a counter
+// where "" would read as a missing field rather than as a session that records
+// nowhere.
+func orNone(name string) string {
+	if name == "" {
+		return "-"
+	}
+	return name
+}
+
+// stripCassettePrefix rewrites the request path to what upstream should see,
+// after the prefix has named the cassette.
 //
 // RawPath matters: it is set only when the escaped form differs from Path, and
 // leaving a stale one behind would send upstream a path that disagrees with
 // the one just matched.
-func stripClientPrefix(r *http.Request, rest string) {
+func stripCassettePrefix(r *http.Request, rest string) {
 	if r.URL.Path == rest {
 		return
 	}

@@ -5,11 +5,14 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"log/slog"
+	"maps"
 	"net"
 	"net/http"
 	"os/signal"
 	"path/filepath"
+	"slices"
 	"syscall"
 	"text/tabwriter"
 	"time"
@@ -43,7 +46,9 @@ whatever login it has:
   ANTHROPIC_BASE_URL=http://127.0.0.1:8080
   OPENAI_BASE_URL=http://127.0.0.1:8080
 
-Add /c/<name> to the base URL to record several agents into separate cassettes.`
+Add /c/<name> to the base URL and that request belongs to the cassette <name>,
+which is how several agents share one cs-vcr. Nothing declares the name: run
+"cs-vcr config <agent>" for the exact setting each client wants.`
 	if offline {
 		use, short, long = "replay", "Replay a cassette, contacting no provider",
 			`Serve an agent's LLM traffic entirely from a cassette. No provider is ever
@@ -79,7 +84,8 @@ configured not to, but because it is not built with anywhere to send a request.`
 	}
 	cmd.Flags().StringVar(&listen, "listen", "", "address for the proxied port (default 127.0.0.1:8080)")
 	cmd.Flags().StringVar(&admin, "admin", "", "address for /healthz (default 127.0.0.1:8081)")
-	cmd.Flags().StringVar(&cassette, "cassette", "", "cassette this session uses (default \"default\")")
+	cmd.Flags().StringVar(&cassette, "cassette", "",
+		"cassette a request with no /c/<name> prefix belongs to")
 	cmd.Flags().StringVar(&cassettes, "cassettes", "", "directory holding cassettes (default ./cassettes)")
 	if offline {
 		// Only on replay: it is the command that can miss.
@@ -93,17 +99,34 @@ func runServe(ctx context.Context, app *App, out io.Writer, offline bool, dumpMi
 	cfg := app.Cfg
 	srv := proxy.New(cfg, app.Log, offline)
 
-	// The cassette, unless this session neither records nor replays. Opening it
-	// at startup rather than on the first request means a bad path or an
-	// unreadable cassette fails the run immediately, instead of turning into a
-	// storm of misses halfway through a CI job.
-	// A cassette only where one was named. Naming one is what asks for
-	// recording; without a name there is nothing to record into and cs-vcr is
-	// simply a proxy.
+	// How a cassette is opened is the command's decision, and it is the same
+	// decision as whether money can be spent: `record` creates what is not
+	// there, `replay` refuses it. Replay creating one would turn a base URL
+	// with a typo in it into a session that missed every request, which reads
+	// as an agent that diverged.
 	open := func(name string) (*cassette.Store, error) {
-		return cassette.OpenStore(filepath.Join(cfg.Cassettes, name),
-			Version, cfg.Normalize.Version, func() int64 { return time.Now().Unix() })
+		dir := filepath.Join(cfg.Cassettes, name)
+		if offline {
+			store, err := cassette.OpenExistingStore(dir, cfg.Normalize.Version)
+			if errors.Is(err, fs.ErrNotExist) {
+				return nil, fmt.Errorf("%w: %s", proxy.ErrNoSuchCassette, dir)
+			}
+			return store, err
+		}
+		return cassette.OpenStore(dir, Version, cfg.Normalize.Version,
+			func() int64 { return time.Now().Unix() })
 	}
+	srv = srv.WithOpener(open)
+
+	// The session's own cassette is opened at startup rather than on the first
+	// request, so a bad path or a cassette from another build fails the run
+	// immediately instead of becoming a storm of misses halfway through a CI
+	// job. A cassette only where one was named: naming one is what asks for
+	// recording, and without a name cs-vcr is simply a proxy.
+	//
+	// A cassette a base URL names is opened when its first request arrives.
+	// That is what lets one cs-vcr hold a whole suite of scenarios without any
+	// of them being declared anywhere.
 	if cfg.Cassette != "" {
 		store, err := open(cfg.Cassette)
 		if err != nil {
@@ -112,23 +135,6 @@ func runServe(ctx context.Context, app *App, out io.Writer, offline bool, dumpMi
 		srv = srv.WithCassette(store)
 		app.Log.Info("cassette open",
 			slog.String("name", cfg.Cassette), slog.Int("entries", store.Len()))
-	}
-	// A cassette per client where one is named. Several agents through one
-	// cs-vcr is the campaign case, and they must not share a key namespace:
-	// an orchestrator and the member it delegates to receive the same opening
-	// prompt, so their first requests normalize to identical bytes.
-	for _, cl := range cfg.Clients {
-		if cl.Cassette == "" {
-			continue
-		}
-		store, err := open(cl.Cassette)
-		if err != nil {
-			return fmt.Errorf("cassette %s (client %s): %w", cl.Cassette, cl.Label, err)
-		}
-		srv = srv.WithClientCassette(cl.Label, store)
-		app.Log.Info("cassette open",
-			slog.String("name", cl.Cassette), slog.String("client", cl.Label),
-			slog.Int("entries", store.Len()))
 	}
 	if dumpMisses != "" {
 		srv = srv.WithMissDump(dumpMisses)
@@ -166,8 +172,8 @@ func runServe(ctx context.Context, app *App, out io.Writer, offline bool, dumpMi
 
 	app.Log.Info("serving",
 		slog.Bool("offline", offline),
-		slog.String("cassette", cfg.Cassette),
-		slog.Int("clients", len(cfg.Clients)),
+		slog.String("cassette", orDash(cfg.Cassette)),
+		slog.Int("pinned providers", len(cfg.CassetteProvider)),
 		slog.String("listen", pl.Addr().String()),
 		slog.String("admin", al.Addr().String()),
 		slog.Int("providers", len(cfg.Providers)))
@@ -244,7 +250,7 @@ func summarize(out io.Writer, st proxy.Stats, cfg *config.Config, offline bool) 
 	fmt.Fprintf(tw, "recorded\t%d\n", st.Recorded)
 	fmt.Fprintf(tw, "upstream calls\t%d\n", st.Upstream)
 	fmt.Fprintf(tw, "misses\t%d\n", st.Misses)
-	fmt.Fprintf(tw, "unmatched client\t%d\n", st.Unmatched)
+	fmt.Fprintf(tw, "unknown cassette\t%d\n", st.UnknownCassette)
 	fmt.Fprintf(tw, "rejected\t%d\n", st.Rejected)
 	// Only when it happened. A zero is the ordinary case and would be one more
 	// number to read past; a non-zero is a provider call this session paid for
@@ -263,11 +269,13 @@ func summarize(out io.Writer, st proxy.Stats, cfg *config.Config, offline bool) 
 	if st.OutOfOrder > 0 {
 		fmt.Fprintf(tw, "out of recorded order\t%d\n", st.OutOfOrder)
 	}
-	for surface, n := range st.BySurface {
-		fmt.Fprintf(tw, "  surface %s\t%d\n", surface, n)
+	for _, surface := range slices.Sorted(maps.Keys(st.BySurface)) {
+		fmt.Fprintf(tw, "  surface %s\t%d\n", surface, st.BySurface[surface])
 	}
-	for label, n := range st.ByLabel {
-		fmt.Fprintf(tw, "  client %s\t%d\n", label, n)
+	// Sorted, because this is now as long as the session had cassettes rather
+	// than as long as the config, and map order would reshuffle it every run.
+	for _, name := range slices.Sorted(maps.Keys(st.ByCassette)) {
+		fmt.Fprintf(tw, "  cassette %s\t%d\n", name, st.ByCassette[name])
 	}
 	if err := tw.Flush(); err != nil {
 		return err
@@ -294,22 +302,15 @@ func printConfig(out io.Writer, app *App) error {
 	fmt.Fprintf(tw, "normalize ruleset\tv%d (%d strip, %d query, %d replace)\n",
 		cfg.Normalize.Version, len(cfg.Normalize.Strip), len(cfg.Normalize.Query), len(cfg.Normalize.Replace))
 	fmt.Fprintf(tw, "normalize root\t%s\n", orDash(cfg.Normalize.Root))
+	fmt.Fprintf(tw, "cassette prefix\t%s<name>\n", config.CassettePrefix)
 	fmt.Fprintln(tw, "\nPROVIDER\tBASE URL")
-	for name, p := range cfg.Providers {
-		fmt.Fprintf(tw, "%s\t%s\n", name, p.BaseURL)
+	for _, name := range slices.Sorted(maps.Keys(cfg.Providers)) {
+		fmt.Fprintf(tw, "%s\t%s\n", name, cfg.Providers[name].BaseURL)
 	}
-	if len(cfg.Clients) > 0 {
-		fmt.Fprintln(tw, "\nCLIENT\tMATCHES\tCASSETTE\tPROVIDER")
-		for _, cl := range cfg.Clients {
-			match := cl.Match.PathPrefix
-			if match == "" {
-				match = "(everything)"
-			}
-			provider := cl.Provider
-			if provider == "" {
-				provider = "(by path)"
-			}
-			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", cl.Label, match, orDash(cl.Cassette), provider)
+	if len(cfg.CassetteProvider) > 0 {
+		fmt.Fprintln(tw, "\nCASSETTE\tPINNED PROVIDER")
+		for _, name := range slices.Sorted(maps.Keys(cfg.CassetteProvider)) {
+			fmt.Fprintf(tw, "%s\t%s\n", name, cfg.CassetteProvider[name])
 		}
 	}
 	return tw.Flush()

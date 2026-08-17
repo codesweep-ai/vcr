@@ -1,0 +1,20 @@
+{
+  "id": "VCR-002",
+  "title": "Reaching a second cassette needs a clients block, so a scenario cannot be added by base URL alone",
+  "type": "improvement",
+  "severity": "med",
+  "status": "in-progress",
+  "foundBy": "user report (jsd): selecting a cassette by URL pattern \"wasn't convenient at all\"",
+  "opened": "2026-08-17",
+  "resolved": null,
+  "stint": "2026-08-17 session: name the cassette on the base URL",
+  "evidence": {
+    "commits": [],
+    "integrated": [],
+    "verified": null
+  },
+  "resolution": null,
+  "details": "A `/c/<name>` prefix on the base URL tells cs-vcr which cassette a request belongs to, but the prefix reaches a cassette only through a `clients:` entry in the configuration file. Each entry pairs a label, a path prefix and a cassette, so adding one scenario means editing two things that have to agree: the agent's base URL and cs-vcr's own config.\n\nThat cost lands hardest where the mechanism is most useful. A build that wants a cassette per test has to declare every test in the config file before any of them can run, and a test added later fails with `unknown_client` until somebody remembers the second edit.\n\nThe prefix already carries the name. Nothing else in the entry is needed to find the cassette: the label only appears in logs, and the `cassette:` field restates what the prefix said. So the design is to let the prefix name the cassette directly, with nothing declaring it, and to keep the one thing an entry carried that a prefix cannot — a pinned provider — as a map keyed by cassette name.\n\nA request header was weighed against this and measured first: all three agents can send one from an environment variable, and `ANTHROPIC_CUSTOM_HEADERS`, `env_http_headers` and OpenCode's `{env:...}` interpolation were each confirmed on the wire. The prefix won on two counts. It costs one setting rather than two, and it rides on requests that carry no headers at all: Claude Code opens a connection with a bare `HEAD /api/hello` preconnect built from a method and nothing else.",
+  "notes": [],
+  "links": []
+}

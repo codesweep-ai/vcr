@@ -87,6 +87,12 @@ ANTHROPIC_BASE_URL=http://127.0.0.1:8080 claude -p "add a /version endpoint"
 
 **Where each client expects that URL to end differs**, because each appends a different amount of
 the API path to it, and Codex needs a `model_providers` entry rather than an environment variable.
+Ask cs-vcr for the one you want, and it prints the command to run:
+
+```bash
+cs-vcr config claude --cassette build
+```
+
 The [README walkthroughs](README.md#walkthroughs) have the recipe for each of the three, end to end.
 
 Confirm it is working:

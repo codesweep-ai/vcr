@@ -416,14 +416,12 @@ func fakeCodexLogin() string {
 // three of them, so the provider is a parameter rather than a scenario each.
 func openCode(name, auth, model, provider, upstream, key string) scenario {
 	// Fireworks is not a provider cs-vcr routes to by path — every OpenAI-shaped
-	// request looks the same — so it is named by a client instead. One catch-all
-	// client, which is what a single agent behind one proxy is.
+	// request looks the same — so this cassette pins it instead, and every path
+	// on the cassette goes there whatever the path says.
 	config := fmt.Sprintf("providers:\n  %s: {base_url: %s}\n", provider, upstream)
-	switch provider {
-	case "anthropic", "openai":
-		config += "default_provider: " + provider + "\n"
-	default:
-		config += "default_provider: " + provider + "\nclients:\n  - label: opencode\n    provider: " + provider + "\n"
+	config += "default_provider: " + provider + "\n"
+	if provider != "anthropic" && provider != "openai" {
+		config += fmt.Sprintf("cassette_provider:\n  %s: %s\n", name, provider)
 	}
 	return scenario{
 		name: name, bin: "opencode", auth: auth, model: model,

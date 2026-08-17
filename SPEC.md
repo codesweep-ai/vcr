@@ -19,7 +19,7 @@ time.
 
 1. A recorded session **MUST** replay with no provider reachable and no credential configured.
 2. A cassette **MUST** be reviewable as a text diff in a pull request.
-3. Pointing an agent at cs-vcr **MUST** require no change to it beyond a base URL.
+3. Pointing an agent at cs-vcr, at any cassette, **MUST** require no change to it beyond a base URL.
 4. An agent's own credential **MUST** reach the provider unchanged.
 
 ### 1.2 Non-goals
@@ -42,7 +42,7 @@ different on the replay run still prints something different, and no rule should
 | **cassette** | A directory holding one recorded session, committed to the repo it belongs to. |
 | **step** | One request and the response it received. A cassette is an ordered list of steps. |
 | **script** | The steps of a cassette, in the order the session made them. |
-| **client** | One agent cs-vcr can tell apart, identified by a path prefix on its base URL. |
+| **client** | The agent making a request, as cs-vcr sees it: an HTTP client and a base URL. |
 | **surface** | The API shape a request belongs to, such as `anthropic.messages`. |
 | **canonical request** | The request body reduced to a comparable form: keys sorted, rules applied. |
 | **alignment** | The comparison of a live request against the recorded one, field by field. |
@@ -77,7 +77,7 @@ decides whether the session can spend money.
 | `cs-vcr cassette scrub [NAME...]` | Reports credentials and personal data. `--force` removes them. |
 | `cs-vcr cassette prune NAME` | Reports unreferenced body files. `--force` deletes them. |
 | `cs-vcr calibrate NAME MISSDIR` | Proposes `volatile` paths from a failed replay. |
-| `cs-vcr config` | Prints the resolved configuration. |
+| `cs-vcr config [AGENT]` | Prints the resolved configuration, or how to point an agent at a cassette. |
 | `cs-vcr manual` | Prints `MANUAL.md`, embedded in the binary at build time. |
 | `cs-vcr version` | Prints the version, platform and Go version. |
 
@@ -88,11 +88,11 @@ accepts `--dump-misses DIR`.
 
 ```
    agent
-     │  POST /c/feature/v1/messages   authorization: Bearer …
+     │  POST /c/refactor-auth/v1/messages   authorization: Bearer …
      ▼
   ┌──────────────────────────────────────────────────────────────┐
-  │ identify        path prefix -> client, prefix stripped       │
-  │ classify        path, then the client's own provider         │
+  │ identify        /c/<name> -> cassette, prefix stripped       │
+  │ classify        path, then the cassette's pinned provider    │
   │ normalize       canonical form of method, target and body    │
   │                                                              │
   │ replay          next step of the script, verified by         │
@@ -105,9 +105,24 @@ accepts `--dump-misses DIR`.
    provider
 ```
 
-**R1.** Identity **MUST** be established first, and the client prefix **MUST** be stripped before
+**R1.** The cassette **MUST** be established first, and the prefix **MUST** be stripped before
 anything else reads the path. *Otherwise every request classifies as an unrecognized surface, and
 the provider receives cs-vcr's own addressing.*
+
+**R1a.** A `/c/<name>` prefix **MUST** name the cassette directly, with nothing declaring it. A
+request carrying no prefix **MUST** belong to the session's cassette. *A scenario that has to be
+declared in a second file before it can run is a scenario that stops a build until two files agree
+about it. Some requests also cannot carry anything else: Claude Code opens a connection with a bare
+`HEAD /api/hello` preconnect that sets no headers at all, so the fallback is what catches it.*
+
+**R1b.** A cassette name **MUST** be one path segment of letters, digits, dot, dash or underscore,
+beginning with a letter or digit. A name that is not **MUST** be refused. *The name arrives in a URL
+and becomes a directory, so `/c/../../etc` would otherwise read outside the store.*
+
+**R1c.** A cassette named by a prefix **MUST** be opened when its first request arrives. `record`
+**MUST** create one that is absent; `replay` **MUST** refuse it. *Replay creating one answers every
+request with a miss, which reads as an agent that diverged rather than as a base URL with a typo in
+it.*
 
 **R2.** Request headers **MUST** cross unchanged, including the credential.
 
@@ -214,7 +229,7 @@ does not exist on this machine.*
 
 ## 6. Routing
 
-A request is routed by path first, then by the client's own configuration.
+A request is routed by path first, then by the pin its cassette carries.
 
 | Path | Surface | Provider |
 |---|---|---|
@@ -230,8 +245,8 @@ signed in with ChatGPT talks to a backend whose endpoint is `/responses`, with n
 **R19.** A path cs-vcr does not model **MUST** still be proxied, recorded and replayed. *A request
 that is proxied but not recorded is one replay can never serve.*
 
-**R20.** When a client names a `provider`, every request on its prefix **MUST** go there, whatever
-the path.
+**R20.** When a cassette is pinned to a `provider`, every request on its prefix **MUST** go there,
+whatever the path.
 
 **R21.** Otherwise an unrecognized path **MUST** be routed by the Anthropic-specific request headers
 when present, and by `default_provider` when not.
@@ -297,7 +312,10 @@ Every error cs-vcr generates is a JSON object with `error.type`, `error.message`
 
 | `error.type` | Status | Condition |
 |---|---|---|
-| `unknown_client` | 404 | The path matches no configured client. |
+| `bad_cassette_name` | 400 | The prefix names something that is not a cassette name. |
+| `unreadable_body` | 400 | The request body could not be read. |
+| `unknown_cassette` | 404 | Replay was asked for a cassette the store does not hold. |
+| `cassette_unusable` | 500 | The cassette a request named will not open, usually a version that moved. |
 | `cassette_miss` | 400 | Replay has no step for this request. |
 | `cassette_corrupt` | 500 | The index references a response file that is absent. |
 | `no_provider` | 502 | No upstream is configured for the routed provider. |
@@ -309,9 +327,9 @@ answer 404 on a model endpoint. *Stainless-generated SDKs retry a 5xx, which tur
 sixteen requests. A 404 on `/v1/messages` is how the API reports an unknown model. One miss
 therefore reached an operator as "that model may not exist or you may not have access to it".*
 
-**R32.** A request matching no configured client **MUST** be refused with 404 rather than attributed
-to a default. *Otherwise a mistyped base URL looks like it worked while its traffic misses the
-cassette it was meant to land in.*
+**R32.** A prefix naming a cassette that cannot be used **MUST** be refused rather than attributed
+to the session's. *Otherwise a mistyped base URL looks like it worked while its traffic lands in
+another scenario's recording.*
 
 **R33.** A replay session that ends with one or more misses **MUST** exit 4.
 
@@ -325,7 +343,7 @@ Both commands print a summary on exit. It is the artifact a CI log shows.
 | `replayed` / `recorded` | Steps served from the cassette, and appended to it. |
 | `upstream calls` | Requests that reached a provider. Always 0 under `replay`. |
 | `misses` | Requests with no recording. Fails a replay session. |
-| `unmatched client` | Requests whose path matched no configured client. |
+| `unknown cassette` | Requests whose prefix named a cassette that could not be used. |
 | `rejected` | Requests answered with an error. |
 | `abandoned` | Printed when the session exited with requests still in flight. |
 | `drifted observations` | Printed when a difference was tolerated at a volatile path. |
@@ -473,15 +491,12 @@ providers:
   openai: {base_url: https://api.openai.com}
 default_provider: anthropic
 
-clients:
-  - label: feature
-    match: {path_prefix: /c/feature}
-    cassette: refactor-auth
-    provider: anthropic
+cassette_provider:
+  refactor-auth: anthropic
 
 normalize:
   version: 6
-  volatile: [input[].output, messages[].content[].content]
+  volatile: ["input[].output", "messages[].content[].content"]
   strip_fields: [client_metadata, prompt_cache_key]
   strip_query: [client_version]
   replace:
@@ -496,11 +511,11 @@ was ignored".*
 
 **R44.** An invalid `replace` or `capture` pattern **MUST** fail at startup, not per request.
 
-**R45.** At most one client **MAY** omit `match`, and it **MUST** be last. *A client declared after a
-catch-all could never match, and the file would silently mean something other than it reads like.*
+**R45.** A `cassette_provider` key **MUST** be a valid cassette name. *It names a cassette, and a
+key no prefix can ever produce is a pin that silently never applies.*
 
-**R46.** Two clients **MUST NOT** share one cassette. *A cassette is one session's script, and two
-agents writing into one interleave their sessions in it.*
+**R46.** A `cassette_provider` value **MUST** name a configured provider. *Checked at startup,
+because a typo otherwise surfaces as a 502 on the first request of a recording session.*
 
 **R47.** The configuration **MUST NOT** contain a credential.
 
@@ -511,7 +526,7 @@ of an array and a path covers everything beneath it.
 |---|---|
 | `CS_VCR_CONFIG` | Config file path. |
 | `CS_VCR_CASSETTES` | Cassette store directory. |
-| `VCR_CASSETTE` | Cassette this session uses. |
+| `VCR_CASSETTE` | Cassette a request with no prefix belongs to. |
 | `VCR_LISTEN` / `VCR_ADMIN` | Listen addresses. |
 | `VCR_ROOT` | Checkout root, where it is not the working directory. |
 

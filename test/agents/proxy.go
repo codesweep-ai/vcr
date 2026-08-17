@@ -15,6 +15,8 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/codesweep-ai/vcr/internal/config"
 )
 
 // proxy is a cs-vcr process the suite starts, drives an agent at, and stops.
@@ -71,7 +73,7 @@ func binary() (string, error) {
 // Waiting is not politeness: the agent is started immediately afterwards, and an
 // agent that reaches a port nothing is listening on yet reports a network error
 // rather than a missing recording.
-func startProxy(ctx context.Context, sc scenario, ws *workspace, cassettes, configPath string, offline bool, missDir string) (*proxy, error) {
+func startProxy(ctx context.Context, ws *workspace, cassettes, configPath string, offline bool, missDir string) (*proxy, error) {
 	bin, err := binary()
 	if err != nil {
 		return nil, err
@@ -84,8 +86,12 @@ func startProxy(ctx context.Context, sc scenario, ws *workspace, cassettes, conf
 	if offline {
 		mode = "replay"
 	}
+	// No --cassette. The agent's base URL carries a /c/<scenario> prefix, so
+	// the prefix is the only thing that can select the cassette: a request that
+	// arrived without one would belong to no cassette and miss, which is what
+	// makes this an assertion rather than a configuration.
 	args := []string{"--config", configPath, mode,
-		"--cassette", sc.name, "--cassettes", cassettes,
+		"--cassettes", cassettes,
 		"--listen", "127.0.0.1:" + strconv.Itoa(port),
 		"--admin", "127.0.0.1:" + strconv.Itoa(admin)}
 	if missDir != "" {
@@ -113,8 +119,12 @@ func startProxy(ctx context.Context, sc scenario, ws *workspace, cassettes, conf
 	return p, nil
 }
 
-func (p *proxy) baseURL(suffix string) string {
-	return "http://127.0.0.1:" + strconv.Itoa(p.port) + suffix
+// baseURL is what an agent is pointed at: this proxy, the prefix naming the
+// cassette its traffic belongs to, and whatever path fragment the client
+// expects to be given. Where the prefix sits relative to that fragment is the
+// thing this suite is proving, so it is composed here and nowhere else.
+func (p *proxy) baseURL(cassette, suffix string) string {
+	return "http://127.0.0.1:" + strconv.Itoa(p.port) + config.CassettePrefix + cassette + suffix
 }
 
 func (p *proxy) waitReady() error {

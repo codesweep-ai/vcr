@@ -188,7 +188,7 @@ func runScenario(t *testing.T, sc scenario, cred credential, m mode, cassettes s
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
-	p, err := startProxy(ctx, sc, ws, cassettes, configPath, m == replay, missDir)
+	p, err := startProxy(ctx, ws, cassettes, configPath, m == replay, missDir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -199,7 +199,7 @@ func runScenario(t *testing.T, sc scenario, cred credential, m mode, cassettes s
 		}
 	}()
 
-	base := p.baseURL(sc.urlSuffix)
+	base := p.baseURL(sc.name, sc.urlSuffix)
 	if err := sc.prepare(sc, ws, cred, m, base); err != nil {
 		t.Fatal(err)
 	}

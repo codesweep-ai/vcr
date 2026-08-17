@@ -33,91 +33,100 @@ func TestLoadRejectsUnknownKeys(t *testing.T) {
 	}
 }
 
-// Matching is on segment boundaries, and the remainder is what upstream sees.
-func TestMatchClient(t *testing.T) {
+// The prefix names the cassette with nothing declared anywhere, and the
+// remainder is what upstream sees. Splitting is on segment boundaries, so
+// /c/featurex is its own cassette rather than the cassette `feature`.
+func TestRouteCassette(t *testing.T) {
 	c := Default()
-	c.Clients = []*Client{
-		{Label: "feature", Match: ClientMatch{PathPrefix: "/c/feature"}},
-		{Label: "feat", Match: ClientMatch{PathPrefix: "/c/feat"}},
-	}
-	cases := []struct {
-		path, label, rest string
-		matched           bool
-	}{
-		{"/c/feature/v1/messages", "feature", "/v1/messages", true},
-		{"/c/feat/v1/messages", "feat", "/v1/messages", true},
+	c.Cassette = "session"
+	cases := []struct{ path, name, rest string }{
+		{"/c/feature/v1/messages", "feature", "/v1/messages"},
+		{"/c/feat/v1/messages", "feat", "/v1/messages"},
+		{"/c/featurex/v1/messages", "featurex", "/v1/messages"},
 		// A bare prefix is a valid request for the provider's root.
-		{"/c/feature", "feature", "/", true},
-		// Not a segment boundary, and not any other client either.
-		{"/c/featurex/v1/messages", "", "", false},
-		{"/v1/messages", "", "", false},
+		{"/c/feature", "feature", "/"},
+		// No prefix at all: the session's cassette, and the path untouched.
+		{"/v1/messages", "session", "/v1/messages"},
+		{"/api/hello", "session", "/api/hello"},
 	}
 	for _, tc := range cases {
-		cl, rest, ok := c.MatchClient(tc.path)
-		if ok != tc.matched {
-			t.Errorf("MatchClient(%q) matched = %v, want %v", tc.path, ok, tc.matched)
+		name, rest, err := c.RouteCassette(tc.path)
+		if err != nil {
+			t.Errorf("RouteCassette(%q): %v", tc.path, err)
 			continue
 		}
-		if !ok {
-			continue
-		}
-		if cl.Label != tc.label {
-			t.Errorf("MatchClient(%q) label = %q, want %q", tc.path, cl.Label, tc.label)
+		if name != tc.name {
+			t.Errorf("RouteCassette(%q) cassette = %q, want %q", tc.path, name, tc.name)
 		}
 		if rest != tc.rest {
-			t.Errorf("MatchClient(%q) rest = %q, want %q — upstream must see its own path", tc.path, rest, tc.rest)
+			t.Errorf("RouteCassette(%q) rest = %q, want %q — upstream must see its own path", tc.path, rest, tc.rest)
 		}
 	}
 }
 
-// With no clients configured everything still works, so the simple deployment
-// pays nothing for a feature it is not using.
-func TestMatchClientWithNoneConfigured(t *testing.T) {
-	c := Default()
-	cl, rest, ok := c.MatchClient("/v1/messages")
-	if !ok || cl != nil || rest != "/v1/messages" {
-		t.Errorf("MatchClient = (%v, %q, %v), want an unnamed match with the path untouched", cl, rest, ok)
+// With no session cassette and no prefix a request belongs nowhere, and cs-vcr
+// is a plain proxy for it. The simple deployment pays nothing for a feature it
+// is not using.
+func TestRouteCassetteWithNothingConfigured(t *testing.T) {
+	name, rest, err := Default().RouteCassette("/v1/messages")
+	if err != nil || name != "" || rest != "/v1/messages" {
+		t.Errorf("RouteCassette = (%q, %q, %v), want no cassette and the path untouched", name, rest, err)
 	}
 }
 
-// A catch-all client is the escape hatch for a caller that cannot be given a
-// prefix — but it must be last, or the clients after it are dead config that
-// reads as though it works.
-func TestCatchAllMustBeLast(t *testing.T) {
+// The name arrives in a URL and becomes a directory, so it is checked rather
+// than trusted. Without this, /c/../../etc reads outside the cassette store.
+func TestRouteCassetteRejectsWhatIsNotAName(t *testing.T) {
 	c := Default()
-	c.Clients = []*Client{
-		{Label: "everything"},
-		{Label: "feature", Match: ClientMatch{PathPrefix: "/c/feature"}},
+	c.Cassette = "session"
+	// Each of these reaches RouteCassette as the segment after /c/, which is
+	// what a client would have to send to escape the store.
+	for _, name := range []string{"..", ".hidden", "-flag", "", "a b", strings.Repeat("x", 129)} {
+		if err := CheckCassetteName(name); err == nil {
+			t.Errorf("CheckCassetteName(%q) accepted it", name)
+		}
+		if got, _, err := c.RouteCassette("/c/" + name + "/v1/messages"); err == nil {
+			t.Errorf("RouteCassette(/c/%s/…) accepted it as %q", name, got)
+		}
 	}
+	// A bare prefix is refused rather than quietly becoming the session's, or a
+	// base URL ending in /c/ would record into the wrong cassette in silence.
+	if _, _, err := c.RouteCassette("/c/"); err == nil {
+		t.Error("a base URL ending in the bare prefix was accepted")
+	}
+	for _, name := range []string{"build", "claude-code-api-key", "run_2", "a.b", "A1"} {
+		if err := CheckCassetteName(name); err != nil {
+			t.Errorf("CheckCassetteName(%q) refused a usable name: %v", name, err)
+		}
+	}
+}
+
+// A pinned provider is what a bodiless startup probe follows, so a typo in one
+// has to fail at startup rather than as a 502 partway through a recording.
+func TestCassetteProviderMustNameAProviderThatExists(t *testing.T) {
+	c := Default()
+	c.CassetteProvider = map[string]string{"build": "anthropick"}
 	if err := c.Resolve(); err == nil {
-		t.Fatal("a client that can never match was accepted")
+		t.Fatal("a pin naming no configured provider was accepted")
 	}
-
-	c.Clients = []*Client{
-		{Label: "feature", Match: ClientMatch{PathPrefix: "/c/feature"}},
-		{Label: "everything"},
-	}
+	c.CassetteProvider = map[string]string{"build": "anthropic"}
 	if err := c.Resolve(); err != nil {
-		t.Fatalf("a trailing catch-all should be fine: %v", err)
+		t.Fatalf("a pin naming a configured provider was refused: %v", err)
 	}
-	if cl, _, ok := c.MatchClient("/anything/else"); !ok || cl.Label != "everything" {
-		t.Errorf("the catch-all did not catch: %v %v", cl, ok)
+	if got := c.ProviderFor("build"); got != "anthropic" {
+		t.Errorf("ProviderFor(build) = %q, want anthropic", got)
+	}
+	if got := c.ProviderFor("other"); got != "" {
+		t.Errorf("ProviderFor(other) = %q, want no pin", got)
 	}
 }
 
-func TestResolveRejectsBadClients(t *testing.T) {
-	cases := map[string][]*Client{
-		"no label":         {{Match: ClientMatch{PathPrefix: "/c/x"}}},
-		"duplicate label":  {{Label: "a", Match: ClientMatch{PathPrefix: "/c/x"}}, {Label: "a", Match: ClientMatch{PathPrefix: "/c/y"}}},
-		"prefix without /": {{Label: "a", Match: ClientMatch{PathPrefix: "c/x"}}},
-		"two catch-alls":   {{Label: "a"}, {Label: "b"}},
-	}
-	for name, clients := range cases {
-		c := Default()
-		c.Clients = clients
-		if err := c.Resolve(); err == nil {
-			t.Errorf("%s: accepted", name)
-		}
+// The pin is keyed by cassette, so its key is checked the way a prefix is.
+func TestCassetteProviderChecksItsKey(t *testing.T) {
+	c := Default()
+	c.CassetteProvider = map[string]string{"../escape": "anthropic"}
+	if err := c.Resolve(); err == nil {
+		t.Fatal("a pin keyed by something that is not a cassette name was accepted")
 	}
 }
 

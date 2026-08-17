@@ -39,7 +39,7 @@ func TestQueryStringIsPartOfTheKey(t *testing.T) {
 		r := httptest.NewRequest(http.MethodPost, "/v1/messages"+q, strings.NewReader(`{"m":1}`))
 		rec.ServeHTTP(httptest.NewRecorder(), r)
 	}
-	if n := rec.cassette.Len(); n != 2 {
+	if n := sessionStore(t, rec).Len(); n != 2 {
 		t.Fatalf("distinct entries = %d, want 2 — the query is part of the interaction", n)
 	}
 	// And it must reach the provider, or the beta features were silently
@@ -104,7 +104,7 @@ func TestMethodIsPartOfTheKey(t *testing.T) {
 	for _, m := range []string{http.MethodGet, http.MethodHead, http.MethodPost} {
 		rec.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(m, "/api/hello", http.NoBody))
 	}
-	if n := rec.cassette.Len(); n != 3 {
+	if n := sessionStore(t, rec).Len(); n != 3 {
 		t.Fatalf("distinct entries = %d, want one per method", n)
 	}
 }
@@ -152,12 +152,12 @@ func TestConcurrentMembersShareOneCassette(t *testing.T) {
 	}
 	wg.Wait()
 
-	if n := rec.cassette.Len(); n != members*turns {
+	if n := sessionStore(t, rec).Len(); n != members*turns {
 		t.Fatalf("distinct entries = %d, want %d — an entry was lost under concurrency", n, members*turns)
 	}
 	// The index must still parse: a torn line would make the whole cassette
 	// unreadable on the next run.
-	entries, err := rec.cassette.Cassette().Entries()
+	entries, err := sessionStore(t, rec).Cassette().Entries()
 	if err != nil {
 		t.Fatalf("index is unreadable after concurrent writes: %v", err)
 	}
@@ -172,7 +172,7 @@ func TestConcurrentMembersShareOneCassette(t *testing.T) {
 		t.Error("replay contacted the provider")
 	})
 	for _, e := range entries {
-		body, err := os.ReadFile(rep.cassette.Cassette().RequestPath(e.Seq))
+		body, err := os.ReadFile(sessionStore(t, rep).Cassette().RequestPath(e.Seq))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -252,20 +252,17 @@ func TestOnlyToolResultsAreReordered(t *testing.T) {
 // provider. One request is recorded where two were sent, and the cassette reads
 // as complete until replay, where the members diverge on turn two.
 //
-// A cassette per client is what keeps them apart.
-func TestTwoClientsWithIdenticalRequestsDoNotShareEntries(t *testing.T) {
+// A cassette per member is what keeps them apart, and the prefix on each
+// member's base URL is the whole of how that is arranged.
+func TestTwoMembersWithIdenticalRequestsDoNotShareEntries(t *testing.T) {
 	// Byte-identical, as they are after normalization blanks the dispatch id.
 	const sameBody = `{"model":"claude-opus-5","messages":[{"role":"user","content":"read the dispatch file and follow it"}]}`
 
 	root := t.TempDir()
-	clients := []*config.Client{
-		{Label: "orchestrator", Match: config.ClientMatch{PathPrefix: "/c/orchestrator"}, Cassette: "orchestrator"},
-		{Label: "worker", Match: config.ClientMatch{PathPrefix: "/c/worker"}, Cassette: "worker"},
-	}
 
 	// --- Record: each member must reach the provider on its own account.
 	var calls int
-	rec := clientCassetteServer(t, root, online, clients, func(w http.ResponseWriter, r *http.Request) {
+	rec := prefixCassetteServer(t, root, online, func(w http.ResponseWriter, r *http.Request) {
 		calls++
 		fmt.Fprintf(w, `{"reply":"response %d"}`, calls)
 	})
@@ -280,7 +277,7 @@ func TestTwoClientsWithIdenticalRequestsDoNotShareEntries(t *testing.T) {
 	}
 
 	// --- Replay: each member gets back its own response, not the other's.
-	rep := clientCassetteServer(t, root, offline, clients, func(w http.ResponseWriter, r *http.Request) {
+	rep := prefixCassetteServer(t, root, offline, func(w http.ResponseWriter, r *http.Request) {
 		t.Error("replay contacted the provider")
 	})
 	for _, c := range []struct{ prefix, want string }{
@@ -300,7 +297,9 @@ func TestTwoClientsWithIdenticalRequestsDoNotShareEntries(t *testing.T) {
 
 // clientCassetteServer is cassetteServer with several clients, each with its own
 // cassette under root.
-func clientCassetteServer(t *testing.T, root string, offline bool, clients []*config.Client, upstream http.HandlerFunc) *Server {
+// prefixCassetteServer builds a proxy that opens a cassette per name as the
+// prefixes ask for it, which is what one cs-vcr serving several agents does.
+func prefixCassetteServer(t *testing.T, root string, offline bool, upstream http.HandlerFunc) *Server {
 	t.Helper()
 	up := httptest.NewServer(upstream)
 	t.Cleanup(up.Close)
@@ -308,19 +307,14 @@ func clientCassetteServer(t *testing.T, root string, offline bool, clients []*co
 	cfg := config.Default()
 	cfg.Providers["anthropic"] = &config.Provider{BaseURL: up.URL}
 	cfg.Providers["openai"] = &config.Provider{BaseURL: up.URL}
-	cfg.Clients = clients
 	if err := cfg.Resolve(); err != nil {
 		t.Fatal(err)
 	}
 	s := New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), offline)
-	for _, cl := range clients {
-		store, err := cassette.OpenStore(filepath.Join(root, cl.Cassette), "test",
+	s = s.WithOpener(func(name string) (*cassette.Store, error) {
+		return cassette.OpenStore(filepath.Join(root, name), "test",
 			cfg.Normalize.Version, func() int64 { return 0 })
-		if err != nil {
-			t.Fatal(err)
-		}
-		s = s.WithClientCassette(cl.Label, store)
-	}
+	})
 	s.now = func() time.Time { return time.Unix(0, 0).UTC() }
 	return s
 }
@@ -406,17 +400,14 @@ func TestRetryAfterATransientFailureReachesTheProvider(t *testing.T) {
 	}
 }
 
-// A client that names its provider settles every request on its prefix.
+// A cassette that pins its provider settles every request on its prefix.
 //
 // The prefix is a base URL the client was configured with, and a client
 // configures one base URL per provider, so this is the fact the deployment
 // already knows. Asserted with the request that has nothing else to go on:
 // Claude Code's startup probe carries the prefix but no identifying header, and
 // inferring from the rest of it sent an Anthropic-only user to api.openai.com.
-func TestAClientsProviderDecidesEveryPathOnItsPrefix(t *testing.T) {
-	clients := []*config.Client{
-		{Label: "feature", Match: config.ClientMatch{PathPrefix: "/c/feature"}, Provider: "anthropic"},
-	}
+func TestAPinnedProviderDecidesEveryPathOnItsPrefix(t *testing.T) {
 	var got []string
 	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = io.WriteString(w, `{}`)
@@ -427,8 +418,8 @@ func TestAClientsProviderDecidesEveryPathOnItsPrefix(t *testing.T) {
 	cfg.Providers["anthropic"] = &config.Provider{BaseURL: up.URL}
 	// Reaching this one fails the test: nothing on the prefix may go here.
 	cfg.Providers["openai"] = &config.Provider{BaseURL: "http://127.0.0.1:1"}
-	cfg.Clients = clients
-	cfg.DefaultProvider = "openai" // even so, the client's word wins
+	cfg.CassetteProvider = map[string]string{"feature": "anthropic"}
+	cfg.DefaultProvider = "openai" // even so, the pin wins
 	if err := cfg.Resolve(); err != nil {
 		t.Fatal(err)
 	}
@@ -450,14 +441,12 @@ func TestAClientsProviderDecidesEveryPathOnItsPrefix(t *testing.T) {
 	}
 }
 
-// A provider named by a client but not configured is a typo, and it is refused
-// at startup rather than surfacing as a 502 on the first recorded request.
-func TestAClientCannotNameAProviderThatDoesNotExist(t *testing.T) {
+// A pinned provider that is not configured is a typo, and it is refused at
+// startup rather than surfacing as a 502 on the first recorded request.
+func TestAPinCannotNameAProviderThatDoesNotExist(t *testing.T) {
 	cfg := config.Default()
-	cfg.Clients = []*config.Client{
-		{Label: "feature", Match: config.ClientMatch{PathPrefix: "/c/feature"}, Provider: "anthropick"},
-	}
+	cfg.CassetteProvider = map[string]string{"feature": "anthropick"}
 	if err := cfg.Resolve(); err == nil {
-		t.Fatal("a client naming an unconfigured provider was accepted")
+		t.Fatal("a pin naming an unconfigured provider was accepted")
 	}
 }

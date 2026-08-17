@@ -43,7 +43,7 @@ type Store struct {
 	canon map[int][]byte
 }
 
-// OpenStore opens a cassette for record/replay, creating it if absent. This is
+// OpenStore opens a cassette for recording, creating it if absent. This is
 // the door that checks the versions; Open, which the inspection commands use,
 // does not.
 func OpenStore(dir, proxyVersion string, normalizeVersion int, now func() int64) (*Store, error) {
@@ -51,6 +51,26 @@ func OpenStore(dir, proxyVersion string, normalizeVersion int, now func() int64)
 	if err != nil {
 		return nil, err
 	}
+	return newStore(c, normalizeVersion)
+}
+
+// OpenExistingStore opens a cassette that has to be there already, which is
+// what replay needs.
+//
+// Creating one instead answers every request with a miss, and a session that
+// missed on all of them reads as an agent that diverged rather than as a base
+// URL naming a cassette that is not there. The distinction matters most when
+// the name came from a prefix, because then the typo is in the agent's
+// configuration rather than in cs-vcr's.
+func OpenExistingStore(dir string, normalizeVersion int) (*Store, error) {
+	c, err := Open(dir)
+	if err != nil {
+		return nil, err
+	}
+	return newStore(c, normalizeVersion)
+}
+
+func newStore(c *Cassette, normalizeVersion int) (*Store, error) {
 	if err := c.Usable(normalizeVersion); err != nil {
 		return nil, err
 	}

@@ -12,6 +12,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/codesweep-ai/vcr/internal/cassette"
 	"github.com/codesweep-ai/vcr/internal/config"
 )
 
@@ -48,7 +49,10 @@ func (l *logBuffer) String() string {
 	return l.b.String()
 }
 
-func newTestServer(t *testing.T, offline bool, clients []*config.Client, upstream http.HandlerFunc) (*Server, *logBuffer) {
+// newTestServer builds a proxy against a local upstream. tune adjusts the
+// configuration before it is resolved, which is how a test asks for a session
+// cassette or a pinned provider; nil is the plain deployment.
+func newTestServer(t *testing.T, offline bool, tune func(*config.Config), upstream http.HandlerFunc) (*Server, *logBuffer) {
 	t.Helper()
 	up := httptest.NewServer(upstream)
 	t.Cleanup(up.Close)
@@ -56,7 +60,9 @@ func newTestServer(t *testing.T, offline bool, clients []*config.Client, upstrea
 	cfg := config.Default()
 	cfg.Providers["anthropic"] = &config.Provider{BaseURL: up.URL}
 	cfg.Providers["openai"] = &config.Provider{BaseURL: up.URL}
-	cfg.Clients = clients
+	if tune != nil {
+		tune(cfg)
+	}
 	if err := cfg.Resolve(); err != nil {
 		t.Fatal(err)
 	}
@@ -147,6 +153,47 @@ func TestReplayModeNeverContactsUpstream(t *testing.T) {
 	}
 	if body.Error.Type != "cassette_miss" {
 		t.Errorf("error type = %q, want cassette_miss", body.Error.Type)
+	}
+}
+
+// The safety bit has to agree with the behaviour it describes.
+//
+// ReachesUpstream is what a reader consults to decide whether a pipeline can
+// spend money, and SPEC 11.3 makes it the one asserted bit. The test above
+// covers the behaviour on its own, and this pairs the two: a bit that reports
+// "offline" while the code around it dials is worse than no bit at all, and one
+// that reports "online" while nothing dials hides a recording session that
+// recorded nothing behind a green run.
+//
+// Both halves, because only the negative one is about money and only the
+// positive one would catch the flag being inverted.
+func TestReachesUpstreamMatchesWhatTheServerDoes(t *testing.T) {
+	cases := []struct {
+		name     string
+		offline  bool
+		reaches  bool
+		wantCode int
+	}{
+		{"record", online, true, http.StatusOK},
+		{"replay", offline, false, http.StatusBadRequest},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dialled := false
+			s, _ := newTestServer(t, tc.offline, nil, func(http.ResponseWriter, *http.Request) {
+				dialled = true
+			})
+			if got := s.ReachesUpstream(); got != tc.reaches {
+				t.Errorf("ReachesUpstream() = %v, want %v", got, tc.reaches)
+			}
+			if w := post(t, s, "/v1/messages", nil, `{}`); w.Code != tc.wantCode {
+				t.Fatalf("status = %d, want %d", w.Code, tc.wantCode)
+			}
+			if dialled != tc.reaches {
+				t.Errorf("the provider was dialled = %v, while ReachesUpstream() promised %v",
+					dialled, tc.reaches)
+			}
+		})
 	}
 }
 
@@ -310,4 +357,15 @@ func TestAResponseUnderTheLimitIsRecordedWhole(t *testing.T) {
 	if strings.Contains(logs.String(), "outgrew the capture limit") {
 		t.Errorf("a response that fit was reported as truncated:\n%s", logs)
 	}
+}
+
+// sessionStore is the store a test attached with WithCassette, which is what
+// the recording assertions read back.
+func sessionStore(t *testing.T, s *Server) *cassette.Store {
+	t.Helper()
+	store, err := s.storeFor(s.cfg.Cassette)
+	if err != nil || store == nil {
+		t.Fatalf("no session store: %v", err)
+	}
+	return store
 }

@@ -186,38 +186,32 @@ func writeCassette(t *testing.T, dir, request string) {
 	}
 }
 
-// Clients are matched in order, so a catch-all before a prefix would make the
-// prefix dead config that reads as though it works.
-func TestConfigRejectsUnreachableClient(t *testing.T) {
-	cfg := `clients:
-  - label: everything
-  - label: feature
-    match: {path_prefix: /c/feature}
-`
+// A pinned provider naming one that is not configured is a typo, and it fails
+// here rather than as a 502 on the first request of a recording session.
+func TestConfigRejectsAPinToAnUnknownProvider(t *testing.T) {
+	cfg := "cassette_provider:\n  build: anthropick\n"
 	if _, err := runWithConfig(t, cfg, nil, "config"); err == nil {
-		t.Fatal("a client that can never match was accepted")
+		t.Fatal("a pin naming an unconfigured provider was accepted")
 	}
 }
 
-func TestConfigRejectsClientWithoutLabel(t *testing.T) {
-	cfg := "clients:\n  - match: {path_prefix: /c/feature}\n"
-	if _, err := runWithConfig(t, cfg, nil, "config"); err == nil {
-		t.Fatal("a client with no label was accepted")
+// The name becomes a directory, so it is checked wherever it is written — in
+// the file as well as on a base URL.
+func TestConfigRejectsACassetteNameThatIsNotOne(t *testing.T) {
+	if _, err := runWithConfig(t, "cassette: ../escape\n", nil, "config"); err == nil {
+		t.Fatal("a traversing cassette name was accepted")
 	}
 }
 
-// The clients table is what a user checks after mistyping a base URL.
-func TestConfigPrintsClients(t *testing.T) {
-	cfg := `clients:
-  - label: feature.default
-    match: {path_prefix: /c/feature}
-    cassette: refactor-auth
-`
+// What a user checks after a base URL did not behave as expected: where the
+// prefix goes, and which cassettes have a provider pinned.
+func TestConfigPrintsThePrefixAndThePins(t *testing.T) {
+	cfg := "cassette_provider:\n  codex-run: openai\n"
 	out, err := runWithConfig(t, cfg, nil, "config")
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"feature.default", "/c/feature", "refactor-auth"} {
+	for _, want := range []string{"/c/<name>", "codex-run", "openai"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("config output missing %q:\n%s", want, out)
 		}
@@ -243,40 +237,56 @@ func TestReplayAndRecordAreSeparateCommands(t *testing.T) {
 	}
 }
 
-// Two clients sharing a cassette share a key namespace, and a campaign's
-// members are handed the same opening prompt — so their first requests
-// normalize to the same bytes and one is served the other's response while
-// RECORDING. The config is refused rather than diagnosed later, because by the
-// time it shows up the recording is already wrong and looks complete.
-func TestConfigRejectsClientsSharingACassette(t *testing.T) {
-	cfg := `clients:
-  - label: orchestrator
-    match: {path_prefix: /c/orchestrator}
-    cassette: campaign
-  - label: worker
-    match: {path_prefix: /c/worker}
-    cassette: campaign
-`
-	out, err := runWithConfig(t, cfg, nil, "config")
-	if err == nil {
-		t.Fatal("two clients recording into one cassette were accepted")
+// `cs-vcr config <agent>` is how a user finds out where the prefix goes
+// relative to the /v1 a client appends, which differs by client and is the
+// mistake this design invites. Asserted per client, because a single rule that
+// looked right for one of them is exactly the bug.
+func TestConfigPrintsHowToPointEachAgentAtACassette(t *testing.T) {
+	cases := []struct{ agent, wantBase string }{
+		// Claude Code appends /v1 itself, so the base URL stops at the name.
+		{"claude", "http://127.0.0.1:8080/c/build"},
+		// Codex and OpenCode are given a base URL that already carries it.
+		{"codex", "http://127.0.0.1:8080/c/build/v1"},
+		{"opencode", "http://127.0.0.1:8080/c/build/v1"},
 	}
-	if !strings.Contains(err.Error(), "campaign") {
-		t.Errorf("the error does not name the shared cassette: %v\n%s", err, out)
+	for _, tc := range cases {
+		out, err := runWithConfig(t, "", nil, "config", tc.agent, "--cassette", "build")
+		if err != nil {
+			t.Fatalf("%s: %v", tc.agent, err)
+		}
+		if !strings.Contains(out, tc.wantBase) {
+			t.Errorf("%s: output does not carry the base URL %q:\n%s", tc.agent, tc.wantBase, out)
+		}
+		// A command to run, not just a setting to interpret.
+		if !strings.Contains(out, tc.agent+" ") {
+			t.Errorf("%s: output has no command to run:\n%s", tc.agent, out)
+		}
+	}
+	// And the environment-only form is bare VAR=VALUE, for sourcing.
+	out, err := runWithConfig(t, "", nil, "config", "claude", "--cassette", "build", "--env-only")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.TrimSpace(out) != "ANTHROPIC_BASE_URL=http://127.0.0.1:8080/c/build" {
+		t.Errorf("--env-only is not a bare assignment:\n%q", out)
 	}
 }
 
-// Clients that leave `cassette:` unset all fall back to the session's, which is
-// the same collision by another route.
-func TestConfigRejectsClientsFallingBackToOneCassette(t *testing.T) {
-	cfg := `cassette: shared
-clients:
-  - label: orchestrator
-    match: {path_prefix: /c/orchestrator}
-  - label: worker
-    match: {path_prefix: /c/worker}
-`
-	if _, err := runWithConfig(t, cfg, nil, "config"); err == nil {
-		t.Fatal("two clients defaulting to the session cassette were accepted")
+// An agent cs-vcr has no settings for is named, rather than printing something
+// that looks right and is not.
+func TestConfigRefusesAnUnknownAgent(t *testing.T) {
+	if _, err := runWithConfig(t, "", nil, "config", "aider", "--cassette", "build"); err == nil {
+		t.Fatal("an agent cs-vcr knows nothing about was accepted")
+	}
+}
+
+// The cassette has to come from somewhere: printing settings that select no
+// cassette would be printing a base URL that records into the session's.
+func TestConfigForAnAgentNeedsACassette(t *testing.T) {
+	if _, err := runWithConfig(t, "", nil, "config", "claude"); err == nil {
+		t.Fatal("agent settings were printed with no cassette named")
+	}
+	if _, err := runWithConfig(t, "cassette: build\n", nil, "config", "claude"); err != nil {
+		t.Fatalf("the configured cassette was not used: %v", err)
 	}
 }

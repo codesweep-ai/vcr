@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"os"
 	"runtime"
+	"strings"
 
 	"github.com/codesweep-ai/vcr"
 	"github.com/codesweep-ai/vcr/internal/config"
@@ -142,20 +143,67 @@ func newManualCmd() *cobra.Command {
 	}
 }
 
-// newConfigCmd prints the resolved configuration. It is the answer to "which
-// of the file, the environment and the flags won" — the question a base URL
-// that did not behave as expected leads to.
+// newConfigCmd prints configuration: cs-vcr's own with no argument, and an
+// agent's with one.
+//
+// They are the same question asked from the two ends of the connection. Without
+// an argument it answers "which of the file, the environment and the flags
+// won", which is where a base URL that did not behave as expected leads. With
+// an agent it answers "what do I put in front of this client to reach that
+// cassette", which is where every first session starts and where the one rule
+// nothing else states in one place lives: whether the client wants a /v1 after
+// the cassette name.
 func newConfigCmd(app *App) *cobra.Command {
+	var cassette, url string
+	var envOnly bool
 	cmd := &cobra.Command{
-		Use:   "config",
-		Short: "Print the resolved configuration",
-		Args:  cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
+		Use:   "config [AGENT]",
+		Short: "Print the resolved configuration, or how to point an agent at a cassette",
+		Long: `With no argument, print the configuration cs-vcr resolved from its file, the
+environment and the flags.
+
+With an agent — ` + strings.Join(agentNames(), ", ") + ` — print how to point that client at this
+cs-vcr and at one cassette: a command to run, the environment to set instead,
+and the file to pin it in. The cassette is named by a ` + config.CassettePrefix + `<name> prefix on the
+base URL, and where that goes relative to the /v1 a client appends differs by
+client, which is what this prints.
+
+Environment lines are bare VAR=VALUE, so they can be read by a shell, a dotenv
+file or a CI environment block:
+
+  set -a; . <(cs-vcr config claude --cassette build --env-only); set +a`,
+		Args: cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := app.Cfg.Resolve(); err != nil {
 				return err
 			}
-			return printConfig(cmd.OutOrStdout(), app)
+			if len(args) == 0 {
+				return printConfig(cmd.OutOrStdout(), app)
+			}
+			a, ok := findAgent(args[0])
+			if !ok {
+				return fmt.Errorf("no settings for an agent called %q; cs-vcr knows %s",
+					args[0], strings.Join(agentNames(), ", "))
+			}
+			name := cassette
+			if name == "" {
+				name = app.Cfg.Cassette
+			}
+			if name == "" {
+				return errors.New("which cassette? pass --cassette, or name one in the configuration")
+			}
+			if err := config.CheckCassetteName(name); err != nil {
+				return err
+			}
+			at := url
+			if at == "" {
+				at = proxyURL(app.Cfg.Listen)
+			}
+			return printAgentConfig(cmd.OutOrStdout(), a, at, name, envOnly)
 		},
 	}
+	cmd.Flags().StringVar(&cassette, "cassette", "", "cassette the printed settings select (default: the configured one)")
+	cmd.Flags().StringVar(&url, "url", "", "where the agent reaches cs-vcr (default: derived from listen)")
+	cmd.Flags().BoolVar(&envOnly, "env-only", false, "print only the VAR=VALUE lines, for sourcing or piping")
 	return cmd
 }
