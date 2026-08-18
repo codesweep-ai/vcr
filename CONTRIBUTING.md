@@ -130,6 +130,12 @@ it in `scripts/lint-oss.config.py`.
   is one the reader has to decide whether to act on.
 - **A walkthrough is steps that work.** Put the reasons somewhere else. A reader following a
   walkthrough wants a config that runs, not an account of which API has a `/v1` and why.
+- **An ordered procedure is a numbered list, not a sentence.** A requirement that says "MUST, in
+  order: mount the filesystems; create the user; start the daemon" is unreadable, and trips the
+  length check for a reason. Break it into steps the reader can follow one at a time.
+- **Describe what the software does, not how it came to do it.** Leave out what the project used to
+  do, what was tried and dropped, and numbers from a run someone did once. A rule's reason belongs
+  beside the rule. The investigation that found it belongs in the PR.
 - **Do not make the reader hold two halves of a sentence apart.** "What a shell printed may differ;
   what the model was asked may not" is a puzzle. Name the subject in each clause.
 
