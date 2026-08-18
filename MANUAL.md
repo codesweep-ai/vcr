@@ -215,6 +215,9 @@ ANTHROPIC_BASE_URL=http://127.0.0.1:8080/c/build/v1 opencode run --model anthrop
 OPENAI_BASE_URL=http://127.0.0.1:8080/c/build/v1 opencode run --model openai/gpt-5 "…"
 ```
 
+To pin OpenCode per project instead, put the same URL under `provider.<name>.options.baseURL` in
+`opencode.json`. `cs-vcr config opencode` prints the block.
+
 **A cassette per test.** Switching between them is that one string, and no restart. Several agents
 share one cs-vcr the same way:
 
@@ -310,8 +313,13 @@ and the cassette kept the first 64 MiB of it. That step replays truncated, so re
 
 ## Making a real agent run replayable
 
-Record, replay, run `calibrate`, read what it proposes, and keep the rules you agree with. Most of
-what a real run varies is already covered by the defaults. These are the ones that need a decision:
+1. Record the session.
+2. Replay it with `--dump-misses ./misses`.
+3. Run `cs-vcr calibrate NAME ./misses`.
+4. Read what it proposes, and keep the rules you agree with.
+
+Most of what a real run varies is already covered by the defaults. These are the ones that need a
+decision:
 
 | What varied | Rule | Why it is safe |
 |---|---|---|
@@ -340,9 +348,8 @@ tool argument or a tag. Do not match its shape:
 ```
 
 Matching by shape would be shorter and wrong. Go's regexp is RE2 and has no lookahead, so
-`b[a-z0-9]{8}` matches any nine-letter word beginning with b. In one real cassette it matched
-thirteen occurrences of **behaviors** in the system prompt. Blanking those would have altered the
-prompt while leaving the request looking normalized.
+`b[a-z0-9]{8}` matches any nine-letter word beginning with b, **behaviors** in a system prompt
+included. Blanking those alters the prompt while leaving the request looking normalized.
 
 ## Notes for agents
 
