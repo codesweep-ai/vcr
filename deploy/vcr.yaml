@@ -14,10 +14,14 @@
 # To make it a sidecar, add an agent container to this pod. Containers in a pod
 # share one network namespace, so the agent reaches cs-vcr on localhost.
 #
-# Two things this file cannot decide for you. VCR_CASSETTE below names a
-# cassette in YOUR store, and `build` is only an example. The store itself has
-# to be readable by uid 65532, which under rootless podman means the host
-# directory belongs to a uid that maps into the container's range.
+# Nothing here names a cassette. The agent does, by ending its base URL in
+# /c/<name>:
+#
+#   ANTHROPIC_BASE_URL=http://127.0.0.1:8080/c/build
+#
+# What this file does have to get right is the store below, which has to be
+# readable by uid 65532 — under rootless podman, a host directory belonging to a
+# uid that maps into the container's range.
 apiVersion: v1
 kind: Pod
 metadata:
@@ -38,8 +42,6 @@ spec:
         # exits before it listens.
         - name: CS_VCR_CASSETTES
           value: /cassettes
-        - name: VCR_CASSETTE
-          value: build
         - name: VCR_LISTEN
           value: 0.0.0.0:8080
         # /healthz only, and deliberately not published: it exists so something
