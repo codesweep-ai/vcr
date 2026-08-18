@@ -17,6 +17,7 @@ cs-vcr cassette scrub [NAME...] [--force] [--from-env VAR,...]
 cs-vcr cassette prune NAME [--force]
 cs-vcr calibrate NAME MISSDIR
 cs-vcr config [AGENT] [--cassette NAME] [--url URL] [--env-only]
+cs-vcr completion bash|zsh|fish|powershell
 cs-vcr manual
 cs-vcr version
 
@@ -135,6 +136,19 @@ appends differs by client, and this is what says which.
 
 ```bash
 set -a; . <(cs-vcr config claude --cassette refactor-auth --env-only); set +a
+```
+
+### completion
+
+```
+cs-vcr completion bash|zsh|fish|powershell
+```
+
+Writes a shell completion script to stdout. Source it for this shell, or install it for every one:
+
+```bash
+source <(cs-vcr completion bash)                                    # this shell
+cs-vcr completion bash > ~/.local/share/bash-completion/completions/cs-vcr
 ```
 
 ### manual
