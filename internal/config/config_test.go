@@ -172,6 +172,33 @@ func TestResolveChecksDefaultProvider(t *testing.T) {
 	}
 }
 
+// A recorded session has to replay with no provider configured at all, so the
+// checks that keep a recording session from failing halfway through are not
+// replay's to pass. Shared, they refused to start a replay session over a
+// base_url it would never have dialled.
+func TestResolveOfflineChecksNoProvider(t *testing.T) {
+	c := Default()
+	c.Providers["anthropic"] = &Provider{BaseURL: "nonsense"}
+	c.DefaultProvider = "nowhere"
+	c.CassetteProvider = map[string]string{"build": "nowhere"}
+	if err := c.Resolve(); err == nil {
+		t.Fatal("a session that forwards accepted a provider it could not reach")
+	}
+	if err := c.ResolveOffline(); err != nil {
+		t.Fatalf("a replay session was refused over provider settings it never reads: %v", err)
+	}
+}
+
+// The other half: what replay does read is still checked here, because the
+// ruleset is what it matches on.
+func TestResolveOfflineStillChecksTheRuleset(t *testing.T) {
+	c := Default()
+	c.Normalize.Replace = append(c.Normalize.Replace, Replacement{Pattern: "(unclosed", With: "x"})
+	if err := c.ResolveOffline(); err == nil {
+		t.Fatal("a replay session accepted a pattern that will not compile")
+	}
+}
+
 // The billing header is the first system block of every Claude Code request,
 // and the component after the semantic version is not the version: two
 // recordings of one task three minutes apart carried `.c4e` and `.ab2` for the

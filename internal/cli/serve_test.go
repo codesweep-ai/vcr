@@ -150,6 +150,45 @@ const unreachableProviders = `providers:
   openai: {base_url: "http://127.0.0.1:1"}
 `
 
+// What a CI job that only ever replays actually has: no provider it could use
+// if it wanted to. The two tests below run this one config through both
+// commands, which is the whole of the claim.
+const unusableProviders = `providers:
+  anthropic: {base_url: "nonsense"}
+default_provider: nowhere
+cassette_provider:
+  session: nowhere
+`
+
+// Goal 1 asks a recorded session to replay with no provider configured. A
+// replay session that validated providers met that with a startup failure over
+// a base_url it would never have dialled — the offline guarantee broken one
+// step before the request path, where nothing was watching for it.
+func TestReplayServesWithNoUsableProvider(t *testing.T) {
+	s := serveSessionOver(t, unusableProviders, []string{testCassette}, "replay")
+
+	status, body := postMessages(t, s.addr, `{"model":"claude-3-5-sonnet","messages":[{"role":"user","content":"hello"}]}`)
+
+	if status != http.StatusBadRequest {
+		t.Fatalf("a request with no recording = %d %s, want the 400 of a miss", status, body)
+	}
+}
+
+// The counterpart, and why the check did not simply go away: `record` forwards,
+// so a provider it cannot use is a 502 partway through a session that has
+// already spent money. It is refused before the listener opens.
+func TestRecordRefusesAProviderItCannotUse(t *testing.T) {
+	out, err := runWithConfig(t, unusableProviders, nil,
+		"record", "--listen", port(t), "--admin", port(t))
+
+	if err == nil {
+		t.Fatal("record started with a base_url it could not dial")
+	}
+	if !strings.Contains(err.Error(), "base_url") {
+		t.Errorf("the error does not name the setting to fix: %v\n%s", err, out)
+	}
+}
+
 func postMessages(t *testing.T, addr, body string) (int, string) {
 	return postPath(t, addr, "/c/"+testCassette+"/v1/messages", body)
 }

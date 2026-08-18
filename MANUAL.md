@@ -66,7 +66,8 @@ cs-vcr replay [--dump-misses DIR]
 ```
 
 Serves only from the cassette. The server is built with nowhere to send a request, so no
-configuration can make it spend money.
+configuration can make it spend money. It reads no provider configuration at all, so it starts and
+serves with none.
 
 Exits **4** if any request had no recording. With `--dump-misses`, each missed request is written to
 `DIR/<step>.json`, named after the step it was compared against, ready for `diff` or `calibrate`.

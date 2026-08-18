@@ -135,13 +135,13 @@ session, so serving one call from it would leave a script with a step missing fr
 **R4.** A replay session **MUST NOT** open a connection to a provider, whatever the configuration
 says.
 
-**R4a.** A replay session **MUST NOT** resolve an upstream while serving a request, and **MUST**
-serve one whose provider is not configured. *Goal 1 asks a recorded session to replay with no
-provider reachable and no credential configured. Resolving the upstream before the replay branch met
-the first and not the second. A request would then fail for want of a provider it could never have
-called, and only the defaults naming two of them hid it. Startup is the exception, and a shared one:
-both commands validate whatever provider configuration is present before either listens. A `replay`
-session therefore refuses to start on a `base_url` it would never have dialled.*
+**R4a.** A replay session **MUST NOT** read provider configuration at all, and **MUST** start and
+serve with none configured. *Goal 1 asks a recorded session to replay with no provider reachable and
+no credential configured. Resolving the upstream before the replay branch met the first and not the
+second. A request would then fail for want of a provider it could never have called, and only the
+defaults naming two of them hid it. Validating that configuration at startup was the same defect one
+step earlier, and quieter: a `replay` session refusing to start over a `base_url` it would never
+have dialled.*
 
 ## 5. Matching
 
@@ -240,7 +240,9 @@ does not exist on this machine.*
 
 ## 6. Routing
 
-A request is routed by path first, then by the pin its cassette carries.
+A request is routed by path first, then by the pin its cassette carries. Routing names an upstream,
+so it is a question only a session that forwards asks. Replay reads the surface off the path, which
+is all it reports by, and stops there (R4a).
 
 | Path | Surface | Provider |
 |---|---|---|
@@ -586,6 +588,10 @@ It **MUST** be a constructor argument rather than an optional method. A caller c
 optional method that grants safety, and the result still compiles and still reports itself as
 offline while dialling. One place **MUST** read it, rather than each call site branching on it,
 because a rule enforced once cannot be forgotten twice.
+
+The same bit decides which configuration a session reads. `record` validates every provider it could
+route to; `replay` validates the ruleset and nothing else, because R4a is a claim about startup as
+well as about the request path.
 
 ### 11.4 Lifecycle and concurrency
 

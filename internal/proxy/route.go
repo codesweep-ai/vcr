@@ -30,6 +30,46 @@ type Route struct {
 	Surface  Surface
 }
 
+// routeFor is which shape a request is and, for a session that forwards, which
+// upstream it goes to.
+//
+// A replay session asks only the shape. It reads no provider configuration at
+// all — not the pins, not the default — which is what lets a recorded session
+// replay with none configured: the step it serves was chosen by the cassette
+// and the request, and there is no upstream in the picture to name.
+func (s *Server) routeFor(r *http.Request, cassette string) Route {
+	if !s.ReachesUpstream() {
+		return Route{Surface: surfaceOf(r)}
+	}
+	route := classify(r, s.cfg.DefaultProvider)
+	// A cassette that pins its provider has already answered the question, for
+	// every path on it: the prefix is a base URL, and a client configures one
+	// base URL per provider. Nothing about the request itself can override
+	// that, which matters because inference gets a bodiless probe wrong and
+	// sends it to the other provider.
+	if p := s.cfg.ProviderFor(cassette); p != "" {
+		route.Provider = p
+	}
+	return route
+}
+
+// surfaceOf is the API shape a request belongs to, which is a property of its
+// path and of nothing else.
+//
+// Separate from the provider because replay wants one and not the other: it
+// reports by surface, and a surface read off the path costs it no configuration.
+func surfaceOf(r *http.Request) Surface {
+	switch apiPath(r.URL.Path) {
+	case "/messages":
+		return SurfaceAnthropicMessages
+	case "/responses":
+		return SurfaceOpenAIResponses
+	case "/chat/completions":
+		return SurfaceOpenAIChat
+	}
+	return SurfaceUnknown
+}
+
 // classify routes a request by path, falling back to which auth header is
 // present when the path is one cs-vcr does not model.
 //
@@ -41,16 +81,14 @@ type Route struct {
 // value. It is routing, not credential handling: cs-vcr does not validate,
 // store, redact or replace anything a client sends.
 func classify(r *http.Request, defaultProvider string) Route {
-	switch apiPath(r.URL.Path) {
-	case "/messages":
-		return Route{Provider: "anthropic", Surface: SurfaceAnthropicMessages}
-	case "/responses":
-		return Route{Provider: "openai", Surface: SurfaceOpenAIResponses}
-	case "/chat/completions":
+	switch surface := surfaceOf(r); surface {
+	case SurfaceAnthropicMessages:
+		return Route{Provider: "anthropic", Surface: surface}
+	case SurfaceOpenAIResponses, SurfaceOpenAIChat:
 		// OpenAI-compatible, which is also what OpenCode Zen and every local
 		// model server speak. The provider is whichever upstream is configured
 		// for the OpenAI shape, not necessarily OpenAI itself.
-		return Route{Provider: "openai", Surface: SurfaceOpenAIChat}
+		return Route{Provider: "openai", Surface: surface}
 	}
 	// Unrecognized path: it goes where the configuration says, and nowhere
 	// else. There is no header that reliably identifies a provider — what

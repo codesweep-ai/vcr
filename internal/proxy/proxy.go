@@ -236,15 +236,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// request would classify as an unrecognized surface.
 	stripCassettePrefix(r, rest)
 
-	route := classify(r, s.cfg.DefaultProvider)
-	// A cassette that pins its provider has already answered the question, for
-	// every path on it: the prefix is a base URL, and a client configures one
-	// base URL per provider. Nothing about the request itself can override
-	// that, which matters because inference gets a bodiless probe wrong and
-	// sends it to the other provider.
-	if p := s.cfg.ProviderFor(name); p != "" {
-		route.Provider = p
-	}
+	route := s.routeFor(r, name)
 	s.count(func(st *Stats) {
 		st.Requests++
 		st.BySurface[string(route.Surface)]++

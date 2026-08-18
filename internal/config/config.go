@@ -4,7 +4,9 @@
 //
 // There is nothing here about what a session may do. That is the command:
 // `record` reaches a provider, `replay` cannot, and neither is a setting a file
-// or an environment variable can quietly change.
+// or an environment variable can quietly change. The command decides which of
+// these settings are read at all: Resolve checks the providers a forwarding
+// session needs, ResolveOffline checks what is left.
 //
 // There is nothing here about credentials. cs-vcr records and replays; it does
 // not authenticate callers, validate tokens, swap keys or redact anything. A
@@ -678,25 +680,42 @@ func (c *Config) ApplyEnv(getenv func(string) string) error {
 	return nil
 }
 
-// Resolve validates the configuration. It is the last step before the proxy
-// runs.
+// Resolve validates the configuration a session that forwards will use. It is
+// the last step before the proxy runs.
 func (c *Config) Resolve() error {
+	if err := c.resolveProviders(); err != nil {
+		return err
+	}
+	return c.ResolveOffline()
+}
+
+// ResolveOffline is Resolve for a session that reaches no provider: it checks
+// everything replay reads, and nothing about providers.
+//
+// The two are separate because the guarantee is. A recorded session has to
+// replay with no provider configured at all, and a replay session that
+// validated providers refused to start over a base_url it would never have
+// dialled — the same defect as resolving an upstream on the request path, one
+// step earlier. What is left here is the ruleset, which is what replay matches
+// on and therefore its own to get right.
+func (c *Config) ResolveOffline() error {
+	return c.Normalize.Compile()
+}
+
+// resolveProviders checks every upstream a request could be routed to, because
+// the alternative is a 502 partway through a recording session — and for
+// default_provider that is the FIRST request, since the startup probes a client
+// opens with are exactly the paths cs-vcr does not model.
+func (c *Config) resolveProviders() error {
 	for name, p := range c.Providers {
 		if err := checkBaseURL(name, p.BaseURL); err != nil {
 			return err
 		}
 	}
-	// Every provider a request could be routed to is checked here, because the
-	// alternative is a 502 on the first request of a recording session — and
-	// for default_provider that is the FIRST request, since the startup probes
-	// a client opens with are exactly the paths cs-vcr does not model.
 	if c.DefaultProvider != "" {
 		if _, ok := c.Providers[c.DefaultProvider]; !ok {
 			return fmt.Errorf("default_provider: no provider named %q is configured", c.DefaultProvider)
 		}
-	}
-	if err := c.Normalize.Compile(); err != nil {
-		return err
 	}
 	return c.resolvePins()
 }

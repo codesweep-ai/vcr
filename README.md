@@ -78,7 +78,7 @@ step 4 was recorded as POST /v1/messages (anthropic.messages)
     this run: Refactor the token store
 ```
 
-**A replay session starts and serves with no provider credential configured at all.** A
+**A replay session starts and serves with no provider and no credential configured at all.** A
 misconfigured CI job cannot spend money, because it has nothing to spend with.
 
 The cassette `build` is declared nowhere. `record` creates it on the first request that names it,

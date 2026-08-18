@@ -88,7 +88,15 @@ prefix at all. Run "cs-vcr config <agent>" for the exact URL a client wants.`
 			if cassettes != "" {
 				cfg.Cassettes = cassettes
 			}
-			if err := cfg.Resolve(); err != nil {
+			// Which checks the configuration gets is the same decision as
+			// which command this is. `record` forwards, so every provider it
+			// could route to has to be usable; `replay` reads none of them, and
+			// has to start with none configured.
+			resolve := cfg.Resolve
+			if offline {
+				resolve = cfg.ResolveOffline
+			}
+			if err := resolve(); err != nil {
 				return err
 			}
 			return runServe(cmd.Context(), app, cmd.OutOrStdout(), offline, dumpMisses)
@@ -162,12 +170,19 @@ func runServe(ctx context.Context, app *App, out io.Writer, offline bool, dumpMi
 	proxySrv := &http.Server{Handler: srv, ErrorLog: slog.NewLogLogger(app.Log.Handler(), slog.LevelError)}
 	adminSrv := &http.Server{Handler: adminMux, ErrorLog: slog.NewLogLogger(app.Log.Handler(), slog.LevelError)}
 
-	app.Log.Info("serving",
+	attrs := []any{
 		slog.Bool("offline", offline),
-		slog.Int("pinned providers", len(cfg.CassetteProvider)),
 		slog.String("listen", pl.Addr().String()),
 		slog.String("admin", al.Addr().String()),
-		slog.Int("providers", len(cfg.Providers)))
+	}
+	if !offline {
+		// Only a session that forwards has providers. Counting them under
+		// `replay` would describe configuration this session never read.
+		attrs = append(attrs,
+			slog.Int("providers", len(cfg.Providers)),
+			slog.Int("pinned providers", len(cfg.CassetteProvider)))
+	}
+	app.Log.Info("serving", attrs...)
 	if offline {
 		// The property that makes a pipeline harmless, stated out loud so a log
 		// reader can confirm it held.
