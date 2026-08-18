@@ -71,9 +71,22 @@ func newTestServer(t *testing.T, offline bool, tune func(*config.Config), upstre
 	return srv, logs
 }
 
+// testCassette is the cassette the helpers below address. Every request names
+// one now, so a test about a body, a stream or a header would otherwise carry
+// the prefix ninety times over while saying nothing about it. The tests that
+// ARE about naming write their own paths, and onCassette leaves those alone.
+const testCassette = "session"
+
+func onCassette(path string) string {
+	if strings.HasPrefix(path, config.CassettePrefix) {
+		return path
+	}
+	return config.CassettePrefix + testCassette + path
+}
+
 func post(t *testing.T, s *Server, path string, hdr map[string]string, body string) *httptest.ResponseRecorder {
 	t.Helper()
-	r := httptest.NewRequest(http.MethodPost, path, strings.NewReader(body))
+	r := httptest.NewRequest(http.MethodPost, onCassette(path), strings.NewReader(body))
 	for k, v := range hdr {
 		r.Header.Set(k, v)
 	}
@@ -87,7 +100,7 @@ func post(t *testing.T, s *Server, path string, hdr map[string]string, body stri
 func get(t *testing.T, s *Server, path string) *httptest.ResponseRecorder {
 	t.Helper()
 	w := httptest.NewRecorder()
-	s.ServeHTTP(w, httptest.NewRequest(http.MethodGet, path, http.NoBody))
+	s.ServeHTTP(w, httptest.NewRequest(http.MethodGet, onCassette(path), http.NoBody))
 	return w
 }
 
@@ -260,7 +273,7 @@ func TestUnknownPathGoesToTheConfiguredProvider(t *testing.T) {
 		{map[string]string{"user-agent": "Bun/1.4.0", "accept": "*/*"}, "anthropic", "anthropic"},
 	}
 	for _, c := range cases {
-		r := httptest.NewRequest(http.MethodGet, "/api/hello", http.NoBody)
+		r := httptest.NewRequest(http.MethodGet, onCassette("/api/hello"), http.NoBody)
 		for k, v := range c.hdr {
 			r.Header.Set(k, v)
 		}
@@ -363,7 +376,7 @@ func TestAResponseUnderTheLimitIsRecordedWhole(t *testing.T) {
 // the recording assertions read back.
 func sessionStore(t *testing.T, s *Server) *cassette.Store {
 	t.Helper()
-	store, err := s.storeFor(s.cfg.Cassette)
+	store, err := s.storeFor(testCassette)
 	if err != nil || store == nil {
 		t.Fatalf("no session store: %v", err)
 	}

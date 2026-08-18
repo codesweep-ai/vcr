@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -74,13 +75,11 @@ func TestATraversingCassetteNameIsRefusedAndDoesNotDial(t *testing.T) {
 	}
 }
 
-// A base URL that stops at the bare prefix is a composition mistake, and it
-// must not quietly become the session's cassette — that is how one test's
-// traffic lands in another test's recording.
-func TestABarePrefixIsRefusedRatherThanFallingBack(t *testing.T) {
-	s, _ := forwardServer(t, func(c *config.Config) { c.Cassette = "session" }, nil)
-	w := post(t, s, "/c/", map[string]string{}, `{}`)
-	if w.Code != http.StatusBadRequest {
+// A base URL that stops at the bare prefix is a composition mistake, and it is
+// refused rather than guessed at.
+func TestABarePrefixIsRefused(t *testing.T) {
+	s, _ := forwardServer(t, nil, nil)
+	if w := post(t, s, "/c/", map[string]string{}, `{}`); w.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400 (body %s)", w.Code, w.Body)
 	}
 }
@@ -104,28 +103,41 @@ func TestPrefixMatchingIsOnSegmentBoundaries(t *testing.T) {
 	}
 }
 
-// With no prefix and no session cassette everything still works — the simple
-// deployment pays nothing for a feature it is not using.
-func TestNoPrefixAndNoCassetteStillProxies(t *testing.T) {
-	s, _ := forwardServer(t, nil, func(w http.ResponseWriter, r *http.Request) {})
-	if w := post(t, s, "/v1/messages", map[string]string{}, `{}`); w.Code != http.StatusOK {
-		t.Fatalf("status = %d", w.Code)
-	}
-	if n := s.Snapshot().ByCassette["-"]; n != 1 {
-		t.Errorf("ByCassette = %v, want one request under \"-\"", s.Snapshot().ByCassette)
-	}
-}
+// A request whose base URL never named a cassette is refused, and does not
+// reach a provider on the way.
+//
+// This is the mistake the design invites, and it must not look like success:
+// absorbing it into a default is how a base URL missing its prefix records into
+// somebody else's cassette, or into none, and says nothing until the run that
+// depends on it fails.
+func TestAPathThatNamesNoCassetteIsRefusedAndDoesNotDial(t *testing.T) {
+	reached := false
+	s, logs := forwardServer(t, nil, func(w http.ResponseWriter, r *http.Request) { reached = true })
 
-// A request with no prefix falls back to the session's cassette, which is what
-// the single-agent deployment and the headerless startup probes both rely on.
-func TestNoPrefixFallsBackToTheSessionCassette(t *testing.T) {
-	s, _ := forwardServer(t, func(c *config.Config) { c.Cassette = "session" },
-		func(w http.ResponseWriter, r *http.Request) {})
-	if w := post(t, s, "/v1/messages", map[string]string{}, `{}`); w.Code != http.StatusOK {
-		t.Fatalf("status = %d", w.Code)
+	for _, path := range []string{"/v1/messages", "/api/hello", "/cx/build/v1/messages"} {
+		r := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{}`))
+		w := httptest.NewRecorder()
+		s.ServeHTTP(w, r)
+		if w.Code != http.StatusNotFound {
+			t.Errorf("%s: status = %d, want 404 (body %s)", path, w.Code, w.Body)
+		}
+		if !strings.Contains(w.Body.String(), "no_cassette") {
+			t.Errorf("%s: error type is not no_cassette: %s", path, w.Body)
+		}
+		// The reply says what the base URL should have ended in, because the
+		// person reading it is the person who wrote that URL.
+		if !strings.Contains(w.Body.String(), "/c/") {
+			t.Errorf("%s: the error does not name the prefix: %s", path, w.Body)
+		}
 	}
-	if n := s.Snapshot().ByCassette["session"]; n != 1 {
-		t.Errorf("ByCassette = %v, want one request under \"session\"", s.Snapshot().ByCassette)
+	if reached {
+		t.Error("a request naming no cassette reached upstream")
+	}
+	if !strings.Contains(logs.String(), "does not name a usable cassette") {
+		t.Errorf("not logged: %s", logs)
+	}
+	if n := s.Snapshot().UnknownCassette; n != 3 {
+		t.Errorf("UnknownCassette = %d, want 3", n)
 	}
 }
 

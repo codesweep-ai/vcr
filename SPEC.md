@@ -69,8 +69,8 @@ decides whether the session can spend money.
 
 | Command | Effect |
 |---|---|
-| `cs-vcr record --cassette NAME` | Proxies to providers, appending each interaction as a step. |
-| `cs-vcr replay --cassette NAME` | Serves only from the cassette. Built with nowhere to send a request. |
+| `cs-vcr record` | Proxies to providers, appending each interaction as a step. |
+| `cs-vcr replay` | Serves only from the cassette. Built with nowhere to send a request. |
 | `cs-vcr cassette ls [NAME]` | Lists cassettes, or the steps in one. |
 | `cs-vcr cassette show NAME STEP` | Prints one step's metadata, request and response. |
 | `cs-vcr cassette verify [NAME...]` | Checks entries against the current ruleset. Exits non-zero when stale. |
@@ -81,8 +81,8 @@ decides whether the session can spend money.
 | `cs-vcr manual` | Prints `MANUAL.md`, embedded in the binary at build time. |
 | `cs-vcr version` | Prints the version, platform and Go version. |
 
-`record` and `replay` accept `--listen`, `--admin`, `--cassette` and `--cassettes`. `replay` also
-accepts `--dump-misses DIR`.
+`record` and `replay` accept `--listen`, `--admin` and `--cassettes`. `replay` also accepts
+`--dump-misses DIR`. Neither names a cassette: a request does that itself.
 
 ## 4. The request path
 
@@ -110,10 +110,12 @@ anything else reads the path. *Otherwise every request classifies as an unrecogn
 the provider receives cs-vcr's own addressing.*
 
 **R1a.** A `/c/<name>` prefix **MUST** name the cassette directly, with nothing declaring it. A
-request carrying no prefix **MUST** belong to the session's cassette. *A scenario that has to be
-declared in a second file before it can run is a scenario that stops a build until two files agree
-about it. Some requests also cannot carry anything else: Claude Code opens a connection with a bare
-`HEAD /api/hello` preconnect that sets no headers at all, so the fallback is what catches it.*
+request carrying no prefix **MUST** be refused. *A scenario that has to be declared in a second file
+before it can run is a scenario that stops a build until two files agree about it. A default to
+absorb an unprefixed request into would undo that: a base URL missing its prefix would look like it
+worked while its traffic landed in another scenario's recording. The prefix reaches everything a
+client sends, because it is part of the base URL every request is built from. Measured on Claude
+Code's `HEAD /api/hello` preconnect, which sets no headers at all and still carries it.*
 
 **R1b.** A cassette name **MUST** be one path segment of letters, digits, dot, dash or underscore,
 beginning with a letter or digit. A name that is not **MUST** be refused. *The name arrives in a URL
@@ -132,6 +134,12 @@ session, so serving one call from it would leave a script with a step missing fr
 
 **R4.** A replay session **MUST NOT** open a connection to a provider, whatever the configuration
 says.
+
+**R4a.** A replay session **MUST NOT** read provider configuration at all, and **MUST** serve with
+none configured. *Goal 1 asks a recorded session to replay with no provider reachable and no
+credential configured. Resolving the upstream before the replay branch met the first and not the
+second. A request would then fail for want of a provider it could never have called, and only the
+defaults naming two of them hid it.*
 
 ## 5. Matching
 
@@ -312,6 +320,7 @@ Every error cs-vcr generates is a JSON object with `error.type`, `error.message`
 
 | `error.type` | Status | Condition |
 |---|---|---|
+| `no_cassette` | 404 | The base URL does not end in `/c/<name>`, so the request names no cassette. |
 | `bad_cassette_name` | 400 | The prefix names something that is not a cassette name. |
 | `unreadable_body` | 400 | The request body could not be read. |
 | `unknown_cassette` | 404 | Replay was asked for a cassette the store does not hold. |
@@ -327,9 +336,9 @@ answer 404 on a model endpoint. *Stainless-generated SDKs retry a 5xx, which tur
 sixteen requests. A 404 on `/v1/messages` is how the API reports an unknown model. One miss
 therefore reached an operator as "that model may not exist or you may not have access to it".*
 
-**R32.** A prefix naming a cassette that cannot be used **MUST** be refused rather than attributed
-to the session's. *Otherwise a mistyped base URL looks like it worked while its traffic lands in
-another scenario's recording.*
+**R32.** A request that names no cassette, or names one that cannot be used, **MUST** be refused.
+*Otherwise a mistyped base URL looks like it worked while its traffic lands in another scenario's
+recording, or in nothing at all.*
 
 **R33.** A replay session that ends with one or more misses **MUST** exit 4.
 
@@ -343,7 +352,7 @@ Both commands print a summary on exit. It is the artifact a CI log shows.
 | `replayed` / `recorded` | Steps served from the cassette, and appended to it. |
 | `upstream calls` | Requests that reached a provider. Always 0 under `replay`. |
 | `misses` | Requests with no recording. Fails a replay session. |
-| `unknown cassette` | Requests whose prefix named a cassette that could not be used. |
+| `unknown cassette` | Requests that named no cassette, or named one that could not be used. |
 | `rejected` | Requests answered with an error. |
 | `abandoned` | Printed when the session exited with requests still in flight. |
 | `drifted observations` | Printed when a difference was tolerated at a volatile path. |
@@ -483,7 +492,6 @@ which beats the file.
 listen: 127.0.0.1:8080
 admin: 127.0.0.1:8081
 cassettes: ./cassettes
-cassette: build
 lookahead: 8
 
 providers:
@@ -511,11 +519,17 @@ was ignored".*
 
 **R44.** An invalid `replace` or `capture` pattern **MUST** fail at startup, not per request.
 
+**R44a.** A provider's `base_url` **MUST** be a URL with a scheme and a host, checked at startup with
+the parser the request path uses. *Otherwise what passes validation is not what forwards.*
+
 **R45.** A `cassette_provider` key **MUST** be a valid cassette name. *It names a cassette, and a
 key no prefix can ever produce is a pin that silently never applies.*
 
-**R46.** A `cassette_provider` value **MUST** name a configured provider. *Checked at startup,
-because a typo otherwise surfaces as a 502 on the first request of a recording session.*
+**R46.** Every provider a request could be routed to **MUST** name a configured provider, checked at
+startup. That is `default_provider` and each `cassette_provider` value. *A typo
+otherwise surfaces as a 502 partway through a recording session, and for `default_provider` that is
+the first request: the startup probes a client opens with are exactly the paths cs-vcr does not
+model.*
 
 **R47.** The configuration **MUST NOT** contain a credential.
 
@@ -525,8 +539,8 @@ of an array and a path covers everything beneath it.
 | Variable | Effect |
 |---|---|
 | `CS_VCR_CONFIG` | Config file path. |
+| `CS_VCR_HOME` | Root the config file is looked for under, when `CS_VCR_CONFIG` is unset. |
 | `CS_VCR_CASSETTES` | Cassette store directory. |
-| `VCR_CASSETTE` | Cassette a request with no prefix belongs to. |
 | `VCR_LISTEN` / `VCR_ADMIN` | Listen addresses. |
 | `VCR_ROOT` | Checkout root, where it is not the working directory. |
 

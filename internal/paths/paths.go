@@ -20,7 +20,7 @@ import (
 
 const app = "cs-vcr"
 
-// Config is the config file: providers, clients, the normalization ruleset.
+// Config is the config file: providers, provider pins, the normalization ruleset.
 func Config() string {
 	if p := os.Getenv("CS_VCR_CONFIG"); p != "" {
 		return p

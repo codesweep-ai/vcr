@@ -54,11 +54,6 @@ func cassetteServer(t *testing.T, dir string, offline bool, upstream http.Handle
 	// Both, or an unrecognized path routes to the real api.openai.com.
 	cfg.Providers["anthropic"] = &config.Provider{BaseURL: up.URL}
 	cfg.Providers["openai"] = &config.Provider{BaseURL: up.URL}
-	// The session's own cassette, which is what a request carrying no /c/<name>
-	// prefix belongs to. The store below is opened in dir rather than under
-	// this name: what maps a name to a directory is the command, and serve_test
-	// is where that is asserted.
-	cfg.Cassette = "session"
 	if err := cfg.Resolve(); err != nil {
 		t.Fatal(err)
 	}
@@ -67,7 +62,11 @@ func cassetteServer(t *testing.T, dir string, offline bool, upstream http.Handle
 		t.Fatal(err)
 	}
 	logs := &logBuffer{}
-	s := New(cfg, slog.New(slog.NewTextHandler(logs, &slog.HandlerOptions{Level: slog.LevelDebug})), offline).WithCassette(store)
+	// Every name this test sends resolves to the one cassette in dir: what maps
+	// a name to a directory is the command, and serve_test is where that is
+	// asserted.
+	s := New(cfg, slog.New(slog.NewTextHandler(logs, &slog.HandlerOptions{Level: slog.LevelDebug})), offline).
+		WithOpener(func(string) (*cassette.Store, error) { return store, nil })
 	s.now = func() time.Time { return time.Unix(0, 0).UTC() }
 	return s, logs
 }
@@ -136,7 +135,7 @@ func TestReplayPreservesEventFraming(t *testing.T) {
 
 	rep, _ := cassetteServer(t, dir, offline, func(w http.ResponseWriter, r *http.Request) {})
 	fw := &framingWriter{ResponseRecorder: httptest.NewRecorder()}
-	r := httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader(reqBody))
+	r := httptest.NewRequest(http.MethodPost, onCassette("/v1/messages"), strings.NewReader(reqBody))
 	rep.ServeHTTP(fw, r)
 
 	if len(fw.writes) != 7 {
@@ -357,7 +356,7 @@ func TestBodilessRequestsToDifferentPathsAreDifferentEntries(t *testing.T) {
 		_, _ = io.WriteString(w, `{"path":"`+r.URL.Path+`"}`)
 	})
 	for _, p := range []string{"/api/hello", "/api/other"} {
-		r := httptest.NewRequest(http.MethodGet, p, http.NoBody)
+		r := httptest.NewRequest(http.MethodGet, onCassette(p), http.NoBody)
 		rec.ServeHTTP(httptest.NewRecorder(), r)
 	}
 	if n := rec.Snapshot().Recorded; n != 2 {
@@ -369,7 +368,7 @@ func TestBodilessRequestsToDifferentPathsAreDifferentEntries(t *testing.T) {
 	})
 	for _, p := range []string{"/api/hello", "/api/other"} {
 		w := httptest.NewRecorder()
-		rep.ServeHTTP(w, httptest.NewRequest(http.MethodGet, p, http.NoBody))
+		rep.ServeHTTP(w, httptest.NewRequest(http.MethodGet, onCassette(p), http.NoBody))
 		if w.Code != http.StatusOK {
 			t.Fatalf("%s: status = %d", p, w.Code)
 		}
@@ -441,7 +440,7 @@ func TestRecordedBodiesAreNotCompressed(t *testing.T) {
 		_, _ = io.WriteString(gz, sseResponse)
 		gz.Close()
 	})
-	r := httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader(`{"stream":true}`))
+	r := httptest.NewRequest(http.MethodPost, onCassette("/v1/messages"), strings.NewReader(`{"stream":true}`))
 	r.Header.Set("Accept-Encoding", "gzip")
 	rec.ServeHTTP(httptest.NewRecorder(), r)
 
@@ -615,7 +614,7 @@ func TestAHangUpMidStreamStillRecordsWhatTheClientReceived(t *testing.T) {
 	front := httptest.NewServer(rec)
 	defer front.Close()
 
-	resp, err := http.Post(front.URL+"/v1/messages", "application/json",
+	resp, err := http.Post(front.URL+onCassette("/v1/messages"), "application/json",
 		strings.NewReader(`{"model":"claude-sonnet-5","stream":true}`))
 	if err != nil {
 		t.Fatal(err)
@@ -1424,5 +1423,45 @@ func TestOnlyARetryableStatusWithADelayKeepsItsRetryAfter(t *testing.T) {
 				t.Errorf("replay reproduced Retry-After = %q", v)
 			}
 		})
+	}
+}
+
+// Replay serves with no provider configured at all.
+//
+// SPEC goal 1 is that a recorded session replays with no provider reachable and
+// no credential configured. Reachable was always structural; configured was
+// not, because the upstream used to be resolved before the replay branch and a
+// request would 502 for want of a provider it could never have called. The
+// default configuration names two providers, so nothing noticed.
+func TestReplayNeedsNoProviderConfigured(t *testing.T) {
+	dir := t.TempDir()
+	rec, _ := cassetteServer(t, dir, online, func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"ok":true}`)
+	})
+	if w := post(t, rec, "/v1/messages", nil, `{"model":"m","messages":[]}`); w.Code != http.StatusOK {
+		t.Fatalf("record: status = %d", w.Code)
+	}
+
+	// A configuration that names no upstream whatsoever.
+	cfg := config.Default()
+	cfg.Providers = map[string]*config.Provider{}
+	cfg.DefaultProvider = ""
+	if err := cfg.Resolve(); err != nil {
+		t.Fatal(err)
+	}
+	store, err := cassette.OpenExistingStore(dir, cfg.Normalize.Version)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rep := New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), offline).
+		WithOpener(func(string) (*cassette.Store, error) { return store, nil })
+
+	w := post(t, rep, "/v1/messages", nil, `{"model":"m","messages":[]}`)
+	if w.Code != http.StatusOK {
+		t.Fatalf("replay with no provider configured: status = %d (%s)", w.Code, w.Body)
+	}
+	if w.Body.String() != `{"ok":true}` {
+		t.Errorf("replayed %s, want the recorded body", w.Body)
 	}
 }

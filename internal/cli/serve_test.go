@@ -32,17 +32,6 @@ import (
 // the provider would satisfy every one of them. Nothing below the command can
 // observe that, so the test belongs here.
 
-// cassetteArgs lists the cassettes named on a command line.
-func cassetteArgs(args []string) []string {
-	var out []string
-	for i, a := range args {
-		if a == "--cassette" && i+1 < len(args) {
-			out = append(out, args[i+1])
-		}
-	}
-	return out
-}
-
 // emptyCassette creates a cassette with no steps, which is what a session that
 // replays and misses everything is replaying from.
 func emptyCassette(t *testing.T, dir string) {
@@ -69,8 +58,12 @@ func port(t *testing.T) string {
 // dialled, until the test ends, and returns the address to send requests to
 // once /healthz answers.
 func serveInBackground(t *testing.T, args ...string) string {
-	return serveSession(t, unreachableProviders, args...).addr
+	return serveSessionOver(t, unreachableProviders, []string{testCassette}, args...).addr
 }
+
+// testCassette is the cassette these tests address. Its name is on the base URL
+// of every request, because that is the only way a request names one.
+const testCassette = "session"
 
 // session is a serve command under test, for the cases that end it themselves
 // and read what it left behind.
@@ -101,7 +94,7 @@ func serveSessionOver(t *testing.T, cfgYAML string, existing []string, args ...s
 	// `replay` refuses a cassette that is not there, so a replay test has to
 	// have one: it never recorded anything, and nothing else would have made it.
 	if args[0] == "replay" {
-		for _, name := range append(cassetteArgs(args), existing...) {
+		for _, name := range existing {
 			emptyCassette(t, filepath.Join(cassettes, name))
 		}
 	}
@@ -158,7 +151,7 @@ const unreachableProviders = `providers:
 `
 
 func postMessages(t *testing.T, addr, body string) (int, string) {
-	return postPath(t, addr, "/v1/messages", body)
+	return postPath(t, addr, "/c/"+testCassette+"/v1/messages", body)
 }
 
 // postPath is postMessages to a chosen path, for the cases where the path is
@@ -191,7 +184,7 @@ func postPath(t *testing.T, addr, path, body string) (int, string) {
 // practice — not with a miss, but with the provider's own error handed back to
 // the agent, which retries it as a transient server fault and hangs the run.
 func TestReplayNeverContactsAProvider(t *testing.T) {
-	addr := serveInBackground(t, "replay", "--cassette", "empty")
+	addr := serveInBackground(t, "replay")
 
 	status, body := postMessages(t, addr, `{"model":"claude-3-5-sonnet","messages":[{"role":"user","content":"hello"}]}`)
 
@@ -220,7 +213,7 @@ func TestReplayNeverContactsAProvider(t *testing.T) {
 // tried. One address, two commands, opposite behaviour — which is the whole
 // claim the two commands make.
 func TestRecordDoesContactAProvider(t *testing.T) {
-	addr := serveInBackground(t, "record", "--cassette", "empty")
+	addr := serveInBackground(t, "record")
 
 	status, body := postMessages(t, addr, `{"model":"claude-3-5-sonnet","messages":[{"role":"user","content":"hello"}]}`)
 
@@ -235,11 +228,11 @@ func TestRecordDoesContactAProvider(t *testing.T) {
 // A miss must say enough to fix it. "Cassette miss" against a cassette of
 // fifteen entries, with nothing else, says only that something is wrong.
 func TestReplayMissNamesTheRequest(t *testing.T) {
-	addr := serveInBackground(t, "replay", "--cassette", "empty")
+	addr := serveInBackground(t, "replay")
 
 	_, body := postMessages(t, addr, `{"model":"claude-3-5-sonnet","messages":[{"role":"user","content":"hello"}]}`)
 
-	for _, want := range []string{"/v1/messages", "empty"} {
+	for _, want := range []string{"/v1/messages", testCassette} {
 		if !strings.Contains(body, want) {
 			t.Errorf("miss does not mention %q:\n%s", want, body)
 		}
@@ -249,7 +242,7 @@ func TestReplayMissNamesTheRequest(t *testing.T) {
 // /healthz is on its own listener so that a readiness probe is not a request to
 // Anthropic. Asserted from the proxied port: it must not answer there.
 func TestHealthzIsNotOnTheProxiedPort(t *testing.T) {
-	addr := serveInBackground(t, "replay", "--cassette", "empty")
+	addr := serveInBackground(t, "replay")
 
 	resp, err := http.Get("http://" + addr + "/healthz")
 	if err != nil {
@@ -267,7 +260,7 @@ func TestHealthzIsNotOnTheProxiedPort(t *testing.T) {
 // the first request that asks for it.
 func TestCassettePrefixesSeparateAgents(t *testing.T) {
 	addr := serveSessionOver(t, unreachableProviders,
-		[]string{"orchestrator", "worker"}, "replay", "--cassette", "empty").addr
+		[]string{testCassette, "orchestrator", "worker"}, "replay").addr
 
 	// Each prefix is accepted and reported as a miss against its own cassette.
 	for _, prefix := range []string{"/c/orchestrator", "/c/worker"} {
@@ -287,11 +280,10 @@ func TestCassettePrefixesSeparateAgents(t *testing.T) {
 		}
 	}
 
-	// And an unprefixed request falls back to the session's own cassette,
-	// which is where the requests that cannot carry a prefix have to land.
+	// A third cassette, reached the same way, with nothing declaring any of them.
 	status, body := postMessages(t, addr, `{"model":"m","messages":[]}`)
-	if status != http.StatusBadRequest || !strings.Contains(body, `cassette \"empty\"`) {
-		t.Errorf("an unprefixed request did not fall back to the session cassette: %d %s", status, body)
+	if status != http.StatusBadRequest || !strings.Contains(body, `cassette \"`+testCassette+`\"`) {
+		t.Errorf("a request naming the session cassette was not served from it: %d %s", status, body)
 	}
 
 	// A prefix naming a cassette the store does not hold is refused, and named,
@@ -369,11 +361,11 @@ func TestStoppingWaitsForAResponseStillArriving(t *testing.T) {
 	defer up.Close()
 	defer release()
 
-	sess := serveSession(t, providers(up.URL), "record", "--cassette", "drain")
+	sess := serveSession(t, providers(up.URL), "record")
 
 	got := make(chan string, 1)
 	go func() {
-		resp, err := http.Post("http://"+sess.addr+"/v1/messages", "application/json",
+		resp, err := http.Post("http://"+sess.addr+"/c/"+testCassette+"/v1/messages", "application/json",
 			strings.NewReader(`{"model":"m","messages":[{"role":"user","content":"hi"}]}`))
 		if err != nil {
 			got <- "request failed: " + err.Error()
@@ -439,9 +431,9 @@ func TestARecordingTheSessionWalkedOutOnIsReported(t *testing.T) {
 	defer up.Close()
 	defer release()
 
-	sess := serveSession(t, providers(up.URL), "record", "--cassette", "walkout")
+	sess := serveSession(t, providers(up.URL), "record")
 	go func() {
-		resp, err := http.Post("http://"+sess.addr+"/v1/messages", "application/json",
+		resp, err := http.Post("http://"+sess.addr+"/c/"+testCassette+"/v1/messages", "application/json",
 			strings.NewReader(`{"model":"m","messages":[{"role":"user","content":"hi"}]}`))
 		if err == nil {
 			_, _ = io.Copy(io.Discard, resp.Body)
@@ -461,7 +453,7 @@ func TestARecordingTheSessionWalkedOutOnIsReported(t *testing.T) {
 	// on is still running and still writing. Let it land before the test's
 	// directory is taken out from under it.
 	release()
-	waitForFile(t, filepath.Join(sess.cassettes, "walkout", "index.jsonl"))
+	waitForFile(t, filepath.Join(sess.cassettes, testCassette, "index.jsonl"))
 }
 
 // waitForFile blocks until a path exists, for the writes that outlive what
@@ -494,9 +486,9 @@ func TestReplaySummaryReportsMisses(t *testing.T) {
 	out := &bytes.Buffer{}
 	cmd.SetOut(out)
 	cmd.SetErr(out)
-	emptyCassette(t, filepath.Join(dir, "cassettes", "empty"))
+	emptyCassette(t, filepath.Join(dir, "cassettes", testCassette))
 	cmd.SetArgs([]string{"--config", cfgPath, "replay",
-		"--cassette", "empty", "--cassettes", filepath.Join(dir, "cassettes"),
+		"--cassettes", filepath.Join(dir, "cassettes"),
 		"--listen", listen, "--admin", admin})
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -534,7 +526,7 @@ func TestRecordCreatesACassetteAPrefixNames(t *testing.T) {
 	}))
 	defer up.Close()
 
-	sess := serveSession(t, providers(up.URL), "record")
+	sess := serveSessionOver(t, providers(up.URL), nil, "record")
 	if status, body := postPath(t, sess.addr, "/c/on-demand/v1/messages",
 		`{"model":"m","messages":[]}`); status != http.StatusOK {
 		t.Fatalf("status = %d (%s)", status, body)
@@ -561,7 +553,7 @@ func TestRecordCreatesACassetteAPrefixNames(t *testing.T) {
 // miss, which reads as an agent that diverged rather than as a name that was
 // wrong.
 func TestReplayRefusesACassetteThatWasNeverRecorded(t *testing.T) {
-	addr := serveSession(t, unreachableProviders, "replay", "--cassette", "empty").addr
+	addr := serveSession(t, unreachableProviders, "replay").addr
 	status, body := postPath(t, addr, "/c/never-recorded/v1/messages", `{"model":"m","messages":[]}`)
 	if status != http.StatusNotFound {
 		t.Errorf("status = %d, want 404 — a 502 would mean it tried the provider", status)
@@ -574,7 +566,7 @@ func TestReplayRefusesACassetteThatWasNeverRecorded(t *testing.T) {
 // A cassette from another build is not a cassette that is missing, and saying
 // so sends the reader to look for a directory that is sitting right there.
 func TestReplayNamesACassetteItCannotRead(t *testing.T) {
-	sess := serveSessionOver(t, unreachableProviders, []string{"stale"}, "replay", "--cassette", "empty")
+	sess := serveSessionOver(t, unreachableProviders, []string{"stale"}, "replay")
 
 	// Age it under the running session, which is when a prefix first reaches
 	// for it: the store is consulted on the request, not at startup.

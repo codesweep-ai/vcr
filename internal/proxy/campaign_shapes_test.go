@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -36,7 +37,7 @@ func TestQueryStringIsPartOfTheKey(t *testing.T) {
 		_, _ = io.WriteString(w, `{"q":"`+r.URL.RawQuery+`"}`)
 	})
 	for _, q := range []string{"?beta=true", ""} {
-		r := httptest.NewRequest(http.MethodPost, "/v1/messages"+q, strings.NewReader(`{"m":1}`))
+		r := httptest.NewRequest(http.MethodPost, onCassette("/v1/messages"+q), strings.NewReader(`{"m":1}`))
 		rec.ServeHTTP(httptest.NewRecorder(), r)
 	}
 	if n := sessionStore(t, rec).Len(); n != 2 {
@@ -56,7 +57,7 @@ func TestQueryStringIsPartOfTheKey(t *testing.T) {
 		{"", `{"q":""}`},
 	} {
 		w := httptest.NewRecorder()
-		rep.ServeHTTP(w, httptest.NewRequest(http.MethodPost, "/v1/messages"+tc.query, strings.NewReader(`{"m":1}`)))
+		rep.ServeHTTP(w, httptest.NewRequest(http.MethodPost, onCassette("/v1/messages"+tc.query), strings.NewReader(`{"m":1}`)))
 		if w.Body.String() != tc.want {
 			t.Errorf("query %q replayed %s, want %s", tc.query, w.Body, tc.want)
 		}
@@ -72,7 +73,7 @@ func TestHeadRequestRoundTrips(t *testing.T) {
 		w.WriteHeader(http.StatusNotFound)
 	})
 	w := httptest.NewRecorder()
-	rec.ServeHTTP(w, httptest.NewRequest(http.MethodHead, "/api/hello", http.NoBody))
+	rec.ServeHTTP(w, httptest.NewRequest(http.MethodHead, onCassette("/api/hello"), http.NoBody))
 	if w.Code != http.StatusNotFound {
 		t.Fatalf("record: status = %d", w.Code)
 	}
@@ -84,7 +85,7 @@ func TestHeadRequestRoundTrips(t *testing.T) {
 		t.Error("replay contacted the provider")
 	})
 	w = httptest.NewRecorder()
-	rep.ServeHTTP(w, httptest.NewRequest(http.MethodHead, "/api/hello", http.NoBody))
+	rep.ServeHTTP(w, httptest.NewRequest(http.MethodHead, onCassette("/api/hello"), http.NoBody))
 	if w.Code != http.StatusNotFound {
 		t.Errorf("replay: status = %d, want the recorded 404", w.Code)
 	}
@@ -102,7 +103,7 @@ func TestMethodIsPartOfTheKey(t *testing.T) {
 		_, _ = io.WriteString(w, `{"m":"`+r.Method+`"}`)
 	})
 	for _, m := range []string{http.MethodGet, http.MethodHead, http.MethodPost} {
-		rec.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(m, "/api/hello", http.NoBody))
+		rec.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(m, onCassette("/api/hello"), http.NoBody))
 	}
 	if n := sessionStore(t, rec).Len(); n != 3 {
 		t.Fatalf("distinct entries = %d, want one per method", n)
@@ -145,7 +146,7 @@ func TestConcurrentMembersShareOneCassette(t *testing.T) {
 		wg.Go(func() {
 			for i := range turns {
 				body := fmt.Sprintf(`{"member":%d,"turn":%d}`, m, i)
-				r := httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader(body))
+				r := httptest.NewRequest(http.MethodPost, onCassette("/v1/messages"), strings.NewReader(body))
 				rec.ServeHTTP(httptest.NewRecorder(), r)
 			}
 		})
@@ -427,7 +428,7 @@ func TestAPinnedProviderDecidesEveryPathOnItsPrefix(t *testing.T) {
 
 	// The probe, exactly as captured: prefix present, nothing else to go on.
 	for _, path := range []string{"/c/feature/api/hello", "/c/feature/v1/messages"} {
-		r := httptest.NewRequest(http.MethodHead, path, http.NoBody)
+		r := httptest.NewRequest(http.MethodHead, onCassette(path), http.NoBody)
 		r.Header.Set("user-agent", "Bun/1.4.0")
 		w := httptest.NewRecorder()
 		s.ServeHTTP(w, r)
@@ -448,5 +449,72 @@ func TestAPinCannotNameAProviderThatDoesNotExist(t *testing.T) {
 	cfg.CassetteProvider = map[string]string{"feature": "anthropick"}
 	if err := cfg.Resolve(); err == nil {
 		t.Fatal("a pin naming an unconfigured provider was accepted")
+	}
+}
+
+// Two members reaching one cassette at the same moment must get one store.
+//
+// A store holds the cursor into its own script, so a second store for the same
+// cassette would replay it from the beginning halfway through a session — and
+// under record, two stores appending to one index would each think they were
+// writing step 1. Opening is therefore cached, and the cache has to hold under
+// the concurrency that makes several agents worth serving at all.
+func TestConcurrentFirstRequestsOpenOneStore(t *testing.T) {
+	root := t.TempDir()
+	var opens atomic.Int32
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(w, `{}`)
+	}))
+	t.Cleanup(up.Close)
+
+	cfg := config.Default()
+	cfg.Providers["anthropic"] = &config.Provider{BaseURL: up.URL}
+	cfg.Providers["openai"] = &config.Provider{BaseURL: up.URL}
+	if err := cfg.Resolve(); err != nil {
+		t.Fatal(err)
+	}
+	s := New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), online)
+	s = s.WithOpener(func(name string) (*cassette.Store, error) {
+		opens.Add(1)
+		return cassette.OpenStore(filepath.Join(root, name), "test",
+			cfg.Normalize.Version, func() int64 { return 0 })
+	})
+	s.now = func() time.Time { return time.Unix(0, 0).UTC() }
+
+	const members = 12
+	var wg sync.WaitGroup
+	for i := range members {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			body := fmt.Sprintf(`{"model":"m","messages":[{"role":"user","content":"turn %d"}]}`, i)
+			r := httptest.NewRequest(http.MethodPost, "/c/shared/v1/messages", strings.NewReader(body))
+			s.ServeHTTP(httptest.NewRecorder(), r)
+		}(i)
+	}
+	wg.Wait()
+
+	if n := opens.Load(); n != 1 {
+		t.Errorf("the cassette was opened %d times, want 1 — a second store restarts the script", n)
+	}
+	store, err := s.storeFor("shared")
+	if err != nil || store == nil {
+		t.Fatalf("storeFor: %v", err)
+	}
+	entries, err := store.Cassette().Entries()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Every turn is its own step, numbered once: two stores appending would
+	// have collided on the sequence and lost entries.
+	if len(entries) != members {
+		t.Fatalf("recorded %d steps, want %d", len(entries), members)
+	}
+	seen := map[int]bool{}
+	for _, e := range entries {
+		if seen[e.Seq] {
+			t.Errorf("sequence %d was written twice", e.Seq)
+		}
+		seen[e.Seq] = true
 	}
 }

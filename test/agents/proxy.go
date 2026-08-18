@@ -86,10 +86,9 @@ func startProxy(ctx context.Context, ws *workspace, cassettes, configPath string
 	if offline {
 		mode = "replay"
 	}
-	// No --cassette. The agent's base URL carries a /c/<scenario> prefix, so
-	// the prefix is the only thing that can select the cassette: a request that
-	// arrived without one would belong to no cassette and miss, which is what
-	// makes this an assertion rather than a configuration.
+	// The agent's base URL carries a /c/<scenario> prefix, which is the only way
+	// a request names a cassette: one that arrived without it would be refused,
+	// which is what makes this an assertion rather than a configuration.
 	args := []string{"--config", configPath, mode,
 		"--cassettes", cassettes,
 		"--listen", "127.0.0.1:" + strconv.Itoa(port),

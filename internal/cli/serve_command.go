@@ -38,17 +38,24 @@ func newReplayCmd(app *App) *cobra.Command { return newServeCmd(app, true) }
 
 func newServeCmd(app *App, offline bool) *cobra.Command {
 	use, short, long := "record", "Record LLM traffic into a cassette",
-		`Proxy an agent's LLM traffic, serving what the cassette already holds and
-calling the provider for what it does not. Point an agent at it with the
-base-URL variable for its provider; nothing else changes, and the agent keeps
-whatever login it has:
+		`Proxy an agent's LLM traffic to the provider, appending every interaction to
+a cassette. It consults the cassette for nothing: each call the session makes,
+including one it makes twice, reaches the provider, because a cassette is the
+record of a session rather than a cache.
 
-  ANTHROPIC_BASE_URL=http://127.0.0.1:8080
-  OPENAI_BASE_URL=http://127.0.0.1:8080
+Point an agent at it with the base-URL variable for its provider, ending in
+/c/<name> to say which cassette the run belongs to:
 
-Add /c/<name> to the base URL and that request belongs to the cassette <name>,
-which is how several agents share one cs-vcr. Nothing declares the name: run
-"cs-vcr config <agent>" for the exact setting each client wants.`
+  ANTHROPIC_BASE_URL=http://127.0.0.1:8080/c/build
+
+Nothing declares that name. This command creates the cassette on the first
+request that asks for it, and a second cassette is a second base URL, with no
+restart in between. Where the prefix goes relative to the /v1 a client appends
+differs by client, so run "cs-vcr config <agent>" for the exact URL.
+
+A request whose base URL carries no prefix is refused: cs-vcr does not guess
+which cassette it meant. Nothing else about the agent changes, and it keeps
+whatever login it has.`
 	if offline {
 		use, short, long = "replay", "Replay a cassette, contacting no provider",
 			`Serve an agent's LLM traffic entirely from a cassette. No provider is ever
@@ -56,9 +63,17 @@ contacted: a request with no recording fails the run with a diff against the
 nearest entry, and the session exits non-zero.
 
 This is the command a pipeline runs. It cannot spend money — not because it is
-configured not to, but because it is not built with anywhere to send a request.`
+configured not to, but because it is not built with anywhere to send a request.
+
+The base URL says which cassette to serve, by ending in /c/<name>:
+
+  ANTHROPIC_BASE_URL=http://127.0.0.1:8080/c/build
+
+A cassette the store does not hold is refused and named, rather than created and
+then missed on every request, and so is a request whose base URL carries no
+prefix at all. Run "cs-vcr config <agent>" for the exact URL a client wants.`
 	}
-	var listen, admin, cassette, cassettes, dumpMisses string
+	var listen, admin, cassettes, dumpMisses string
 	cmd := &cobra.Command{
 		Use: use, Short: short, Long: long,
 		Args: cobra.NoArgs,
@@ -69,9 +84,6 @@ configured not to, but because it is not built with anywhere to send a request.`
 			}
 			if admin != "" {
 				cfg.Admin = admin
-			}
-			if cassette != "" {
-				cfg.Cassette = cassette
 			}
 			if cassettes != "" {
 				cfg.Cassettes = cassettes
@@ -84,8 +96,6 @@ configured not to, but because it is not built with anywhere to send a request.`
 	}
 	cmd.Flags().StringVar(&listen, "listen", "", "address for the proxied port (default 127.0.0.1:8080)")
 	cmd.Flags().StringVar(&admin, "admin", "", "address for /healthz (default 127.0.0.1:8081)")
-	cmd.Flags().StringVar(&cassette, "cassette", "",
-		"cassette a request with no /c/<name> prefix belongs to")
 	cmd.Flags().StringVar(&cassettes, "cassettes", "", "directory holding cassettes (default ./cassettes)")
 	if offline {
 		// Only on replay: it is the command that can miss.
@@ -118,24 +128,6 @@ func runServe(ctx context.Context, app *App, out io.Writer, offline bool, dumpMi
 	}
 	srv = srv.WithOpener(open)
 
-	// The session's own cassette is opened at startup rather than on the first
-	// request, so a bad path or a cassette from another build fails the run
-	// immediately instead of becoming a storm of misses halfway through a CI
-	// job. A cassette only where one was named: naming one is what asks for
-	// recording, and without a name cs-vcr is simply a proxy.
-	//
-	// A cassette a base URL names is opened when its first request arrives.
-	// That is what lets one cs-vcr hold a whole suite of scenarios without any
-	// of them being declared anywhere.
-	if cfg.Cassette != "" {
-		store, err := open(cfg.Cassette)
-		if err != nil {
-			return fmt.Errorf("cassette %s: %w", cfg.Cassette, err)
-		}
-		srv = srv.WithCassette(store)
-		app.Log.Info("cassette open",
-			slog.String("name", cfg.Cassette), slog.Int("entries", store.Len()))
-	}
 	if dumpMisses != "" {
 		srv = srv.WithMissDump(dumpMisses)
 	}
@@ -172,7 +164,6 @@ func runServe(ctx context.Context, app *App, out io.Writer, offline bool, dumpMi
 
 	app.Log.Info("serving",
 		slog.Bool("offline", offline),
-		slog.String("cassette", orDash(cfg.Cassette)),
 		slog.Int("pinned providers", len(cfg.CassetteProvider)),
 		slog.String("listen", pl.Addr().String()),
 		slog.String("admin", al.Addr().String()),
@@ -205,7 +196,7 @@ func runServe(ctx context.Context, app *App, out io.Writer, offline bool, dumpMi
 
 	// Printed on the way out rather than logged, because it is the
 	// artifact a human reads after the run, not an event during it.
-	return summarize(out, srv.Snapshot(), cfg, offline)
+	return summarize(out, srv.Snapshot(), offline)
 }
 
 // drainTimeout bounds how long a stopping session waits for the requests still
@@ -238,13 +229,15 @@ func serveIgnoringClose(s *http.Server, l net.Listener) error {
 }
 
 // summarize prints the session summary and decides the exit status.
-func summarize(out io.Writer, st proxy.Stats, cfg *config.Config, offline bool) error {
+func summarize(out io.Writer, st proxy.Stats, offline bool) error {
 	tw := tabwriter.NewWriter(out, 0, 2, 2, ' ', 0)
 	verb := "record"
 	if offline {
 		verb = "replay"
 	}
-	fmt.Fprintf(tw, "\ncs-vcr %s summary (cassette=%s)\n", verb, orDash(cfg.Cassette))
+	// No cassette is named in the heading: a session serves whichever ones its
+	// requests asked for, and the per-cassette lines at the bottom say which.
+	fmt.Fprintf(tw, "\ncs-vcr %s summary\n", verb)
 	fmt.Fprintf(tw, "requests\t%d\n", st.Requests)
 	fmt.Fprintf(tw, "replayed\t%d\n", st.Replayed)
 	fmt.Fprintf(tw, "recorded\t%d\n", st.Recorded)
@@ -297,7 +290,6 @@ func printConfig(out io.Writer, app *App) error {
 	fmt.Fprintf(tw, "listen\t%s\n", cfg.Listen)
 	fmt.Fprintf(tw, "admin\t%s\n", cfg.Admin)
 	fmt.Fprintf(tw, "cassettes\t%s\n", cfg.Cassettes)
-	fmt.Fprintf(tw, "cassette\t%s\n", orDash(cfg.Cassette))
 	fmt.Fprintf(tw, "default provider\t%s\n", orDash(cfg.DefaultProvider))
 	fmt.Fprintf(tw, "normalize ruleset\tv%d (%d strip, %d query, %d replace)\n",
 		cfg.Normalize.Version, len(cfg.Normalize.Strip), len(cfg.Normalize.Query), len(cfg.Normalize.Replace))

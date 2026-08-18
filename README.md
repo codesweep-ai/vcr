@@ -38,29 +38,31 @@ Say your build runs an agent. Put it in a script:
 claude -p "write and test a hello world python program"
 ```
 
-**Locally**, record it. You need no config file, no keys and no flags beyond the cassette name:
+**Locally**, record it. You need no config file, no keys and no flags at all — the base URL says
+which cassette this is:
 
 ```bash
-cs-vcr record --cassette build          # terminal 1
+cs-vcr record                                             # terminal 1
 
-ANTHROPIC_BASE_URL=http://127.0.0.1:8080 ./build.sh    # terminal 2
+ANTHROPIC_BASE_URL=http://127.0.0.1:8080/c/build ./build.sh    # terminal 2
 ```
 
 Your agent keeps its own login, and nothing else about the build changes. Commit
 `cassettes/build/`. **In CI**, run the same script with no provider reachable:
 
 ```bash
-cs-vcr replay --cassette build
-ANTHROPIC_BASE_URL=http://127.0.0.1:8080 ./build.sh
+cs-vcr replay
+ANTHROPIC_BASE_URL=http://127.0.0.1:8080/c/build ./build.sh
 ```
 
 ```
-cs-vcr replay summary (cassette=build)
-requests          14
-replayed          14
-upstream calls     0
-misses             0
+cs-vcr replay summary
+requests                      14
+replayed                      14
+upstream calls                 0
+misses                         0
 …
+  cassette build              14
 ```
 
 If the session diverged from the recording, the build fails with the reason rather than silently
@@ -77,19 +79,26 @@ step 4 was recorded as POST /v1/messages (anthropic.messages)
 **A replay session starts and serves with no provider credential configured at all.** A
 misconfigured CI job cannot spend money, because it has nothing to spend with.
 
-To give a build a cassette per test, or to run several agents through one cs-vcr, put the cassette
-name on the base URL:
+The cassette `build` is declared nowhere. `record` creates it on the first request that names it,
+and `replay` serves it. A second cassette is a second base URL and nothing else. One cs-vcr can give
+a build a cassette per test, or serve several agents at once, with no restart between them:
 
 ```bash
 ANTHROPIC_BASE_URL=http://127.0.0.1:8080/c/refactor-auth claude -p "…"
 ```
 
-The cassette `refactor-auth` is declared nowhere. `record` creates it on the first request that
-names it, and `replay` serves it. Where the prefix goes relative to the `/v1` a client appends differs by client,
-so cs-vcr prints it:
+Each client appends a different amount of the API path, so the prefix sits in a different place for
+each. Ask, and copy the line it gives you:
 
 ```console
 $ cs-vcr config codex --cassette refactor-auth
+# Codex → cassette "refactor-auth" on http://127.0.0.1:8080
+
+# Run it:
+codex exec -c 'model_provider="cs-vcr"' \
+  -c 'model_providers.cs-vcr={name="cs-vcr", base_url="http://127.0.0.1:8080/c/refactor-auth/v1", env_key="OPENAI_API_KEY", wire_api="responses"}' \
+  "add a /version endpoint"
+…
 ```
 
 ## Two commands
@@ -98,8 +107,8 @@ There is no mode flag. You pick which of the two commands to run, and that decid
 session can spend money:
 
 ```bash
-cs-vcr record --cassette build     # calls the provider, and stores what comes back
-cs-vcr replay --cassette build     # serves only from the cassette, reaching nothing
+cs-vcr record     # calls the provider, and stores what comes back
+cs-vcr replay     # serves only from the cassette, reaching nothing
 ```
 
 `replay` builds a server with nowhere to send a request, so staying offline is not something you
@@ -137,6 +146,9 @@ everything else alone, including its login. Each block runs on the defaults: cas
 `./cassettes`, the proxy on `127.0.0.1:8080`. Run the recorder in one terminal and the agent in
 another.
 
+`cs-vcr config <agent> --cassette <name>` prints each of these for you, with the cassette prefix
+already in the right place. The blocks below are the same settings, written out.
+
 ### 1. Claude Code
 
 Claude Code takes a base URL from the environment, and the Pro/Max subscription it is logged in with
@@ -144,14 +156,14 @@ keeps working.
 
 ```bash
 # Terminal 1
-cs-vcr record --cassette build
+cs-vcr record
 
 # Terminal 2
-ANTHROPIC_BASE_URL=http://127.0.0.1:8080 claude -p "add a /version endpoint"
+ANTHROPIC_BASE_URL=http://127.0.0.1:8080/c/build claude -p "add a /version endpoint"
 
 # Ctrl-C the recorder for its summary, then replay with nothing to spend.
-cs-vcr replay --cassette build
-ANTHROPIC_BASE_URL=http://127.0.0.1:8080 claude -p "add a /version endpoint"
+cs-vcr replay
+ANTHROPIC_BASE_URL=http://127.0.0.1:8080/c/build claude -p "add a /version endpoint"
 ```
 
 ### 2. Codex, signed in with ChatGPT
@@ -160,11 +172,11 @@ Codex takes its provider from a config file. Add one that points at cs-vcr:
 
 ```toml
 # ~/.codex/config.toml
-model_provider = "vcr"
+model_provider = "cs-vcr"
 
-[model_providers.vcr]
-name = "vcr"
-base_url = "http://127.0.0.1:8080"
+[model_providers.cs-vcr]
+name = "cs-vcr"
+base_url = "http://127.0.0.1:8080/c/codex-build"
 wire_api = "responses"
 requires_openai_auth = true       # keeps the ChatGPT login
 ```
@@ -179,22 +191,25 @@ default_provider: openai          # Codex opens with GET /models, which names no
 ```
 
 ```bash
-cs-vcr record --cassette codex-build
+cs-vcr record
 
 # Terminal 2
 codex exec "add a /version endpoint"
 
-cs-vcr replay --cassette codex-build
+cs-vcr replay
 codex exec "add a /version endpoint"
 ```
 
 To try it without editing `~/.codex/config.toml`, pass the same settings on the command line:
 
 ```bash
-codex exec -c 'model_provider="vcr"' \
-  -c 'model_providers.vcr={name="vcr", base_url="http://127.0.0.1:8080", wire_api="responses", requires_openai_auth=true}' \
+codex exec -c 'model_provider="cs-vcr"' \
+  -c 'model_providers.cs-vcr={name="cs-vcr", base_url="http://127.0.0.1:8080/c/codex-build", wire_api="responses", requires_openai_auth=true}' \
   "add a /version endpoint"
 ```
+
+This is also how a build switches cassettes per test without touching the file: put
+`/c/$TEST` in the base URL and pass it as a flag.
 
 ### 3. Codex, signed in with an API key
 
@@ -202,7 +217,7 @@ Two changes from the block above. In `~/.codex/config.toml`, ask for the key and
 base URL:
 
 ```toml
-base_url = "http://127.0.0.1:8080/v1"
+base_url = "http://127.0.0.1:8080/c/codex-build/v1"
 env_key = "OPENAI_API_KEY"        # in place of requires_openai_auth
 ```
 
@@ -214,11 +229,11 @@ is where the `openai` provider already points.
 OpenCode takes a base URL from the environment, and ends it with `/v1`:
 
 ```bash
-cs-vcr record --cassette oc-build
+cs-vcr record
 
 # Terminal 2 — an Anthropic model, then an OpenAI-shaped one.
-ANTHROPIC_BASE_URL=http://127.0.0.1:8080/v1 opencode run --model anthropic/claude-sonnet-5 "add a /version endpoint"
-OPENAI_BASE_URL=http://127.0.0.1:8080/v1 opencode run --model openai/gpt-5 "add a /version endpoint"
+ANTHROPIC_BASE_URL=http://127.0.0.1:8080/c/oc-build/v1 opencode run --model anthropic/claude-sonnet-5 "add a /version endpoint"
+OPENAI_BASE_URL=http://127.0.0.1:8080/c/oc-build/v1 opencode run --model openai/gpt-5 "add a /version endpoint"
 ```
 
 To pin it per project, put the same URL in `opencode.json`:
@@ -226,7 +241,7 @@ To pin it per project, put the same URL in `opencode.json`:
 ```json
 {
   "$schema": "https://opencode.ai/config.json",
-  "provider": { "anthropic": { "options": { "baseURL": "http://127.0.0.1:8080/v1" } } }
+  "provider": { "anthropic": { "options": { "baseURL": "http://127.0.0.1:8080/c/oc-build/v1" } } }
 }
 ```
 
@@ -235,7 +250,7 @@ To pin it per project, put the same URL in `opencode.json`:
 **Standalone** — a binary, anywhere:
 
 ```bash
-cs-vcr replay --cassette build
+cs-vcr replay
 ```
 
 **As a pod:** `make build-go && podman kube play deploy/vcr.yaml`, which mounts the binary you

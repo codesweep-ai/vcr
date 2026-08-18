@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -37,20 +38,15 @@ func TestLoadRejectsUnknownKeys(t *testing.T) {
 // remainder is what upstream sees. Splitting is on segment boundaries, so
 // /c/featurex is its own cassette rather than the cassette `feature`.
 func TestRouteCassette(t *testing.T) {
-	c := Default()
-	c.Cassette = "session"
 	cases := []struct{ path, name, rest string }{
 		{"/c/feature/v1/messages", "feature", "/v1/messages"},
 		{"/c/feat/v1/messages", "feat", "/v1/messages"},
 		{"/c/featurex/v1/messages", "featurex", "/v1/messages"},
 		// A bare prefix is a valid request for the provider's root.
 		{"/c/feature", "feature", "/"},
-		// No prefix at all: the session's cassette, and the path untouched.
-		{"/v1/messages", "session", "/v1/messages"},
-		{"/api/hello", "session", "/api/hello"},
 	}
 	for _, tc := range cases {
-		name, rest, err := c.RouteCassette(tc.path)
+		name, rest, err := RouteCassette(tc.path)
 		if err != nil {
 			t.Errorf("RouteCassette(%q): %v", tc.path, err)
 			continue
@@ -64,34 +60,37 @@ func TestRouteCassette(t *testing.T) {
 	}
 }
 
-// With no session cassette and no prefix a request belongs nowhere, and cs-vcr
-// is a plain proxy for it. The simple deployment pays nothing for a feature it
-// is not using.
-func TestRouteCassetteWithNothingConfigured(t *testing.T) {
-	name, rest, err := Default().RouteCassette("/v1/messages")
-	if err != nil || name != "" || rest != "/v1/messages" {
-		t.Errorf("RouteCassette = (%q, %q, %v), want no cassette and the path untouched", name, rest, err)
+// A base URL that never named a cassette is refused rather than absorbed into a
+// default. Absorbing it is how a mistyped base URL looks like it worked while
+// its traffic lands somewhere else.
+func TestRouteCassetteRefusesAPathThatNamesNone(t *testing.T) {
+	for _, path := range []string{"/v1/messages", "/api/hello", "/", "/cx/build/v1/messages"} {
+		_, _, err := RouteCassette(path)
+		if !errors.Is(err, ErrNoCassette) {
+			t.Errorf("RouteCassette(%q) err = %v, want ErrNoCassette", path, err)
+		}
 	}
 }
 
 // The name arrives in a URL and becomes a directory, so it is checked rather
 // than trusted. Without this, /c/../../etc reads outside the cassette store.
 func TestRouteCassetteRejectsWhatIsNotAName(t *testing.T) {
-	c := Default()
-	c.Cassette = "session"
 	// Each of these reaches RouteCassette as the segment after /c/, which is
 	// what a client would have to send to escape the store.
 	for _, name := range []string{"..", ".hidden", "-flag", "", "a b", strings.Repeat("x", 129)} {
 		if err := CheckCassetteName(name); err == nil {
 			t.Errorf("CheckCassetteName(%q) accepted it", name)
 		}
-		if got, _, err := c.RouteCassette("/c/" + name + "/v1/messages"); err == nil {
+		got, _, err := RouteCassette("/c/" + name + "/v1/messages")
+		if err == nil {
 			t.Errorf("RouteCassette(/c/%s/…) accepted it as %q", name, got)
 		}
+		if errors.Is(err, ErrNoCassette) {
+			t.Errorf("RouteCassette(/c/%s/…) reported it as naming none, which sends the reader to the wrong half of the URL", name)
+		}
 	}
-	// A bare prefix is refused rather than quietly becoming the session's, or a
-	// base URL ending in /c/ would record into the wrong cassette in silence.
-	if _, _, err := c.RouteCassette("/c/"); err == nil {
+	// A bare prefix is refused too: a base URL ending in /c/ is unfinished.
+	if _, _, err := RouteCassette("/c/"); err == nil {
 		t.Error("a base URL ending in the bare prefix was accepted")
 	}
 	for _, name := range []string{"build", "claude-code-api-key", "run_2", "a.b", "A1"} {
@@ -130,11 +129,46 @@ func TestCassetteProviderChecksItsKey(t *testing.T) {
 	}
 }
 
-func TestResolveRequiresABaseURL(t *testing.T) {
+// A base URL that cannot be dialled is refused here, using the same parser the
+// request path uses. Left to the request path it is a 502 partway through a
+// recording session, which reads as the provider being down.
+func TestResolveChecksEveryBaseURL(t *testing.T) {
+	bad := map[string]string{
+		"empty":       "",
+		"unparseable": "://nonsense",
+		"no scheme":   "api.anthropic.com",
+		"no host":     "https://",
+	}
+	for name, raw := range bad {
+		c := Default()
+		c.Providers["anthropic"] = &Provider{BaseURL: raw}
+		if err := c.Resolve(); err == nil {
+			t.Errorf("%s: base_url %q was accepted", name, raw)
+		}
+	}
+	for _, raw := range []string{"https://api.anthropic.com", "http://127.0.0.1:8080",
+		"https://chatgpt.com/backend-api/codex"} {
+		c := Default()
+		c.Providers["anthropic"] = &Provider{BaseURL: raw}
+		if err := c.Resolve(); err != nil {
+			t.Errorf("base_url %q was refused: %v", raw, err)
+		}
+	}
+}
+
+// default_provider is where a request goes when its path says nothing, which
+// includes the startup probes a client opens a session with. A typo there is
+// therefore a 502 on the FIRST request, so it is caught at startup — the same
+// rule a cassette_provider pin already followed.
+func TestResolveChecksDefaultProvider(t *testing.T) {
 	c := Default()
-	c.Providers["anthropic"] = &Provider{}
+	c.DefaultProvider = "anthropick"
 	if err := c.Resolve(); err == nil {
-		t.Fatal("a provider with no base_url was accepted")
+		t.Fatal("default_provider naming no configured provider was accepted")
+	}
+	c.DefaultProvider = "anthropic"
+	if err := c.Resolve(); err != nil {
+		t.Fatalf("default_provider naming a configured provider was refused: %v", err)
 	}
 }
 

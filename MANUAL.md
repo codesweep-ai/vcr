@@ -7,9 +7,9 @@
 ## Synopsis
 
 ```
-cs-vcr record   [--cassette NAME] [--cassettes DIR] [--listen ADDR] [--admin ADDR]
-cs-vcr replay   [--cassette NAME] [--cassettes DIR] [--listen ADDR] [--admin ADDR]
-                [--dump-misses DIR]
+cs-vcr record   [--cassettes DIR] [--listen ADDR] [--admin ADDR]
+cs-vcr replay   [--cassettes DIR] [--listen ADDR] [--admin ADDR] [--dump-misses DIR]
+                (a request names its own cassette with /c/<name> on the base URL)
 cs-vcr cassette ls [NAME] [--json]
 cs-vcr cassette show NAME STEP
 cs-vcr cassette verify [NAME...]
@@ -30,6 +30,11 @@ cs-vcr is an HTTP proxy that you put between an agent and its provider. It recor
 later so the run makes no provider calls. Point the agent at it with a base URL, and nothing else
 about the agent changes: it keeps its own login, which cs-vcr forwards untouched.
 
+The base URL says which cassette, by ending in `/c/<name>`. Nothing declares that name, so a second
+cassette is a second base URL and no restart. Each client appends a different amount of the API path,
+so the prefix sits in a different place for each. Run `cs-vcr config <agent>` and it prints the URL
+for that one.
+
 `record` calls the provider and writes each interaction into the cassette. `replay` serves that
 cassette back and reaches no provider at all, so a CI job can run the whole agent loop for nothing.
 
@@ -44,7 +49,7 @@ For what cs-vcr guarantees and why it is built this way, see [SPEC.md](SPEC.md).
 ### record
 
 ```
-cs-vcr record --cassette NAME
+cs-vcr record
 ```
 
 Proxies to real providers and appends every interaction to the cassette, in order. It consults the
@@ -57,7 +62,7 @@ written, then prints a summary. A second Ctrl-C stops the wait.
 ### replay
 
 ```
-cs-vcr replay --cassette NAME [--dump-misses DIR]
+cs-vcr replay [--dump-misses DIR]
 ```
 
 Serves only from the cassette. The server is built with nowhere to send a request, so no
@@ -102,8 +107,8 @@ sides. Replay the cassette after a scrub.
 ### calibrate
 
 ```
-cs-vcr replay --cassette NAME --dump-misses ./misses    # fails, dumps
-cs-vcr calibrate NAME ./misses                          # proposes rules
+cs-vcr replay --dump-misses ./misses    # fails, dumps
+cs-vcr calibrate NAME ./misses          # proposes rules
 ```
 
 Compares each dumped request with the step it was compared against, and prints the paths that
@@ -145,7 +150,7 @@ cs-vcr has the reference, with no checkout to read and no page to fetch.
 
 | Option | Applies to | Meaning |
 |---|---|---|
-| `--cassette NAME` | record, replay, config | The cassette a request with no `/c/<name>` prefix belongs to. |
+| `--cassette NAME` | config AGENT | The cassette the printed base URL names. Required. |
 | `--cassettes DIR` | record, replay | The directory holding cassettes. Default `./cassettes`. |
 | `--listen ADDR` | record, replay | Proxied port. Default `127.0.0.1:8080`. |
 | `--admin ADDR` | record, replay | Admin port, serving `/healthz`. Default `127.0.0.1:8081`. |
@@ -162,22 +167,26 @@ cs-vcr has the reference, with no checkout to read and no page to fetch.
 
 ## Pointing an agent at it
 
-Only the base URL changes. How much of the API path the agent appends to it differs by client.
+Only the base URL changes, and it ends in `/c/<name>` to say which cassette the run belongs to.
+Nothing declares that name: `record` creates the cassette on the first request that asks for it, and
+`replay` serves it. How much of the API path a client appends differs, so the prefix sits in a
+different place for each. Run `cs-vcr config <agent> --cassette <name>` and it prints the exact line
+for that client.
 
-**Claude Code**
+**Claude Code** appends the version itself, so the URL stops at the cassette name:
 
 ```bash
-ANTHROPIC_BASE_URL=http://127.0.0.1:8080 claude -p "add a /version endpoint"
+ANTHROPIC_BASE_URL=http://127.0.0.1:8080/c/build claude -p "add a /version endpoint"
 ```
 
 **Codex, signed in with ChatGPT** — `~/.codex/config.toml`:
 
 ```toml
-model_provider = "vcr"
+model_provider = "cs-vcr"
 
-[model_providers.vcr]
-name = "vcr"
-base_url = "http://127.0.0.1:8080"
+[model_providers.cs-vcr]
+name = "cs-vcr"
+base_url = "http://127.0.0.1:8080/c/build"
 wire_api = "responses"
 requires_openai_auth = true
 ```
@@ -194,27 +203,19 @@ default_provider: openai
 config at all:
 
 ```toml
-base_url = "http://127.0.0.1:8080/v1"
+base_url = "http://127.0.0.1:8080/c/build/v1"
 env_key = "OPENAI_API_KEY"
 ```
 
-**OpenCode**
+**OpenCode** is given a base URL that already ends in the version:
 
 ```bash
-ANTHROPIC_BASE_URL=http://127.0.0.1:8080/v1 opencode run --model anthropic/claude-sonnet-5 "…"
-OPENAI_BASE_URL=http://127.0.0.1:8080/v1 opencode run --model openai/gpt-5 "…"
+ANTHROPIC_BASE_URL=http://127.0.0.1:8080/c/build/v1 opencode run --model anthropic/claude-sonnet-5 "…"
+OPENAI_BASE_URL=http://127.0.0.1:8080/c/build/v1 opencode run --model openai/gpt-5 "…"
 ```
 
-**Naming the cassette on the base URL.** Add `/c/<name>` and the traffic belongs to the cassette
-`<name>`. Nothing declares it: `record` creates it on the first request, and `replay` serves it.
-
-```bash
-ANTHROPIC_BASE_URL=http://127.0.0.1:8080/c/refactor-auth claude
-```
-
-The prefix goes before the `/v1` where a client wants one, which is what `cs-vcr config <agent>`
-prints. That is how several agents share one cs-vcr, and how a build gives each test its own
-cassette without restarting anything:
+**A cassette per test.** Switching between them is that one string, and no restart. Several agents
+share one cs-vcr the same way:
 
 ```bash
 # Claude Code
@@ -256,8 +257,8 @@ cassette_provider:
 | Variable | Effect |
 |---|---|
 | `CS_VCR_CONFIG` | Config file path. |
+| `CS_VCR_HOME` | Root the config file is looked for under, when `CS_VCR_CONFIG` is unset. |
 | `CS_VCR_CASSETTES` | Cassette store directory. |
-| `VCR_CASSETTE` | Cassette a request with no `/c/<name>` prefix belongs to. |
 | `VCR_LISTEN`, `VCR_ADMIN` | Listen addresses. |
 | `VCR_ROOT` | Checkout root, where it is not the working directory. |
 
@@ -280,6 +281,9 @@ proposed for you.
 
 **`unknown_cassette`** — the base URL named a cassette that is not in the store, and `replay` will
 not create one. Check the name against `cs-vcr cassette ls`.
+
+**`no_cassette`** — the base URL did not end in `/c/<name>`, so the request said nothing about which
+cassette it belongs to. cs-vcr refuses it rather than picking one.
 
 **`bad_cassette_name`** — the `/c/` prefix was followed by something that is not a cassette name, or
 by nothing at all. A base URL ending in `/c/` is the usual cause.
@@ -362,19 +366,19 @@ claude -p "write and test a hello world python program"
 EOF
 chmod +x build.sh
 
-cs-vcr record --cassette build &
-ANTHROPIC_BASE_URL=http://127.0.0.1:8080 ./build.sh
+cs-vcr record &
+ANTHROPIC_BASE_URL=http://127.0.0.1:8080/c/build ./build.sh
 kill -INT %1
 
-cs-vcr replay --cassette build &
-ANTHROPIC_BASE_URL=http://127.0.0.1:8080 ./build.sh
+cs-vcr replay &
+ANTHROPIC_BASE_URL=http://127.0.0.1:8080/c/build ./build.sh
 kill -INT %1
 ```
 
 Find out why a replay failed:
 
 ```bash
-cs-vcr replay --cassette build --dump-misses ./misses
+cs-vcr replay --dump-misses ./misses
 diff cassettes/build/req/0003.json misses/0003.json
 cs-vcr calibrate build ./misses
 ```

@@ -63,10 +63,10 @@ config file        /home/you/.config/cs-vcr/config.yaml
 listen             127.0.0.1:8080
 admin              127.0.0.1:8081
 cassettes          cassettes
-cassette           -
 default provider   anthropic
 normalize ruleset  v6 (6 strip, 1 query, 9 replace)
 normalize root     /home/you/project
+cassette prefix    /c/<name>
 
 PROVIDER   BASE URL
 anthropic  https://api.anthropic.com
@@ -81,9 +81,12 @@ Only the base URL changes — the agent keeps whatever login it already has, inc
 Pro/Max subscription:
 
 ```bash
-cs-vcr record --cassette build
-ANTHROPIC_BASE_URL=http://127.0.0.1:8080 claude -p "add a /version endpoint"
+cs-vcr record
+ANTHROPIC_BASE_URL=http://127.0.0.1:8080/c/build claude -p "add a /version endpoint"
 ```
+
+The `/c/build` on the end names the cassette this run belongs to. Nothing declares it: `record`
+creates it on the first request, and `replay` serves it.
 
 **Where each client expects that URL to end differs**, because each appends a different amount of
 the API path to it, and Codex needs a `model_providers` entry rather than an environment variable.

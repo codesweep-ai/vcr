@@ -280,13 +280,15 @@ func TestConfigRefusesAnUnknownAgent(t *testing.T) {
 	}
 }
 
-// The cassette has to come from somewhere: printing settings that select no
-// cassette would be printing a base URL that records into the session's.
+// The cassette has to be named: the whole of what these settings say is which
+// cassette the base URL points at, so printing them without one would print a
+// URL that names nothing and is refused on the first request.
 func TestConfigForAnAgentNeedsACassette(t *testing.T) {
-	if _, err := runWithConfig(t, "", nil, "config", "claude"); err == nil {
-		t.Fatal("agent settings were printed with no cassette named")
+	out, err := runWithConfig(t, "", nil, "config", "claude")
+	if err == nil {
+		t.Fatalf("agent settings were printed with no cassette named:\n%s", out)
 	}
-	if _, err := runWithConfig(t, "cassette: build\n", nil, "config", "claude"); err != nil {
-		t.Fatalf("the configured cassette was not used: %v", err)
+	if !strings.Contains(err.Error(), "--cassette") {
+		t.Errorf("the error does not say how to name one: %v", err)
 	}
 }

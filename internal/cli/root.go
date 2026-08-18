@@ -185,24 +185,20 @@ file or a CI environment block:
 				return fmt.Errorf("no settings for an agent called %q; cs-vcr knows %s",
 					args[0], strings.Join(agentNames(), ", "))
 			}
-			name := cassette
-			if name == "" {
-				name = app.Cfg.Cassette
+			if cassette == "" {
+				return errors.New("which cassette? pass --cassette — the printed base URL names it")
 			}
-			if name == "" {
-				return errors.New("which cassette? pass --cassette, or name one in the configuration")
-			}
-			if err := config.CheckCassetteName(name); err != nil {
+			if err := config.CheckCassetteName(cassette); err != nil {
 				return err
 			}
 			at := url
 			if at == "" {
 				at = proxyURL(app.Cfg.Listen)
 			}
-			return printAgentConfig(cmd.OutOrStdout(), a, at, name, envOnly)
+			return printAgentConfig(cmd.OutOrStdout(), a, at, cassette, envOnly)
 		},
 	}
-	cmd.Flags().StringVar(&cassette, "cassette", "", "cassette the printed settings select (default: the configured one)")
+	cmd.Flags().StringVar(&cassette, "cassette", "", "cassette the printed base URL names (required)")
 	cmd.Flags().StringVar(&url, "url", "", "where the agent reaches cs-vcr (default: derived from listen)")
 	cmd.Flags().BoolVar(&envOnly, "env-only", false, "print only the VAR=VALUE lines, for sourcing or piping")
 	return cmd

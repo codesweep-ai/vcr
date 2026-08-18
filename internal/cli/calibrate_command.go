@@ -32,8 +32,8 @@ func newCalibrateCmd(app *App) *cobra.Command {
 		Long: `Compare the requests a replay dumped against the steps they were compared
 against, and propose the paths that differed as normalize.volatile rules.
 
-    cs-vcr replay --cassette build --dump-misses ./misses    # fails, dumps
-    cs-vcr calibrate build ./misses                          # proposes rules
+    cs-vcr replay --dump-misses ./misses    # fails, dumps
+    cs-vcr calibrate build ./misses         # proposes rules
 
 Contacts no provider and changes no file. What it prints is a proposal to read
 and decide on: a path is only volatile if what differs there is something the

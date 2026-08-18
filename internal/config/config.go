@@ -17,6 +17,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"regexp"
 	"sort"
@@ -69,15 +70,6 @@ func CheckCassetteName(name string) error {
 type Config struct {
 	// Cassettes is the directory holding cassette directories.
 	Cassettes string `yaml:"cassettes"`
-	// Cassette names the one a request goes to when its base URL names none.
-	// Naming one is what asks for recording: there is no separate mode for it,
-	// because "record" versus "just proxy" is not a decision, it is a
-	// consequence of whether there is anywhere to record into.
-	//
-	// A base URL carrying CassettePrefix overrides it, which is how several
-	// agents share one cs-vcr. This is the fallback, and it is what the single
-	// agent deployment uses: one cassette, no prefix, no configuration.
-	Cassette string `yaml:"cassette"`
 	// Listen is the proxied port; Admin carries /healthz on a separate
 	// listener, because an unrecognized path on the proxied one is forwarded
 	// to a provider.
@@ -663,9 +655,6 @@ func Load(path string) (*Config, error) {
 // ApplyEnv overlays the environment. Only settings a deployment needs to vary
 // per run are here; anything else belongs in the file.
 func (c *Config) ApplyEnv(getenv func(string) string) error {
-	if v := getenv("VCR_CASSETTE"); v != "" {
-		c.Cassette = v
-	}
 	if v := getenv("CS_VCR_CASSETTES"); v != "" {
 		c.Cassettes = v
 	}
@@ -693,19 +682,39 @@ func (c *Config) ApplyEnv(getenv func(string) string) error {
 // runs.
 func (c *Config) Resolve() error {
 	for name, p := range c.Providers {
-		if p.BaseURL == "" {
-			return fmt.Errorf("provider %s: base_url is required", name)
+		if err := checkBaseURL(name, p.BaseURL); err != nil {
+			return err
+		}
+	}
+	// Every provider a request could be routed to is checked here, because the
+	// alternative is a 502 on the first request of a recording session — and
+	// for default_provider that is the FIRST request, since the startup probes
+	// a client opens with are exactly the paths cs-vcr does not model.
+	if c.DefaultProvider != "" {
+		if _, ok := c.Providers[c.DefaultProvider]; !ok {
+			return fmt.Errorf("default_provider: no provider named %q is configured", c.DefaultProvider)
 		}
 	}
 	if err := c.Normalize.Compile(); err != nil {
 		return err
 	}
-	if c.Cassette != "" {
-		if err := CheckCassetteName(c.Cassette); err != nil {
-			return err
-		}
-	}
 	return c.resolvePins()
+}
+
+// checkBaseURL refuses an upstream that could not be dialled, using the same
+// parser the request path uses, so what passes here is what forwards later.
+func checkBaseURL(name, raw string) error {
+	if raw == "" {
+		return fmt.Errorf("provider %s: base_url is required", name)
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return fmt.Errorf("provider %s: base_url %q is not a URL: %w", name, raw, err)
+	}
+	if u.Scheme == "" || u.Host == "" {
+		return fmt.Errorf("provider %s: base_url %q needs a scheme and a host, as in https://api.anthropic.com", name, raw)
+	}
+	return nil
 }
 
 // resolvePins checks the provider pins before the first request, so a typo
@@ -730,21 +739,23 @@ func (c *Config) ProviderFor(cassette string) string {
 	return c.CassetteProvider[cassette]
 }
 
+// ErrNoCassette is a request whose base URL does not say which cassette it
+// belongs to. It is reported rather than absorbed: a request that was going to
+// be recorded, and was not, is the failure this mechanism exists to prevent,
+// and a default to absorb it into would make a mistyped base URL look like it
+// worked.
+var ErrNoCassette = errors.New("the base URL must end in " + CassettePrefix +
+	"<name> to say which cassette this request belongs to")
+
 // RouteCassette reads a request path and answers two things: the cassette the
 // request belongs in, and the path upstream should see.
 //
-// A path under CassettePrefix names its own cassette. Anything else belongs to
-// the session's, so the single-agent deployment needs no prefix and no
-// configuration at all.
-//
 // The name is checked rather than trusted, because it arrives in a URL and is
-// about to become a directory. An unusable one is reported rather than quietly
-// falling back to the session's cassette: a request that asked for one cassette
-// and was answered from another is the failure this mechanism exists to prevent.
-func (c *Config) RouteCassette(path string) (name, rest string, err error) {
+// about to become a directory.
+func RouteCassette(path string) (name, rest string, err error) {
 	named, rest, prefixed := splitCassettePath(path)
 	if !prefixed {
-		return c.Cassette, path, nil
+		return "", "", ErrNoCassette
 	}
 	if err := CheckCassetteName(named); err != nil {
 		return "", "", err
