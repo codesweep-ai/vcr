@@ -14,7 +14,29 @@ LDFLAGS    := -s -w -X github.com/codesweep-ai/vcr/internal/cli.Version=$(VERSIO
 # makes `gofmt -l` read stdin and hang rather than check anything.
 GO_FILES   := $(shell git ls-files '*.go' 2>/dev/null | grep . || find . -name '*.go' -not -path './bin/*' -not -path './dist/*')
 
-.PHONY: help build build-go install uninstall test test-race fixtures test-integration test-smoke agent-versions vet fmt fmt-check check lint deadcode docs oss ledger snapshot release release-check clean
+# Coverage is not a separate mode: every test target below writes Go binary
+# coverage data into its own tier directory under $(COVERDIR), and `make
+# coverage` merges whichever tiers are present. That is what lets
+# `make test test-integration` report one aggregate number instead of the last
+# tier overwriting the one before it. scripts/coverage.sh documents the layout.
+# -test.gocoverdir must be absolute: `go test` runs each package's test binary
+# with that package's directory as its working directory, so a relative path
+# would scatter the data one directory per package.
+# CS_COVERDIR, passed per tier below, tells a test that builds and execs the
+# real binary where the instrumented child should write. It is not GOCOVERDIR
+# because `go test` overwrites that one in the test process with a directory of
+# its own, and does not fold what lands there back into the profile.
+COVERDIR   ?= .coverage
+COVER_ABS  := $(abspath $(COVERDIR))
+# test/agents is the harness for the live tier, not shipped code, and it lives
+# in ordinary .go files rather than _test.go ones -- so -coverpkg=./... would
+# instrument 250-odd statements of test scaffolding and count them against the
+# repo's coverage. Naming the packages excludes it. Recursive `=`, so `go list`
+# runs only for the targets that use it.
+COVERPKG    = $(shell go list ./... | grep -v '/test/' | paste -sd, -)
+COVERFLAGS  = -covermode=atomic -coverpkg=$(COVERPKG)
+
+.PHONY: help build build-go build-cover install uninstall test test-race fixtures test-integration test-smoke coverage coverage-check coverage-baseline agent-versions vet fmt fmt-check check lint deadcode docs oss ledger snapshot release release-check clean
 
 .DEFAULT_GOAL := help
 
@@ -34,6 +56,16 @@ build:
 		echo "goreleaser not found; using go build (run 'make build-go' explicitly to force)"; \
 		$(MAKE) build-go; \
 	fi
+
+## build-cover: bin/cs-vcr built instrumented, for a gate that drives the real
+## command rather than going through `go test`. Run it with GOCOVERDIR pointing
+## at $(COVERDIR)/cli and what it executes joins the aggregate; CI's cassette
+## job is the one that does. Without it that job proves the cassettes verify and
+## measures nothing, which is how `cassette verify` came to read as uncovered
+## while running on every push.
+build-cover:
+	@scripts/coverage.sh reset cli
+	go build -cover $(COVERFLAGS) -o $(BIN) $(PKG)
 
 ## build-go: host binary via plain go build (no goreleaser needed)
 build-go:
@@ -55,13 +87,15 @@ uninstall:
 
 ## test: unit tests
 test:
-	go test ./...
+	@scripts/coverage.sh reset unit
+	CS_COVERDIR=$(COVER_ABS)/unit go test $(COVERFLAGS) ./... -args -test.gocoverdir=$(COVER_ABS)/unit
 
 ## test-race: the same suite under the race detector. The proxy serves several
 ## campaign members at once against one cassette, so a torn index or a lost
 ## entry is a real failure mode and not a theoretical one.
 test-race:
-	go test -race ./...
+	@scripts/coverage.sh reset race
+	CS_COVERDIR=$(COVER_ABS)/race go test -race $(COVERFLAGS) ./... -args -test.gocoverdir=$(COVER_ABS)/race
 
 ## fixtures: record a cassette per agent/login combination in test/agents,
 ## scrub it, and replay it before keeping it. Calls real providers, so it costs
@@ -76,7 +110,10 @@ fixtures:
 ## versions in test/agents/fixtures.json; anything missing is skipped, unless
 ## CS_VCR_AGENTS_STRICT=1 makes it fail.
 test-integration:
-	CS_VCR_AGENTS=1 go test ./test/agents -run TestReplayFixtures -v -timeout 30m -count=1
+	@scripts/coverage.sh reset integration
+	CS_VCR_AGENTS=1 CS_COVERDIR=$(COVER_ABS)/integration \
+	  go test $(COVERFLAGS) ./test/agents -run TestReplayFixtures -v -timeout 30m -count=1 \
+	  -args -test.gocoverdir=$(COVER_ABS)/integration
 
 ## test-smoke: the profile to run before pushing — one scenario per agent, and
 ## between them all three surfaces cs-vcr routes, in about five seconds. A
@@ -96,13 +133,33 @@ space := $(empty) $(empty)
 SMOKE_RUN := $(subst $(space),|,$(strip $(SMOKE_SCENARIOS)))
 
 test-smoke:
-	CS_VCR_AGENTS=1 go test ./test/agents -run 'TestReplayFixtures/($(SMOKE_RUN))' -v -timeout 10m -count=1
+	@scripts/coverage.sh reset smoke
+	CS_VCR_AGENTS=1 CS_COVERDIR=$(COVER_ABS)/smoke \
+	  go test $(COVERFLAGS) ./test/agents -run 'TestReplayFixtures/($(SMOKE_RUN))' -v -timeout 10m -count=1 \
+	  -args -test.gocoverdir=$(COVER_ABS)/smoke
 
 ## agent-versions: the agent versions the committed fixtures were recorded with,
 ## as `name version` lines. What a CI job installs.
 agent-versions:
 	@python3 -c "import json;d=json.load(open('test/agents/fixtures.json'))['fixtures'];\
 	print('\n'.join(sorted({'%s %s' % (f['agent'], f['agent_version']) for f in d.values()})))"
+
+## coverage: merge every tier present under $(COVERDIR) and print the report
+coverage:
+	@scripts/coverage.sh report
+
+## coverage-check: report, then fail if a package .coverage-baseline records as
+## covered has stopped being reached. It checks presence, never a percentage:
+## what it exists to catch is a suite that quietly stopped running.
+coverage-check: coverage
+	@scripts/coverage.sh check
+
+## coverage-baseline: re-record .coverage-baseline. Records every tier present
+## by default; pass BASELINE_TIERS to restrict it to the tiers CI actually runs,
+## e.g. `make coverage-baseline BASELINE_TIERS="unit race smoke"`. Recording a
+## tier CI never runs commits a promise nothing keeps.
+coverage-baseline:
+	@scripts/coverage.sh baseline $(BASELINE_TIERS)
 
 ## vet / fmt / lint
 vet:
@@ -138,7 +195,7 @@ ledger:
 	cs-ledger check ledger
 
 ## check: the full local gate — fmt, vet, the linters, and the suites
-check: fmt-check vet lint deadcode test test-race docs oss walkthrough
+check: fmt-check vet lint deadcode test test-race coverage-check docs oss walkthrough
 
 ## lint: the Go rules from .golangci.yml (see that file for what is on and why)
 lint:
@@ -176,4 +233,4 @@ release-check:
 
 ## clean: remove build output
 clean:
-	rm -rf bin dist
+	rm -rf bin dist $(COVERDIR)

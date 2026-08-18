@@ -1,0 +1,29 @@
+# Packages each test tier is known to reach, as "<tier> <package>".
+# Regenerate with `make coverage-baseline` after running the tiers you
+# want recorded; `make coverage-check` fails when a listed package stops
+# being reached. Percentages are deliberately not recorded.
+#
+# Only the tiers CI actually runs belong here. Restrict what a run
+# records with, for example:
+#   make coverage-baseline BASELINE_TIERS="unit race smoke"
+unit github.com/codesweep-ai/vcr/internal/cassette
+unit github.com/codesweep-ai/vcr/internal/cli
+unit github.com/codesweep-ai/vcr/internal/config
+unit github.com/codesweep-ai/vcr/internal/paths
+unit github.com/codesweep-ai/vcr/internal/proxy
+race github.com/codesweep-ai/vcr/internal/cassette
+race github.com/codesweep-ai/vcr/internal/cli
+race github.com/codesweep-ai/vcr/internal/config
+race github.com/codesweep-ai/vcr/internal/paths
+race github.com/codesweep-ai/vcr/internal/proxy
+integration github.com/codesweep-ai/vcr/cmd/cs-vcr
+integration github.com/codesweep-ai/vcr/internal/cassette
+integration github.com/codesweep-ai/vcr/internal/cli
+integration github.com/codesweep-ai/vcr/internal/config
+integration github.com/codesweep-ai/vcr/internal/paths
+integration github.com/codesweep-ai/vcr/internal/proxy
+cli github.com/codesweep-ai/vcr/cmd/cs-vcr
+cli github.com/codesweep-ai/vcr/internal/cassette
+cli github.com/codesweep-ai/vcr/internal/cli
+cli github.com/codesweep-ai/vcr/internal/config
+cli github.com/codesweep-ai/vcr/internal/paths

@@ -59,7 +59,28 @@ func binary() (string, error) {
 			return
 		}
 		buildPath = filepath.Join(dir, "cs-vcr")
-		cmd := exec.Command("go", "build", "-o", buildPath, "github.com/codesweep-ai/vcr/cmd/cs-vcr")
+		// This tier drives the real binary rather than calling into it, so what
+		// the proxy executes counts towards coverage only when it is built
+		// instrumented and told where to write. Without this the whole live tier
+		// contributes nothing and the packages only it reaches read as dead.
+		//
+		// CS_COVERDIR is set by the Makefile's test targets. It carries the path
+		// rather than GOCOVERDIR because `go test` overwrites GOCOVERDIR in the
+		// test process with a directory of its own and does not fold what lands
+		// there back into the profile. Setting GOCOVERDIR here, after that, is
+		// what points the proxy at the tier directory: startProxy builds its
+		// environment from os.Environ(), so it is inherited with no further
+		// wiring. An instrumented binary writes its counters as it exits, which
+		// is why stop() asks with SIGINT and only escalates to Kill on a
+		// timeout — a killed proxy still ends the test, it just contributes no
+		// coverage for that run.
+		build := []string{"build", "-o", buildPath, "github.com/codesweep-ai/vcr/cmd/cs-vcr"}
+		if coverDir := os.Getenv("CS_COVERDIR"); coverDir != "" {
+			build = append([]string{"build", "-cover", "-covermode=atomic",
+				"-coverpkg=github.com/codesweep-ai/vcr/..."}, build[1:]...)
+			_ = os.Setenv("GOCOVERDIR", coverDir)
+		}
+		cmd := exec.Command("go", build...)
 		if out, err := cmd.CombinedOutput(); err != nil {
 			buildErr = fmt.Errorf("building cs-vcr: %v\n%s", err, out)
 		}
