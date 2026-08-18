@@ -15,8 +15,9 @@ const (
 	SurfaceAnthropicMessages Surface = "anthropic.messages"
 	SurfaceOpenAIResponses   Surface = "openai.responses"
 	SurfaceOpenAIChat        Surface = "openai.chat"
-	// SurfaceUnknown is a path cs-vcr does not model. It is still
-	// proxied, just never recorded.
+	// SurfaceUnknown is a path cs-vcr does not model. It is still proxied,
+	// recorded and replayed — a request that is proxied but not recorded is one
+	// replay can never serve — just with no model and no surface to key on.
 	SurfaceUnknown Surface = "unknown"
 )
 
