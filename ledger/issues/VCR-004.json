@@ -1,0 +1,22 @@
+{
+  "id": "VCR-004",
+  "title": "The documented pod fails on an SELinux host, exiting 139 with no log line",
+  "type": "defect",
+  "severity": "med",
+  "status": "closed",
+  "foundBy": "session agent, following README.md and INSTALL.md as a first-time reader",
+  "opened": "2026-08-17",
+  "resolved": "2026-08-17",
+  "stint": "2026-08-17 documentation walkthrough",
+  "evidence": {
+    "commits": [
+      "d4a2325"
+    ],
+    "integrated": [],
+    "verified": "Played the stock spec from a world-traversable directory: pod Degraded, container exit 139, no logs. After `chcon -t container_file_t -l s0 bin/cs-vcr` the same spec runs, and a POST of cassettes/claude-code-subscription/req/0001.json through the published port returned HTTP 200."
+  },
+  "resolution": null,
+  "details": "INSTALL.md's container section is two commands: `make build-go` then `podman kube play deploy/vcr.yaml`. On Fedora with SELinux enforcing the pod reports `Degraded`, the container exits 139, and `podman logs` is empty, so nothing says why.\n\n`podman kube play` gives a hostPath **directory** a shared SELinux label and leaves a hostPath naming a **file** alone. Measured on this host before and after playing the spec:\n\n```\nbin/cs-vcr   user_tmp_t        (unchanged)\ncassettes    container_file_t  (relabelled)\n```\n\nSo the container cannot execute the binary it was mounted. Relabelling the binary alone fixes it, and the pod then serves a recorded step. A plain `chcon -t container_file_t` is not always enough: it keeps whatever MCS category a previous container left on the file, and `-l s0` clears it.\n\nThe pod spec's header already warns that the store has to be readable by uid 65532, which is the same class of host detail.",
+  "notes": [],
+  "links": []
+}

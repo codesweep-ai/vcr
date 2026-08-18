@@ -1,0 +1,25 @@
+{
+  "id": "VCR-006",
+  "title": "The first install route points at a releases page with nothing on it",
+  "type": "defect",
+  "severity": "med",
+  "status": "open",
+  "foundBy": "session agent, following README.md and INSTALL.md as a first-time reader",
+  "opened": "2026-08-17",
+  "resolved": null,
+  "stint": "2026-08-17 documentation walkthrough",
+  "evidence": {
+    "commits": [],
+    "integrated": [],
+    "verified": null
+  },
+  "resolution": null,
+  "details": "INSTALL.md \u00a71 leads with \"Download a release\": fetch the archive and `checksums.txt`, verify the checksum, then the cosign signature. No v* tag has been pushed and `.github/workflows/release.yml` fires on a tag, so the releases page is empty.\n\nA first-time reader takes the first route offered and finds nothing to download.\n\nCutting the first tag makes the whole section true. Until then the page says so.",
+  "notes": [
+    {
+      "date": "2026-08-17",
+      "text": "INSTALL.md now says plainly that no version has been tagged, which is the sentence the tracer repository already carries. This record stays open until a tag exists."
+    }
+  ],
+  "links": []
+}

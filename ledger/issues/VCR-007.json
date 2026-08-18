@@ -1,0 +1,22 @@
+{
+  "id": "VCR-007",
+  "title": "make check needs two tools no document named, and the ledger gate a third",
+  "type": "defect",
+  "severity": "med",
+  "status": "closed",
+  "foundBy": "session agent, following README.md and INSTALL.md as a first-time reader",
+  "opened": "2026-08-17",
+  "resolved": "2026-08-17",
+  "stint": "2026-08-17 documentation walkthrough",
+  "evidence": {
+    "commits": [
+      "42a66b3"
+    ],
+    "integrated": [],
+    "verified": "`env PATH=/usr/bin:/bin:/usr/local/go/bin make lint` exited 2 with \"golangci-lint is not installed\". CONTRIBUTING.md now names all three tools, pinning golangci-lint to v2.12.2, the version .github/workflows/ci.yml installs."
+  },
+  "resolution": null,
+  "details": "CONTRIBUTING.md tells a contributor to run `make check` before pushing. The target is `check: fmt-check vet lint deadcode test test-race docs oss`, and `lint` and `deadcode` shell out to `golangci-lint` and `deadcode`. Neither comes with Go, and no document named either. The CI workflow installs both, under the comment \"the two tools make check shells out to\".\n\nThe ledger doctrine has the same gap. `AGENTS.md` routes an agent to `ledger/AGENTS.md`, which says to run `cs-ledger render && cs-ledger check`, and nothing said where that binary comes from. The answer sat in the Makefile's error message, which only a failed run prints.",
+  "notes": [],
+  "links": []
+}

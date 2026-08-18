@@ -3,12 +3,18 @@
   "title": "--cassette absorbs a request whose base URL lost its prefix, hiding the mistake it was meant to catch",
   "type": "defect",
   "severity": "med",
-  "status": "in-progress",
+  "status": "closed",
   "foundBy": "user report (jsd): \"Why do we still need the --cassette option at all?\"",
   "opened": "2026-08-17",
-  "resolved": null,
+  "resolved": "2026-08-17",
   "stint": "2026-08-17 session: drop the session cassette",
-  "evidence": { "commits": [], "integrated": [], "verified": null },
+  "evidence": {
+    "commits": [
+      "cf50ce4"
+    ],
+    "integrated": [],
+    "verified": "`cs-vcr replay --help` no longer lists --cassette, and a POST to http://127.0.0.1:8080/v1/messages with no /c/ prefix returns 404 no_cassette: \"the base URL must end in /c/<name> to say which cassette this request belongs to\". SPEC R1a now states the refusal and carries the corrected measurement: Claude Code's HEAD /api/hello preconnect builds its URL from ANTHROPIC_BASE_URL and so carries the prefix."
+  },
   "resolution": null,
   "details": "A `/c/<name>` prefix on the base URL names the cassette a request belongs to. `--cassette` names one for requests that carry no prefix, and that is the whole of what it now does.\n\nIt is a hazard rather than a convenience. Before the prefix mapped to a cassette directly, a request matching no client was refused with `unknown_client`, so that a base URL missing its prefix could not look like it worked while its traffic landed somewhere else. `--cassette` reinstates exactly that failure: forget the prefix and the run records into whatever the session happens to name. With no session cassette either, a recording session proxies everything and records nothing, and only `recorded 0` in the summary says so.\n\nThe justification written into SPEC R1a is measurably wrong. It claims the fallback catches requests that cannot carry the prefix, naming Claude Code's `HEAD /api/hello` preconnect, which sets no headers at all. The preconnect builds its URL from `ANTHROPIC_BASE_URL`, so it carries the prefix like everything else: pointing Claude Code 2.1.232 at `http://127.0.0.1:9501/c/probe` produces `HEAD /c/probe/api/hello`. Measured, not inferred.\n\nSo the option should go, and a request that names no cassette should be refused and told what its base URL should have ended in.",
   "notes": [
@@ -23,7 +29,13 @@
     {
       "date": "2026-08-17",
       "text": "Two documentation defects surfaced while bringing the docs across. CS_VCR_HOME relocates the config file and was documented nowhere, and `record --help` claimed the command serves what the cassette already holds, which is the opposite of what SPEC R3 requires of a recording session."
+    },
+    {
+      "date": "2026-08-17",
+      "text": "Closed from the outside during a documentation walkthrough. The flag was already gone and the refusal already in place; the record had been left in flight."
     }
   ],
-  "links": ["VCR-002"]
+  "links": [
+    "VCR-002"
+  ]
 }
