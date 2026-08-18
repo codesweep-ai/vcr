@@ -71,9 +71,9 @@ fixtures:
 	CS_VCR_AGENTS_RECORD=1 go test ./test/agents -run TestRecordFixtures -v -timeout 60m -count=1
 
 ## test-integration: the live tier — replay every committed fixture with the
-## real agents, fabricated credentials and no provider reachable. This is what
-## CI runs. Needs claude, codex and opencode installed at the versions in
-## test/agents/fixtures.json; anything missing is skipped, unless
+## real agents, fabricated credentials and no provider configured or reachable.
+## This is what CI runs. Needs claude, codex and opencode installed at the
+## versions in test/agents/fixtures.json; anything missing is skipped, unless
 ## CS_VCR_AGENTS_STRICT=1 makes it fail.
 test-integration:
 	CS_VCR_AGENTS=1 go test ./test/agents -run TestReplayFixtures -v -timeout 30m -count=1

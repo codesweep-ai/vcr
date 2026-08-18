@@ -45,8 +45,8 @@ type scenario struct {
 	// request the day that default moves.
 	model string
 	// vcrConfig is this scenario's cs-vcr configuration: where the provider it
-	// talks to actually lives. Written for every run, so nothing a developer has
-	// in their own config file reaches the recording.
+	// talks to actually lives. It is the RECORDING half's, and only its: every
+	// key in it is a provider setting, and replay reads none of them.
 	vcrConfig string
 	// urlSuffix is what this client appends to the base URL it is given. Each
 	// one appends a different amount of the API path.

@@ -643,7 +643,7 @@ surface as the row above it, reaching a model Anthropic does not serve.
 
 ```bash
 make fixtures          # record: real logins, real providers, spends money
-make test-integration  # replay: fabricated credentials, no provider reachable
+make test-integration  # replay: fabricated credentials, no provider configured or reachable
 make test-smoke        # the same, for one scenario per agent — the pre-push profile
 ```
 
@@ -654,9 +654,10 @@ credential was missing. *A suite that fails for want of a login is one contribut
 that cannot be played back is not a fixture. It is also what proves the scrub was safe: taking a
 value out of a request changes what the entry matches on.*
 
-**R53.** Replay **MUST** assert that no provider was contacted, that no request missed, and that the
-agent did the work the prompt asked for. *Serving every step to a client that then failed is not a
-replayed session.*
+**R53.** Replay **MUST** run with no provider configured at all. It **MUST** assert that no provider
+was contacted, that no request missed, and that the agent did the work the prompt asked for. *A
+scenario's settings say where its own upstream lives, and replay reads none of them. Serving every
+step to a client that then failed is not a replayed session.*
 
 **R54.** Replay **MUST** skip a scenario whose agent is absent, or whose version is not the one the
 fixture was recorded with, and **MUST** be able to fail instead of skipping. *An agent's own version

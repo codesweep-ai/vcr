@@ -175,11 +175,22 @@ func runScenario(t *testing.T, sc scenario, cred credential, m mode, cassettes s
 	if err != nil {
 		t.Fatal(err)
 	}
-	// The proxy's configuration is written per run, so that a developer's own
-	// ~/.config/cs-vcr/config.yaml cannot decide where a fixture's traffic went.
-	configPath := filepath.Join(ws.root, "cs-vcr.yaml")
-	if err := os.WriteFile(configPath, []byte(sc.vcrConfig), 0o644); err != nil {
-		t.Fatal(err)
+	// The recording half gets a config file of its own, written per run: it has
+	// to reach this scenario's provider, and what a developer keeps in
+	// ~/.config/cs-vcr/config.yaml must not be what decides where the traffic
+	// went.
+	//
+	// The replay half gets none, and is given no --config either. A scenario's
+	// settings are all provider settings — where its upstream lives, and where
+	// a path cs-vcr does not model goes — and replay reads none of them, so it
+	// runs on whatever the machine already has. That is Goal 1 asserted against
+	// a real agent rather than assumed.
+	configPath := ""
+	if m == record {
+		configPath = filepath.Join(ws.root, "cs-vcr.yaml")
+		if err := os.WriteFile(configPath, []byte(sc.vcrConfig), 0o644); err != nil {
+			t.Fatal(err)
+		}
 	}
 	missDir := ""
 	if m == replay {

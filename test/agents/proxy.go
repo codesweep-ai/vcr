@@ -68,7 +68,8 @@ func binary() (string, error) {
 }
 
 // startProxy runs `cs-vcr record` or `cs-vcr replay` and waits for it to answer
-// on its admin port.
+// on its admin port. An empty configPath passes no --config, leaving the
+// session to whatever configuration the machine holds.
 //
 // Waiting is not politeness: the agent is started immediately afterwards, and an
 // agent that reaches a port nothing is listening on yet reports a network error
@@ -89,10 +90,18 @@ func startProxy(ctx context.Context, ws *workspace, cassettes, configPath string
 	// The agent's base URL carries a /c/<scenario> prefix, which is the only way
 	// a request names a cassette: one that arrived without it would be refused,
 	// which is what makes this an assertion rather than a configuration.
-	args := []string{"--config", configPath, mode,
+	//
+	// An empty configPath means no --config at all, which is the replay half:
+	// it reads no provider configuration, so it has nothing to be given and
+	// runs on whatever config the machine has, including none.
+	var args []string
+	if configPath != "" {
+		args = append(args, "--config", configPath)
+	}
+	args = append(args, mode,
 		"--cassettes", cassettes,
-		"--listen", "127.0.0.1:" + strconv.Itoa(port),
-		"--admin", "127.0.0.1:" + strconv.Itoa(admin)}
+		"--listen", "127.0.0.1:"+strconv.Itoa(port),
+		"--admin", "127.0.0.1:"+strconv.Itoa(admin))
 	if missDir != "" {
 		args = append(args, "--dump-misses", missDir)
 	}
