@@ -25,6 +25,10 @@ cosign verify-blob checksums.txt \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 ```
 
+**No version has been tagged yet, so there is nothing on the releases page today.** This route
+starts working at the first tag, which is what cuts the archives, the checksum file and the
+signature. Until then, take one of the two below.
+
 ### Or with `go install`
 
 ```bash
