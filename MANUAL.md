@@ -161,7 +161,7 @@ cs-vcr has the reference, with no checkout to read and no page to fetch.
 | `--from-env VAR,...` | cassette scrub | Environment variables holding secrets to look for. |
 | `--url URL` | config AGENT | Where the agent reaches cs-vcr. Default: derived from `listen`. |
 | `--env-only` | config AGENT | Print only the `VAR=VALUE` lines. |
-| `--config FILE` | all | Config file path. |
+| `--config FILE` | all | Config file path. The file has to exist; leave the flag out for the defaults. |
 | `-v`, `--verbose` | all | Debug logging. |
 | `-q`, `--quiet` | all | Errors only. |
 | `--log-json` | all | Structured JSON logs. |

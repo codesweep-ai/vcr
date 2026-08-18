@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"log/slog"
 	"os"
 	"runtime"
@@ -70,6 +71,13 @@ untouched and never records a request header.`,
 			app.Path = cfgPath
 			if app.Path == "" {
 				app.Path = paths.Config()
+			} else if _, err := os.Stat(app.Path); errors.Is(err, fs.ErrNotExist) {
+				// A file someone named has to be there. The default location
+				// usually holds none, and that is not an error — cs-vcr has to
+				// run with no configuration at all — but --config is a caller
+				// saying where their settings live, and a session that shrugged
+				// at a typo would run on settings they did not write.
+				return fmt.Errorf("--config %s: no such file; leave the flag out to run on the defaults", cfgPath)
 			}
 			cfg, err := config.Load(app.Path)
 			if err != nil {

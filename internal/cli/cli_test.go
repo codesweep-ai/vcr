@@ -16,8 +16,10 @@ import (
 // run drives the real cobra tree with a fake environment, so the tests exercise
 // the command wiring rather than a reimplementation of it.
 //
-// The config path defaults to one that does not exist: a stray config file on
-// the developer's machine would otherwise decide what these tests assert.
+// It passes no --config, because there is no file to name: that flag now
+// requires one. Isolation comes instead from CS_VCR_HOME, pointed at an empty
+// directory — cs-vcr looks there when nothing names a file, so a stray config
+// on the developer's machine still cannot decide what these tests assert.
 func run(t *testing.T, env map[string]string, args ...string) (string, error) {
 	t.Helper()
 	return runWithConfig(t, "", env, args...)
@@ -26,18 +28,22 @@ func run(t *testing.T, env map[string]string, args ...string) (string, error) {
 // runWithConfig is run with a config file written for the test.
 func runWithConfig(t *testing.T, yaml string, env map[string]string, args ...string) (string, error) {
 	t.Helper()
-	path := filepath.Join(t.TempDir(), "config.yaml")
+	dir := t.TempDir()
 	if yaml != "" {
+		path := filepath.Join(dir, "config.yaml")
 		if err := os.WriteFile(path, []byte(yaml), 0o644); err != nil {
 			t.Fatal(err)
 		}
+		args = append([]string{"--config", path}, args...)
+	} else {
+		t.Setenv("CS_VCR_HOME", dir)
 	}
 	app := &App{Getenv: func(k string) string { return env[k] }}
 	cmd := newRootCmd(app)
 	out := &bytes.Buffer{}
 	cmd.SetOut(out)
 	cmd.SetErr(out)
-	cmd.SetArgs(append([]string{"--config", path}, args...))
+	cmd.SetArgs(args)
 
 	// Bounded, because `serve` blocks until its context is done. A unit test
 	// that accidentally reaches a listening server should fail in seconds
@@ -46,6 +52,32 @@ func runWithConfig(t *testing.T, yaml string, env map[string]string, args ...str
 	defer cancel()
 	err := cmd.ExecuteContext(ctx)
 	return out.String(), err
+}
+
+// --config names a file, so one that is not there is a typo rather than a
+// session with no configuration. The default location is allowed to hold
+// nothing — cs-vcr has to run with none at all — and that difference is the
+// whole of what this asserts.
+func TestConfigFlagRequiresTheFileItNames(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "nowhere.yaml")
+
+	out := &bytes.Buffer{}
+	cmd := newRootCmd(&App{Getenv: func(string) string { return "" }})
+	cmd.SetOut(out)
+	cmd.SetErr(out)
+	cmd.SetArgs([]string{"--config", missing, "version"})
+	err := cmd.Execute()
+
+	if err == nil {
+		t.Fatalf("--config accepted a path with no file at it:\n%s", out)
+	}
+	if !strings.Contains(err.Error(), missing) {
+		t.Errorf("the error does not name the file to fix: %v", err)
+	}
+	// The other half: nothing named, nothing there, and the command runs.
+	if _, err := run(t, nil, "version"); err != nil {
+		t.Errorf("version needed a config file: %v", err)
+	}
 }
 
 func TestVersionPrints(t *testing.T) {

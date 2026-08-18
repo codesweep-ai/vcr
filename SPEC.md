@@ -492,8 +492,8 @@ that is missing.
 
 ## 10. Configuration
 
-Every setting is optional, and a missing config file is not an error. Flags beat the environment,
-which beats the file.
+Every setting is optional, and so is the file: cs-vcr runs with none at all. Flags beat the
+environment, which beats the file.
 
 ```yaml
 listen: 127.0.0.1:8080
@@ -523,6 +523,11 @@ normalize:
 
 **R43.** An unknown key **MUST** be an error. *The failure this file most invites is "I set it and it
 was ignored".*
+
+**R43a.** A config file named on the command line **MUST** exist. *The default location holding
+nothing is the ordinary case, and not an error. Naming a file that is not there is a typo. A session
+that shrugged at it would run on settings its caller did not write, which is R43's failure again,
+one step before the file is opened.*
 
 **R44.** An invalid `replace` or `capture` pattern **MUST** fail at startup, not per request.
 
