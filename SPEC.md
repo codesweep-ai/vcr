@@ -394,7 +394,7 @@ cassettes/refactor-auth/
   index.jsonl         one line per step, in the order they happened
   req/0001.json       the canonical request, pretty-printed
   resp/0001.json      a non-streaming response body
-  resp/0003.sse       a streamed response, one SSE event per line
+  resp/0003.sse       a streamed response, its events in order
 ```
 
 ### 9.1 cassette.yaml

@@ -251,7 +251,7 @@ cassette_provider:
 | `./cassettes/<name>/index.jsonl` | One line per step, in order. |
 | `./cassettes/<name>/req/NNNN.json` | The canonical request for step NNNN. |
 | `./cassettes/<name>/resp/NNNN.json` | A non-streaming response body. |
-| `./cassettes/<name>/resp/NNNN.sse` | A streamed response, one SSE event per line. |
+| `./cassettes/<name>/resp/NNNN.sse` | A streamed response, its events in order. |
 
 ## Environment
 
