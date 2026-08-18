@@ -1,7 +1,7 @@
 # vcr
 
-> **Record and replay the traffic between AI coding agents and LLM providers — so no API key ever
-> enters a sandbox, and CI runs the whole agent loop for $0.**
+> **Record and replay the traffic between AI coding agents and LLM providers — so CI needs no
+> provider credential, and runs the whole agent loop for $0.**
 
 [![CI](https://github.com/codesweep-ai/vcr/actions/workflows/ci.yml/badge.svg)](https://github.com/codesweep-ai/vcr/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
@@ -51,14 +51,16 @@ Your agent keeps its own login, and nothing else about the build changes. Commit
 `cassettes/build/`. **In CI**, run the same script with no provider reachable:
 
 ```bash
-cs-vcr replay
+cs-vcr replay &
 ANTHROPIC_BASE_URL=http://127.0.0.1:8080/c/build ./build.sh
+kill -INT %1                                              # the summary is printed on the way out
 ```
 
 ```
 cs-vcr replay summary
 requests                      14
 replayed                      14
+recorded                       0
 upstream calls                 0
 misses                         0
 …
@@ -124,12 +126,14 @@ cassettes/refactor-auth/
   cassette.yaml       versions and provenance
   index.jsonl         one line per step, in the order they happened
   req/0001.json       the normalized request, pretty-printed
-  resp/0001.sse       the streamed response, one SSE event per line
+  resp/0001.json      a response that was not streamed
+  resp/0002.sse       a streamed response, its events in order
 ```
 
-Replay serves step *N* to the *N*th request, then checks that the request that arrived is the one
-recorded there. The check is exact about what the agent asked the model, and tolerant about what the
-agent's tools printed back, which varies between runs.
+Replay walks that script in order: each request is served the next step whose recorded request is
+the one that arrived. It looks a few steps ahead for the ones a client sent in parallel, and serves
+the last step again when a client retries it. The check is exact about what the agent asked the
+model, and tolerant about what the agent's tools printed back, which varies between runs.
 
 ```console
 $ cs-vcr cassette ls refactor-auth         # STEP, METHOD, PATH, SURFACE, MODEL, …
@@ -184,7 +188,8 @@ requires_openai_auth = true       # keeps the ChatGPT login
 A ChatGPT login is accepted by `chatgpt.com`, so send cs-vcr's OpenAI traffic there:
 
 ```yaml
-# ~/.config/cs-vcr/config.yaml
+# ~/.config/cs-vcr/config.yaml — on macOS, ~/Library/Application Support/cs-vcr/config.yaml.
+# `cs-vcr config` prints the path it loaded.
 providers:
   openai: {base_url: https://chatgpt.com/backend-api/codex}
 default_provider: openai          # Codex opens with GET /models, which names no provider
@@ -221,8 +226,8 @@ base_url = "http://127.0.0.1:8080/c/codex-build/v1"
 env_key = "OPENAI_API_KEY"        # in place of requires_openai_auth
 ```
 
-Then leave `~/.config/cs-vcr/config.yaml` alone: an API key is accepted by `api.openai.com`, which
-is where the `openai` provider already points.
+Then leave cs-vcr's own config file alone: an API key is accepted by `api.openai.com`, which is
+where the `openai` provider already points.
 
 ### 4. OpenCode
 
@@ -231,9 +236,10 @@ OpenCode takes a base URL from the environment, and ends it with `/v1`:
 ```bash
 cs-vcr record
 
-# Terminal 2 — an Anthropic model, then an OpenAI-shaped one.
-ANTHROPIC_BASE_URL=http://127.0.0.1:8080/c/oc-build/v1 opencode run --model anthropic/claude-sonnet-5 "add a /version endpoint"
-OPENAI_BASE_URL=http://127.0.0.1:8080/c/oc-build/v1 opencode run --model openai/gpt-5 "add a /version endpoint"
+# Terminal 2 — an Anthropic model, then an OpenAI-shaped one. One session per
+# cassette, so the two runs name two of them.
+ANTHROPIC_BASE_URL=http://127.0.0.1:8080/c/oc-anthropic/v1 opencode run --model anthropic/claude-sonnet-5 "add a /version endpoint"
+OPENAI_BASE_URL=http://127.0.0.1:8080/c/oc-openai/v1 opencode run --model openai/gpt-5 "add a /version endpoint"
 ```
 
 To pin it per project, put the same URL in `opencode.json`:
@@ -241,7 +247,7 @@ To pin it per project, put the same URL in `opencode.json`:
 ```json
 {
   "$schema": "https://opencode.ai/config.json",
-  "provider": { "anthropic": { "options": { "baseURL": "http://127.0.0.1:8080/c/oc-build/v1" } } }
+  "provider": { "anthropic": { "options": { "baseURL": "http://127.0.0.1:8080/c/oc-anthropic/v1" } } }
 }
 ```
 
@@ -258,8 +264,9 @@ just built. Add an agent container to the same pod and cs-vcr
 becomes a sidecar. Containers in a pod share one network namespace and *nothing else*, so the agent
 reaches cs-vcr on localhost while its filesystem and command line stay invisible.
 
-If an agent runs in a sandbox, run cs-vcr outside it and give the sandbox the base URL. That needs
-no special support: the same binary, the same base URL.
+The same holds wherever an agent is isolated from the network: run cs-vcr on the other side of the
+boundary and give the agent the base URL that reaches it. cs-vcr needs to know nothing about how
+that isolation is done.
 
 ## A note on what a cassette contains
 

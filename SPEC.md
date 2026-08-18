@@ -135,11 +135,13 @@ session, so serving one call from it would leave a script with a step missing fr
 **R4.** A replay session **MUST NOT** open a connection to a provider, whatever the configuration
 says.
 
-**R4a.** A replay session **MUST NOT** read provider configuration at all, and **MUST** serve with
-none configured. *Goal 1 asks a recorded session to replay with no provider reachable and no
-credential configured. Resolving the upstream before the replay branch met the first and not the
-second. A request would then fail for want of a provider it could never have called, and only the
-defaults naming two of them hid it.*
+**R4a.** A replay session **MUST NOT** resolve an upstream while serving a request, and **MUST**
+serve one whose provider is not configured. *Goal 1 asks a recorded session to replay with no
+provider reachable and no credential configured. Resolving the upstream before the replay branch met
+the first and not the second. A request would then fail for want of a provider it could never have
+called, and only the defaults naming two of them hid it. Startup is the exception, and a shared one:
+both commands validate whatever provider configuration is present before either listens. A `replay`
+session therefore refuses to start on a `base_url` it would never have dialled.*
 
 ## 5. Matching
 
@@ -149,7 +151,8 @@ by aligning the request that arrived against the one recorded there.
 ### 5.1 Selection
 
 ```
-1. from the step the session is at, scan forward over unserved steps, at most `lookahead` of them
+1. from the step the session is at, scan forward over unserved steps: that one, and at most
+   `lookahead` more, so 0 is strict
 2. serve the first that aligns: same method, same path, and a body that aligns
 3. if none does, but the request aligns with the step just served, serve that step again
 4. otherwise report a miss
@@ -357,6 +360,7 @@ Both commands print a summary on exit. It is the artifact a CI log shows.
 | `abandoned` | Printed when the session exited with requests still in flight. |
 | `drifted observations` | Printed when a difference was tolerated at a volatile path. |
 | `out of recorded order` | Printed when a step was served out of sequence. |
+| `surface …` / `cassette …` | Requests per surface, and per cassette the session touched. |
 
 ### 8.2 Calibrate
 
@@ -417,15 +421,16 @@ report exactly this, and a listing that refuses to list takes the diagnosis away
 Each line is one JSON object, and the lines are in session order.
 
 ```json
-{"seq":3,"hash":"8f2a3c1d9e0b","method":"POST","path":"/v1/messages",
+{"seq":3,"hash":"8f2a3c1d9e0b…","method":"POST","path":"/v1/messages?beta=true",
  "provider":"anthropic","surface":"anthropic.messages","model":"claude-sonnet-5",
- "status":200,"streaming":true,"recorded_at":"2026-08-12T18:04:11Z","latency_ms":4120}
+ "status":200,"streaming":true,"content_type":"text/event-stream",
+ "recorded_at":"2026-08-12T18:04:11Z","latency_ms":4120}
 ```
 
 | Field | Meaning |
 |---|---|
 | `seq` | Position in the script, from 1. Names the body files. |
-| `hash` | Identifies the request in logs and in `cassette show`. Selects nothing. |
+| `hash` | Identifies the request in logs and in `cassette show`, which shorten it as above. Selects nothing. |
 | `method`, `path` | Checked during selection. `path` is the target after `strip_query`. |
 | `provider`, `surface`, `model` | Metadata for `cassette ls`. |
 | `status`, `streaming`, `content_type` | Replayed to the client. |
@@ -711,7 +716,7 @@ amount of field stripping reaches them.
 | `Today's date is 2026-08-12.`, and the spellings Codex and OpenCode use | `<DATE>` | every request misses tomorrow |
 | `Primary working directory: /abs/path` | `<CWD>` | CI checks out elsewhere |
 | the checkout path anywhere else, slugified or with its leading `/` gone | `<ROOT>`, `<ROOT-SLUG>`, `<ROOT-BARE>` | tool calls carry absolute paths, and a patch reports them without the slash |
-| `cc_version=2.1.219.c4e` in the billing header | `cc_version=2.1.219` | the suffix changes between runs of one binary |
+| `cc_version=2.1.219.c4e`, in the billing header Claude Code sends as its first system block | `cc_version=2.1.219` | the suffix changes between runs of one binary |
 | `OS Version: Linux 6.11.0-generic` | `<OS>` | the kernel release differs per host |
 | `Platform: darwin` | `<PLATFORM>` | a laptop records, a Linux runner replays |
 | Codex's `<timezone>Europe/Berlin</timezone>` | `<TZ>` | a runner keeps UTC |
