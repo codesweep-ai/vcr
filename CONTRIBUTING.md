@@ -9,13 +9,23 @@ vulnerability reporting on this repository's Security tab, rather than opening a
 ## Before you push
 
 ```bash
-make check        # gofmt, vet, unit tests, the race detector and both linters
+make check        # gofmt, vet, unit tests, the race detector and every linter
 make test-smoke   # three real agents replaying committed cassettes, about 5s
+```
+
+`make check` shells out to two tools that do not come with Go, and the ledger below needs a third.
+Install all three once, pinning `golangci-lint` to the version CI runs:
+
+```bash
+go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.2
+go install golang.org/x/tools/cmd/deadcode@latest
+go install github.com/codesweep-ai/ledger/cmd/cs-ledger@latest
 ```
 
 This repo keeps a **ledger** of open issues in `ledger/`. Read
 [`ledger/AGENTS.md`](ledger/AGENTS.md) before you start work, and follow it as you go. A commit
-that touches `ledger/` needs `cs-ledger render && cs-ledger check` to pass first.
+that touches `ledger/` needs `cs-ledger render && cs-ledger check` to pass first, and `make ledger`
+runs the check half.
 
 ## The one thing this repo will not trade away
 
