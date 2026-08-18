@@ -80,6 +80,32 @@ func TestConfigFlagRequiresTheFileItNames(t *testing.T) {
 	}
 }
 
+// CS_VCR_CONFIG makes the same promise as the flag, so a typo in it is the same
+// mistake: a path named outright has to be there. CS_VCR_HOME is not this case
+// — it names a place to look, and looking somewhere empty is how most machines
+// run, which is what every other test here does.
+func TestConfigEnvRequiresTheFileItNames(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "nowhere.yaml")
+	t.Setenv("CS_VCR_CONFIG", missing)
+
+	out := &bytes.Buffer{}
+	cmd := newRootCmd(&App{Getenv: func(string) string { return "" }})
+	cmd.SetOut(out)
+	cmd.SetErr(out)
+	cmd.SetArgs([]string{"version"})
+	err := cmd.Execute()
+
+	if err == nil {
+		t.Fatalf("CS_VCR_CONFIG accepted a path with no file at it:\n%s", out)
+	}
+	if !strings.Contains(err.Error(), missing) {
+		t.Errorf("the error does not name the file to fix: %v", err)
+	}
+	if !strings.Contains(err.Error(), "CS_VCR_CONFIG") {
+		t.Errorf("the error does not say which setting named it: %v", err)
+	}
+}
+
 func TestVersionPrints(t *testing.T) {
 	out, err := run(t, nil, "version")
 	if err != nil {

@@ -257,7 +257,7 @@ cassette_provider:
 
 | Variable | Effect |
 |---|---|
-| `CS_VCR_CONFIG` | Config file path. |
+| `CS_VCR_CONFIG` | Config file path. The file has to exist. |
 | `CS_VCR_HOME` | Root the config file is looked for under, when `CS_VCR_CONFIG` is unset. |
 | `CS_VCR_CASSETTES` | Cassette store directory. |
 | `VCR_LISTEN`, `VCR_ADMIN` | Listen addresses. |

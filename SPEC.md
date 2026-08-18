@@ -524,10 +524,11 @@ normalize:
 **R43.** An unknown key **MUST** be an error. *The failure this file most invites is "I set it and it
 was ignored".*
 
-**R43a.** A config file named on the command line **MUST** exist. *The default location holding
-nothing is the ordinary case, and not an error. Naming a file that is not there is a typo. A session
-that shrugged at it would run on settings its caller did not write, which is R43's failure again,
-one step before the file is opened.*
+**R43a.** A config file named outright, by `--config` or `CS_VCR_CONFIG`, **MUST** exist. *The
+default location holding nothing is the ordinary case, and not an error. Naming a file that is not
+there is a typo. A session that shrugged at it would run on settings its caller did not write, which
+is R43's failure again, one step before the file is opened. `CS_VCR_HOME` names a place to look
+rather than a file, so it is not this case.*
 
 **R44.** An invalid `replace` or `capture` pattern **MUST** fail at startup, not per request.
 
@@ -550,7 +551,7 @@ of an array and a path covers everything beneath it.
 
 | Variable | Effect |
 |---|---|
-| `CS_VCR_CONFIG` | Config file path. |
+| `CS_VCR_CONFIG` | Config file path. The file has to exist. |
 | `CS_VCR_HOME` | Root the config file is looked for under, when `CS_VCR_CONFIG` is unset. |
 | `CS_VCR_CASSETTES` | Cassette store directory. |
 | `VCR_LISTEN` / `VCR_ADMIN` | Listen addresses. |

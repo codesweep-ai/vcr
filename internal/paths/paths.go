@@ -21,14 +21,19 @@ import (
 const app = "cs-vcr"
 
 // Config is the config file: providers, provider pins, the normalization ruleset.
-func Config() string {
+//
+// named reports whether someone pointed at that file outright, which is what
+// makes a missing one an error rather than the ordinary case. CS_VCR_CONFIG is
+// a file; CS_VCR_HOME and the XDG default are places to look, and a place with
+// nothing in it is how most machines run.
+func Config() (path string, named bool) {
 	if p := os.Getenv("CS_VCR_CONFIG"); p != "" {
-		return p
+		return p, true
 	}
 	if h := os.Getenv("CS_VCR_HOME"); h != "" {
-		return filepath.Join(h, "config.yaml")
+		return filepath.Join(h, "config.yaml"), false
 	}
-	return filepath.Join(configHome(), app, "config.yaml")
+	return filepath.Join(configHome(), app, "config.yaml"), false
 }
 
 // The cassette store is deliberately not resolved here. config.Load owns
