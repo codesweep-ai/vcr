@@ -116,6 +116,13 @@ across projects, so a fix to a check belongs in the shared copy.
 `scripts/lint-oss.py` is its sibling, and `make oss` runs it. It checks what this repository has to
 satisfy as a published project, and `--explain` lists every rule it applies. Its knobs live beside
 it in `scripts/lint-oss.config.py`.
+`scripts/lint-walkthrough.py` is the third, and `make walkthrough` runs it. It checks the claims
+rather than the prose. Every command the docs name goes against the binary's help tree, every
+setting against the code that reads it, and every sample output against the command re-run now.
+Its knobs live beside it in `scripts/lint-walkthrough.config.py`: `SAFE_VERBS` says which commands
+it may run, and `SAMPLE_SKIP` says which samples belong to another machine. `--run` lists every
+command the documents tell a reader to run, in reading order, and `--review` prints the half that
+needs a reader.
 
 - **Introduce a term where you first use it**, in the same sentence, or link to the page that
   defines it. A reader should never meet a word the docs have not explained.

@@ -125,6 +125,10 @@ docs:
 oss:
 	python3 scripts/lint-oss.py
 
+## walkthrough: check the docs against the binary, the code and the build
+walkthrough: build-go
+	python3 scripts/lint-walkthrough.py
+
 ## ledger: validate the issue records and prove ledger.html is current
 ledger:
 	@command -v cs-ledger >/dev/null 2>&1 || { \
@@ -134,7 +138,7 @@ ledger:
 	cs-ledger check ledger
 
 ## check: the full local gate — fmt, vet, the linters, and the suites
-check: fmt-check vet lint deadcode test test-race docs oss
+check: fmt-check vet lint deadcode test test-race docs oss walkthrough
 
 ## lint: the Go rules from .golangci.yml (see that file for what is on and why)
 lint:
