@@ -22,6 +22,12 @@
 # What this file does have to get right is the store below, which has to be
 # readable by uid 65532 — under rootless podman, a host directory belonging to a
 # uid that maps into the container's range.
+#
+# On an SELinux host, relabel the binary before playing this: kube play relabels
+# a hostPath directory and leaves a hostPath naming a single file alone, so the
+# container cannot execute it and exits 139 with no log line.
+#
+#   chcon -t container_file_t -l s0 bin/cs-vcr
 apiVersion: v1
 kind: Pod
 metadata:

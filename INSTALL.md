@@ -194,8 +194,15 @@ No cs-vcr image is published. The pod spec mounts the binary you already have, s
 
 ```bash
 make build-go
+chcon -t container_file_t -l s0 bin/cs-vcr   # SELinux hosts: Fedora, RHEL, CentOS
 podman kube play deploy/vcr.yaml
 ```
+
+`podman kube play` relabels a hostPath directory such as the cassette store, and leaves a hostPath
+naming a single file alone. Without the relabel the container cannot execute the binary it was
+given: the pod reports `Degraded`, the container exits 139, and it logs nothing. The `-l s0` clears
+any category a previous container left on the file, which a plain `chcon` keeps. `getenforce` says
+whether your host enforces SELinux, and a host that does not has no `chcon` to run.
 
 The pod spec ships in the release archive. There is nothing to configure in it: cs-vcr holds no
 credential, and in replay mode it opens no connection to a provider at all.
