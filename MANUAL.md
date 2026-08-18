@@ -344,7 +344,7 @@ decision:
 
 The `tools` row needs thought before you copy it. A model offered different tools can answer
 differently, so cs-vcr keeps the list in the key. But an agent whose toolset is not stable is not
-reproducible, and interactively-authenticated MCP servers connect on some runs and time out on
+reproducible, and interactively authenticated MCP servers connect on some runs and time out on
 others. Make the toolset deterministic, or leave it out of the key when the tools do not distinguish
 the turns you are recording:
 
