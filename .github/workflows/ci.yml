@@ -58,6 +58,7 @@ jobs:
           name: coverage-build-test-${{ matrix.os }}
           path: .coverage/
           if-no-files-found: error
+          include-hidden-files: true
           retention-days: 7
 
       - name: build
@@ -162,6 +163,7 @@ jobs:
           name: coverage-cli
           path: .coverage/
           if-no-files-found: error
+          include-hidden-files: true
           retention-days: 7
 
   # The claim on the front page, run on every push: real Claude Code, real
@@ -235,6 +237,7 @@ jobs:
           name: coverage-integration
           path: .coverage/
           if-no-files-found: error
+          include-hidden-files: true
           retention-days: 7
 
   # One number for the whole run, and the gate that keeps it honest.
