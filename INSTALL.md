@@ -1,7 +1,7 @@
-# vcr — installation
+# Installing cs-vcr
 
 `cs-vcr` is a single static binary with no runtime dependencies. Get it, put it on your PATH, and
-run it — there is nothing to configure. Then see the [README](README.md).
+run it, and there is nothing to configure. Then see the [README](README.md).
 
 ## 1. Install the binary
 
@@ -55,7 +55,7 @@ cs-vcr manual | less    # the full reference, carried inside the binary
 ## 2. Configure
 
 Nothing has to be configured. Every setting has a default and **a missing config file is not an
-error** — `cs-vcr record` and `cs-vcr replay` run with none at all.
+error**. `cs-vcr record` and `cs-vcr replay` run with none at all.
 
 When you do need one, it lives at `$XDG_CONFIG_HOME/cs-vcr/config.yaml` (macOS: `~/Library/
 Application Support/cs-vcr/config.yaml`), and [MANUAL.md](MANUAL.md) is the reference for every
@@ -81,7 +81,7 @@ There is no credential in that file or that output, because cs-vcr never holds o
 
 ## 3. Point an agent at it
 
-Only the base URL changes — the agent keeps whatever login it already has, including a Claude
+Only the base URL changes. The agent keeps whatever login it already has, including a Claude
 Pro/Max subscription:
 
 ```bash
@@ -141,7 +141,7 @@ $ make test-integration
 
 Codex sandboxes the shell commands it runs with bubblewrap, which needs an unprivileged user
 namespace. Ubuntu 24.04 denies one to any binary without an AppArmor profile of its own, and that
-includes the copy Codex bundles, so install the packaged one — Codex prefers it:
+includes the copy Codex bundles, so install the packaged one, which Codex prefers:
 
 ```bash
 sudo apt-get install -y bubblewrap        # Ubuntu 24.04 and newer
@@ -187,7 +187,7 @@ Each scenario needs its own login or key:
 Fireworks serves alongside the OpenAI ones. It is the cover for cs-vcr fronting a provider that
 serves another provider's API.
 
-Commit what it wrote — the cassettes under `cassettes/`, and `test/agents/fixtures.json`, which
+Commit what it wrote: the cassettes under `cassettes/`, and `test/agents/fixtures.json`, which
 records the agent versions CI installs. The suite is specified in
 [SPEC.md](SPEC.md#116-the-live-agent-suite).
 

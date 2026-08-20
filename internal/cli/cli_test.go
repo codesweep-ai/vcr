@@ -124,7 +124,7 @@ func TestManualPrintsTheEmbeddedManual(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.HasPrefix(out, "# cs-vcr(1) — manual") {
+	if !strings.HasPrefix(out, "# The cs-vcr manual") {
 		t.Errorf("manual output starts %.40q", out)
 	}
 	for _, want := range []string{"## Synopsis", "cs-vcr replay", "## Exit status"} {

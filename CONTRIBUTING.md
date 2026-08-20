@@ -13,14 +13,18 @@ make check        # gofmt, vet, unit tests, the race detector and every linter
 make test-smoke   # three real agents replaying every committed cassette, about 20s
 ```
 
-`make check` shells out to two tools that do not come with Go, and the ledger below needs a third.
-Install all three once, pinning `golangci-lint` to the version CI runs:
+`make check` shells out to three tools that do not come with Go, and the ledger below needs a
+fourth. Install all four once, pinning `golangci-lint` to the version CI runs:
 
 ```bash
 go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.2
 go install golang.org/x/tools/cmd/deadcode@latest
+go install github.com/codesweep-ai/lint/cmd/cs-lint@latest
 go install github.com/codesweep-ai/ledger/cmd/cs-ledger@latest
 ```
+
+`cs-lint` is deliberately not pinned. It is this family's own linter, and CI installs it from source
+the same way, so a check it gains reaches you on the day it lands.
 
 This repo keeps a **ledger** of open issues in `ledger/`. Read
 [`ledger/AGENTS.md`](ledger/AGENTS.md) before you start work, and follow it as you go. A commit
@@ -42,7 +46,7 @@ makes "no redaction" safe rather than reckless, so keep it that way.
 ## Tests are part of the change
 
 Every behavior change ships with test coverage. A change with no test is only acceptable when the
-behavior genuinely cannot be observed in a test — say so in the PR.
+behavior genuinely cannot be observed in a test. Say so in the PR.
 
 - `make test` is the tier a change usually needs. Everything cs-vcr does is observable from a Go
   test: the cobra tree driven with a fake environment, the proxy driven against a local upstream, a
@@ -50,7 +54,7 @@ behavior genuinely cannot be observed in a test — say so in the PR.
   record/replay round trip and SSE framing.
 - `make test-integration` replays the committed cassettes with the real Claude Code, Codex and OpenCode.
   It needs no credentials and contacts no provider. Run it after touching normalization, the SSE
-  handling or the cassette format — those are the things a hand-written fixture cannot check. When a
+  handling or the cassette format, which are the things a hand-written fixture cannot check. When a
   change alters what a real session sends, re-record with `make fixtures` (see
   [INSTALL.md](INSTALL.md#4-run-the-live-agent-suite)) and commit the cassettes with the code.
 - `make test-smoke` replays the same matrix into its own coverage tier, in about twenty seconds. It
@@ -69,7 +73,7 @@ Every test target writes coverage into its own tier under `.coverage/`, so runni
 aggregates rather than overwrites. `make coverage` merges what is there and prints the report.
 
 `make coverage-check` runs inside `make check` and in CI. It fails when a package
-`.coverage-baseline` lists stops being reached — presence, not a percentage. What it catches is a
+`.coverage-baseline` lists stops being reached: presence, not a percentage. What it catches is a
 suite that stopped running while the tests still report green. When a package is meant to lose its
 coverage, rerun `make coverage-baseline` and commit the result.
 
@@ -90,10 +94,10 @@ format rather than asking the reviewer to cope.
 Make one commit per idea. If a change will not fit that shape, it is doing more than one thing, so
 split it.
 
-**Subject** — always. Under 60 characters, imperative, no trailing period, completing *"If applied,
+**Subject**, always. Under 60 characters, imperative, no trailing period, completing *"If applied,
 this commit will …"*. Say what the change does.
 
-**Body** — add one only when the subject leaves a real question. Use bullets, one line each, under
+**Body**, added only when the subject leaves a real question. Use bullets, one line each, under
 60 characters, describing the design: the shape the change takes, or the constraint that ruled out
 the obvious alternative. Do not describe the diff, or how you arrived at it. Write as many bullets
 as there are points and no more. Most commits need none, one is common, three is the rare maximum.
@@ -112,7 +116,7 @@ Replay SSE per event, not as one write
 ```
 
 Keep the `Co-Authored-By:` trailer when an agent wrote the change. Drop any trailer linking to the
-agent's session or transcript — private to whoever ran it, dead to everyone else.
+agent's session or transcript: private to whoever ran it, dead to everyone else.
 
 ## Docs
 
@@ -123,20 +127,37 @@ in the PR.
 
 ## Writing
 
-The docs are for someone who has not read the code. `scripts/lint-docs.py` checks the mechanical
-part of this, and `make docs` runs it. Its knobs live beside it in `scripts/lint-docs.config.py`,
-which carries this project's glossary. The linter itself is vendored and stays byte-identical
-across projects, so a fix to a check belongs in the shared copy.
-`scripts/lint-oss.py` is its sibling, and `make oss` runs it. It checks what this repository has to
-satisfy as a published project, and `--explain` lists every rule it applies. Its knobs live beside
-it in `scripts/lint-oss.config.py`.
-`scripts/lint-walkthrough.py` is the third, and `make walkthrough` runs it. It checks the claims
-rather than the prose. Every command the docs name goes against the binary's help tree, every
-setting against the code that reads it, and every sample output against the command re-run now.
-Its knobs live beside it in `scripts/lint-walkthrough.config.py`: `SAFE_VERBS` says which commands
-it may run, and `SAMPLE_SKIP` says which samples belong to another machine. `--run` lists every
-command the documents tell a reader to run, in reading order, and `--review` prints the half that
-needs a reader.
+The docs are for someone who has not read the code.
+[`cs-lint`](https://github.com/codesweep-ai/lint) checks the mechanical part of that. It carries
+three linters, and `make check` runs all three:
+
+| Command | Target | What it checks |
+|---|---|---|
+| `cs-lint docs` | `make docs` | How the documents are written. |
+| `cs-lint oss` | `make oss` | What this repository owes a reader as a published project. |
+| `cs-lint walkthrough` | `make walkthrough` | Whether the documents still describe the software. |
+
+The third checks the claims rather than the prose. Every command the docs name goes against the
+binary's help tree, and every setting against the code that reads it. It resolves every path and
+every spec section the documents and the source cite, and re-runs each sample to compare what the
+command prints today. `--run` lists every command the documents tell a reader to run, in reading
+order, and `--review` prints the half that needs a reader.
+
+Every knob lives in [`.cs-lint.yaml`](.cs-lint.yaml) at the repository root, one section per
+linter, and this project's glossary is in the `docs` section. Read what a rule wants with
+`--explain`, which prints the guidance behind each one rather than leaving you to argue with the
+tool:
+
+```bash
+cs-lint oss --explain
+```
+
+A rule turned off for this repository is a waiver: a rule identifier and the reason it was traded
+away, under `allow`. The reason is required, and it is printed with the finding, because a waiver
+nobody can review is a rule deleted in private.
+
+The linter is a project of its own, shared across this family. A fix to a check belongs there, and
+reaches this repository the next time somebody installs it.
 
 - **Introduce a term where you first use it**, in the same sentence, or link to the page that
   defines it. A reader should never meet a word the docs have not explained.
@@ -145,15 +166,16 @@ needs a reader.
 - **State the point first, then qualify it.** Opening with the qualifier makes the reader decode
   the sentence backwards.
 - **Keep sentences under 30 words**, and to one idea each.
-- **Use at most one em-dash per paragraph.** Where a second one appears, a full stop usually works
-  better.
+- **Never use an em-dash.** The aside it introduces is a full stop, a comma, or a cut. It is also
+  the first punctuation a model reaches for, so a page carrying them reads as unedited whoever
+  wrote it.
 - **Address the reader as "you"**, and use the imperative for steps.
 - **Keep the evidence out of the instructions.** A war story explains a decision; put it in an
   explanation section, not in the middle of a task.
 - **Make every example runnable as written.** If a step invokes a script, show the script first. A
   reader should never meet a file they were not given.
 - **Do not comment on your own writing.** "It is worth stating plainly", "put simply", "the point
-  is" — delete the frame and keep the sentence.
+  is". Delete the frame and keep the sentence.
 - **Do not explain a design by contrast with a worse one.** "A directory, so a change reads as a
   diff rather than as one unreadable line" asks the reader to picture a format nobody proposed. Say
   what it is and what you get.

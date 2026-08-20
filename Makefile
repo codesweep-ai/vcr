@@ -4,6 +4,7 @@
 # is absent. See .goreleaser.yaml.
 
 GORELEASER ?= goreleaser
+CS_LINT    ?= cs-lint
 BIN        := bin/cs-vcr
 PKG        := ./cmd/cs-vcr
 PREFIX     ?= $(HOME)/.local
@@ -36,7 +37,7 @@ COVER_ABS  := $(abspath $(COVERDIR))
 COVERPKG    = $(shell go list ./... | grep -v '/test/' | paste -sd, -)
 COVERFLAGS  = -covermode=atomic -coverpkg=$(COVERPKG)
 
-.PHONY: help build build-go build-cover install uninstall test test-race fixtures test-integration test-smoke coverage coverage-check coverage-baseline agent-versions vet fmt fmt-check check lint deadcode docs oss ledger snapshot release release-check clean
+.PHONY: help build build-go build-cover install uninstall test test-race fixtures test-integration test-smoke coverage coverage-check coverage-baseline agent-versions vet fmt fmt-check check lint deadcode docs oss walkthrough cs-lint-installed ledger snapshot release release-check clean
 
 .DEFAULT_GOAL := help
 
@@ -180,16 +181,25 @@ fmt-check:
 		exit 1; \
 	fi
 ## docs: check the prose against the writing rules in CONTRIBUTING.md
-docs:
-	python3 scripts/lint-docs.py
+docs: cs-lint-installed
+	$(CS_LINT) docs
 
 ## oss: the rules this repo has to satisfy as a published project
-oss:
-	python3 scripts/lint-oss.py
+oss: cs-lint-installed
+	$(CS_LINT) oss
 
 ## walkthrough: check the docs against the binary, the code and the build
-walkthrough: build-go
-	python3 scripts/lint-walkthrough.py
+walkthrough: build-go cs-lint-installed
+	$(CS_LINT) walkthrough
+
+# The three targets above are one shared tool: github.com/codesweep-ai/lint.
+# Its knobs for this repo live in .cs-lint.yaml, and `cs-lint <linter> --explain`
+# says what each rule wants.
+cs-lint-installed:
+	@command -v $(CS_LINT) >/dev/null 2>&1 || { \
+		echo "cs-lint is not installed: go install github.com/codesweep-ai/lint/cmd/cs-lint@latest" >&2; \
+		exit 2; \
+	}
 
 ## ledger: validate the issue records and prove ledger.html is current
 ledger:

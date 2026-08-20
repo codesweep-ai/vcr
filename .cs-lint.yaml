@@ -1,0 +1,87 @@
+# The knobs cs-lint reads for this repository.
+#
+# The linters carry no project knowledge. Everything that differs between
+# repositories lives here, so a fix to a check reaches every project without
+# carrying one project's exceptions into the next.
+#
+# Run `cs-lint <linter> --explain` to read what each rule wants. Tune until
+# every reported problem is a real one: a check that cries wolf is worse than
+# no check.
+
+docs:
+  # The domain terms a reader of this project cannot infer. Each must be
+  # introduced where a document first uses it: glossed on the spot, defined in a
+  # glossary table, or linked to the page that defines it.
+  glossary:
+    - cassette
+    - step
+    - surface
+    - alignment
+    - volatile
+    - canonical
+    - normalize
+    - drift
+    - provenance
+    - ruleset
+
+  # The project's own command name, which starts sentences in lower case.
+  # Without it the splitter reads "Nothing prompts. cs-vcr exits 1." as one
+  # six-word sentence and reports a length that is not real.
+  lowercaseStarters:
+    - cs-vcr
+
+  projectVerbs: []
+
+oss:
+  project: cs-vcr
+  githubRepo: codesweep-ai/vcr
+
+  # True once the repository is public. Published history cannot be rewritten,
+  # so the history rules report as warnings from that point on. Flip this in the
+  # same commit that makes the repository public.
+  published: false
+
+  docSet:
+    - README.md
+    - INSTALL.md
+    - MANUAL.md
+    - SPEC.md
+    - CONTRIBUTING.md
+    - AGENTS.md
+
+  # ada and grace are the fictional people the tests use, and the recorded
+  # provider prompts quote /Users/name and a <ROOT>/home/.codex path of their
+  # own. Every name added here is one the check stops catching, so never add a
+  # name that is somebody's.
+  homeAllow: ["user", "you", "name", "runner", "ada", "grace"]
+
+  requiredTargets: ["build", "test", "check", "lint", "docs", "oss", "clean"]
+  expectedTargets: ["help", "install", "uninstall", "fmt", "fmt-check", "vet", "deadcode"]
+
+walkthrough:
+  tool: cs-vcr
+  toolPath: bin/cs-vcr
+
+  # cs-vcr also reads three unprefixed variables, VCR_LISTEN, VCR_ADMIN and
+  # VCR_ROOT, and MANUAL.md's Environment section carries all three.
+  envPrefix: CS_VCR_
+
+  # Read-only, offline, and safe to run in a checkout on every gate. A verb that
+  # writes belongs nowhere near this list: a checker that writes can mask the
+  # staleness another gate exists to catch.
+  safeVerbs:
+    - version
+    - config
+    - config claude
+    - config codex
+    - config opencode
+    - cassette ls
+    - cassette verify
+
+  sampleSkip:
+    "cs-vcr config": "the sample is the defaults on a host with no config file, and this checkout's home may carry one"
+    "cs-vcr cassette ls": "the sample is a reader's own `build` cassette, not the fixtures this repository commits"
+
+  # goreleaser is optional here: `make build` falls back to `go build` without
+  # it, and INSTALL.md says so.
+  prereqOK: ["goreleaser"]

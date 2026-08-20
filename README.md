@@ -1,7 +1,7 @@
 # vcr
 
-> **Record and replay the traffic between AI coding agents and LLM providers — so CI needs no
-> provider credential, and runs the whole agent loop for $0.**
+> **Record and replay the traffic between AI coding agents and LLM providers, so CI needs no
+> provider credential and runs the whole agent loop for $0.**
 
 [![CI](https://github.com/codesweep-ai/vcr/actions/workflows/ci.yml/badge.svg)](https://github.com/codesweep-ai/vcr/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
@@ -184,7 +184,7 @@ requires_openai_auth = true
 Send cs-vcr's OpenAI traffic to `chatgpt.com`, the host that login works against:
 
 ```yaml
-# ~/.config/cs-vcr/config.yaml — on macOS, ~/Library/Application Support/cs-vcr/config.yaml.
+# ~/.config/cs-vcr/config.yaml; on macOS, ~/Library/Application Support/cs-vcr/config.yaml.
 # `cs-vcr config` prints the path it loaded.
 providers:
   openai: {base_url: https://chatgpt.com/backend-api/codex}
@@ -213,7 +213,7 @@ OpenCode takes a base URL from the environment, and ends it with `/v1`:
 ```bash
 cs-vcr record
 
-# Terminal 2 — an Anthropic model, then an OpenAI-shaped one. One session per
+# Terminal 2: an Anthropic model, then an OpenAI-shaped one. One session per
 # cassette, so the two runs name two of them.
 ANTHROPIC_BASE_URL=http://127.0.0.1:8080/c/oc-anthropic/v1 opencode run --model anthropic/claude-sonnet-5 "add a /version endpoint"
 OPENAI_BASE_URL=http://127.0.0.1:8080/c/oc-openai/v1 opencode run --model openai/gpt-5 "add a /version endpoint"
@@ -256,4 +256,4 @@ the tool, and applies to coding agents as well as to people.
 
 ## License
 
-Apache 2.0 — see [LICENSE](LICENSE).
+[Apache-2.0](LICENSE).

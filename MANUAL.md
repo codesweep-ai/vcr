@@ -1,8 +1,8 @@
-# cs-vcr(1) — manual
+# The cs-vcr manual
 
 ## Name
 
-**cs-vcr** — record and replay the traffic between an AI coding agent and its LLM provider.
+`cs-vcr`: record and replay the traffic between an AI coding agent and its LLM provider.
 
 ## Synopsis
 
@@ -194,7 +194,7 @@ for that client.
 ANTHROPIC_BASE_URL=http://127.0.0.1:8080/c/build claude -p "add a /version endpoint"
 ```
 
-**Codex, signed in with ChatGPT** — `~/.codex/config.toml`:
+**Codex, signed in with ChatGPT**, in `~/.codex/config.toml`:
 
 ```toml
 model_provider = "cs-vcr"
@@ -214,7 +214,7 @@ providers:
 default_provider: openai
 ```
 
-**Codex, signed in with an API key** — the same, with two changes in `config.toml`, and no cs-vcr
+**Codex, signed in with an API key**: the same, with two changes in `config.toml`, and no cs-vcr
 config at all:
 
 ```toml
@@ -292,39 +292,55 @@ Flags beat the environment, which beats the config file.
 
 ## Diagnostics
 
-**`cassette_miss`** — replay had no step for a request. The message names the step it expected, the
-recorded request, and the paths that disagreed. If what differs is something the world decides
-rather than the agent, declare it under `normalize.volatile`, or run `calibrate` to have the rule
-proposed for you.
+**`cassette_miss`**
 
-**`unknown_cassette`** — the base URL named a cassette that is not in the store, and `replay` will
-not create one. Check the name against `cs-vcr cassette ls`.
+Replay had no step for a request. The message names the step it expected, the recorded request, and
+the paths that disagreed. If what differs is something the world decides rather than the agent,
+declare it under `normalize.volatile`, or run `calibrate` to have the rule proposed for you.
 
-**`no_cassette`** — the base URL did not end in `/c/<name>`, so the request said nothing about which
-cassette it belongs to. cs-vcr refuses it rather than picking one.
+**`unknown_cassette`**
 
-**`bad_cassette_name`** — the `/c/` prefix was followed by something that is not a cassette name, or
-by nothing at all. A base URL ending in `/c/` is the usual cause.
+The base URL named a cassette that is not in the store, and `replay` will not create one. Check the
+name against `cs-vcr cassette ls`.
 
-**`cassette_unusable`** — the cassette is there and will not open. The usual cause is a
-`format_version` or `normalize_version` from another build, which `cassette verify` reports.
+**`no_cassette`**
 
-**`cassette was recorded by a different build`** — the cassette's `format_version` or
-`normalize_version` is not this build's. Delete it and record again. `cassette verify` shows what
-changed.
+The base URL did not end in `/c/<name>`, so the request said nothing about which cassette it belongs
+to. cs-vcr refuses it rather than picking one.
 
-**`tolerated a changed observation`** — a warning, not an error. A tool printed something different
-this run, and the step was served anyway. The summary counts these as `drifted observations`.
+**`bad_cassette_name`**
 
-**`served out of recorded order`** — a warning. A client pipelined, and the step was found within the
-look-ahead window.
+The `/c/` prefix was followed by something that is not a cassette name, or by nothing at all. A base
+URL ending in `/c/` is the usual cause.
 
-**`recording an interrupted response`** — a warning. The response did not run to its end, usually
-because the client had what it wanted and hung up. What it received was recorded.
+**`cassette_unusable`**
 
-**`the response outgrew the capture limit`** — a warning. The client received the whole response,
-and the cassette kept the first 64 MiB of it. That step replays truncated, so record it again.
+The cassette is there and will not open. The usual cause is a `format_version` or
+`normalize_version` from another build, which `cassette verify` reports.
 
+**`cassette was recorded by a different build`**
+
+The cassette's `format_version` or `normalize_version` is not this build's. Delete it and record
+again. `cassette verify` shows what changed.
+
+**`tolerated a changed observation`**
+
+This is a warning rather than an error. A tool printed something different this run, and the step was served
+anyway. The summary counts these as `drifted observations`.
+
+**`served out of recorded order`**
+
+This is a warning. A client pipelined, and the step was found within the look-ahead window.
+
+**`recording an interrupted response`**
+
+This is a warning. The response did not run to its end, usually because the client had what it wanted and
+hung up. What it received was recorded.
+
+**`the response outgrew the capture limit`**
+
+This is a warning. The client received the whole response, and the cassette kept the first 64 MiB of it.
+That step replays truncated, so record it again.
 ## Making a real agent run replayable
 
 1. Record the session.
@@ -357,7 +373,7 @@ normalize:
 `drop` is the one for a preamble block. Codex assembles its instructions from whatever the
 installation has, and sends each part as a content item of its own. A run with a plugin installed
 sends one item more than a run without. Blanking the words leaves the item, and a list of five items
-aligns with none of four — the item has to go, on both sides:
+aligns with none of four, so the item has to go on both sides:
 
 ```yaml
 normalize:

@@ -1,4 +1,4 @@
-# cs-vcr — specification
+# The cs-vcr specification
 
 cs-vcr sits between an AI coding agent and its LLM provider. It records the HTTP traffic into a
 **cassette**, and later replays that cassette so a run exercises the whole agent loop without
@@ -304,7 +304,7 @@ diff, which is the whole reason for the format.*
 **R26.** A streamed run of fragments the client reassembles **MUST** be joined into one event before
 storing: a tool call's arguments, and a model's reasoning. The visible answer **MUST NOT** be.
 *A model splits fragments at arbitrary character boundaries, so a value inside one is not contiguous
-and nothing can substitute it — measured on three surfaces, each with its own spelling. Reasoning is
+and nothing can substitute it, measured on three surfaces, each with its own spelling. Reasoning is
 included because a client carries it into the next request as conversation state. The answer is
 excluded because it is rendered to a person as it arrives, and those boundaries are what a replayed
 session reproduces.*
@@ -674,7 +674,7 @@ surface as the row above it, reaching a model Anthropic does not serve.
 ```bash
 make fixtures          # record: real logins, real providers, spends money
 make test-integration  # replay: fabricated credentials, no provider configured or reachable
-make test-smoke        # the same matrix again, into its own tier — the pre-push profile
+make test-smoke        # the same matrix again, into its own tier: the pre-push profile
 ```
 
 **R51.** Recording **MUST** skip a scenario this host cannot sign in for, and **MUST** say which
