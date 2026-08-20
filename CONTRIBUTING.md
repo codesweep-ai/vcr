@@ -1,4 +1,4 @@
-# Contributing
+# Contributing to cs-vcr
 
 These rules apply to **humans and coding agents alike**. If you are an agent working in this repo,
 read this file before you change anything and follow it.
@@ -35,9 +35,10 @@ runs the check half.
 
 **Replay must not be able to spend money.** It never falls through to upstream, however it is
 configured. That is why the command that built the server sets `ReachesUpstream`, rather than each
-call site branching on it. The test asserts it with an upstream that fails if it is dialled at
-all. A change that lets a miss reach a provider "just this once" turns a $0 CI bill into a
-surprise invoice, and will be rejected however convenient it is.
+call site branching on it. `TestReplayModeNeverContactsUpstream` asserts it against an upstream
+that fails the test if it is dialled at all, and `TestReachesUpstreamMatchesWhatTheServerDoes`
+holds the bit itself honest. A change that lets a miss reach a provider "just this once" turns a $0
+CI bill into a surprise invoice, and will be rejected however convenient it is.
 
 cs-vcr also does not authenticate callers, hold credentials, swap keys or redact anything. A patch
 adding any of those is adding a second product. Request headers are never recorded, which is what
@@ -191,6 +192,20 @@ reaches this repository the next time somebody installs it.
   beside the rule. The investigation that found it belongs in the PR.
 - **Do not make the reader hold two halves of a sentence apart.** "What a shell printed may differ;
   what the model was asked may not" is a puzzle. Name the subject in each clause.
+- **Do not say a thing twice in one sentence.** A sentence that circles back on its own subject
+  lands nowhere.
+- **Prefer a concrete example to a general statement.** A runnable block teaches a flag faster than
+  a paragraph about it.
+- **Say what it costs.** If a command spends money, needs a real login, or rewrites a committed
+  cassette, say so where the reader meets it.
+- **Do not write a section of negatives.** "What it will not do", "Limitations" and "Caveats"
+  answer a question the reader has not asked yet. Non-goals and hard limits belong in
+  [SPEC.md](SPEC.md), where stating them is the job.
+- **Do not write in the register a model defaults to.** Untouched model output has a signature
+  readers now recognise and discount. `cs-lint docs --explain` lists the words this house declines
+  and what to write instead, so the table lives in one place rather than here. Two shapes matter as
+  much as the words. Negative parallelism sets up a contrast nobody asked for. The rule of three is
+  a rhythm rather than an argument, and a reader stops counting the third item as information.
 
 What not to change: the voice is concrete, opinionated and free of marketing padding. These rules
 are about mechanics. Where one of them fights the voice, the voice wins.

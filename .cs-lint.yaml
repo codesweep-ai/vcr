@@ -32,6 +32,15 @@ docs:
 
   projectVerbs: []
 
+  # The things this repository counts for itself. Prose that states one of these
+  # numbers is right the day it is written and wrong by the next re-recording,
+  # and nothing fails when it drifts. Let the gate report the number.
+  countable:
+    - cassettes?
+    - fixtures?
+    - recorded steps?
+    - surfaces?
+
 oss:
   project: cs-vcr
   githubRepo: codesweep-ai/vcr
