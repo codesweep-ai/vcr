@@ -329,17 +329,21 @@ Every error cs-vcr generates is a JSON object with `error.type`, `error.message`
 | `bad_cassette_name` | 400 | The prefix names something that is not a cassette name. |
 | `unreadable_body` | 400 | The request body could not be read. |
 | `unknown_cassette` | 404 | Replay was asked for a cassette the store does not hold. |
-| `cassette_unusable` | 500 | The cassette a request named will not open, usually a version that moved. |
+| `cassette_unusable` | 400 | The cassette a request named will not open, usually a version that moved. |
 | `cassette_miss` | 400 | Replay has no step for this request. |
-| `cassette_corrupt` | 500 | The index references a response file that is absent. |
+| `cassette_corrupt` | 400 | The index references a response file that is absent. |
 | `no_provider` | 502 | No upstream is configured for the routed provider. |
 | `bad_base_url` | 502 | A provider's `base_url` will not parse. |
 | `upstream_error` | 502 | The upstream request failed. |
 
-**R31.** A miss **MUST** answer 400. It **MUST NOT** answer a status clients retry, and **MUST NOT**
-answer 404 on a model endpoint. *Stainless-generated SDKs retry a 5xx, which turns two misses into
-sixteen requests. A 404 on `/v1/messages` is how the API reports an unknown model. One miss
-therefore reached an operator as "that model may not exist or you may not have access to it".*
+**R31.** A refusal no retry can fix **MUST** answer 400: a miss, a cassette that will not open, an
+index entry whose response file is absent. It **MUST NOT** answer a status clients retry, and
+**MUST NOT** answer 404 on a model endpoint. *Stainless-generated SDKs retry a 5xx, which turns two
+misses into sixteen requests. A 404 on `/v1/messages` is how the API reports an unknown model. One
+miss therefore reached an operator as "that model may not exist or you may not have access to it".
+The same trap caught a cassette from an older ruleset, which answered 500 and sent the client into a
+backoff loop against a condition that would never improve. The failure reached its reader as a
+ten-minute hang rather than as one line naming both versions.*
 
 **R32.** A request that names no cassette, or names one that cannot be used, **MUST** be refused.
 *Otherwise a mistyped base URL looks like it worked while its traffic lands in another scenario's

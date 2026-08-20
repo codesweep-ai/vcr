@@ -273,7 +273,12 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					name, config.CassettePrefix, name))
 			return
 		}
-		writeError(w, http.StatusInternalServerError, "cassette_unusable",
+		// 400 for the reason reportMiss sets out below: a Stainless SDK retries
+		// a 5xx, and no retry makes a cassette from another build readable. The
+		// client backs off rather than stopping, so the sentence above — which
+		// names both versions and the remedy — reaches nobody, and a stale
+		// fixture reads as a run that hangs instead of one that was refused.
+		writeError(w, http.StatusBadRequest, "cassette_unusable",
 			fmt.Sprintf("the cassette %q cannot be used: %v", name, err))
 		return
 	}
@@ -396,7 +401,10 @@ func (s *Server) serveFromCassette(w http.ResponseWriter, store *cassette.Store,
 		s.count(func(st *Stats) { st.Rejected++ })
 		s.log.Error("cassette entry has no response on disk",
 			slog.String("hash", entry.Hash), slog.Any("err", err))
-		writeError(w, http.StatusInternalServerError, "cassette_corrupt",
+		// 400 for the same reason as the unusable cassette above: a response
+		// that is not on disk will not be there on the retry either, and a 5xx
+		// buys a backoff loop in place of the line that says what to run.
+		writeError(w, http.StatusBadRequest, "cassette_corrupt",
 			"the cassette index references a response that is not on disk; run `cs-vcr cassette verify`")
 		return
 	}

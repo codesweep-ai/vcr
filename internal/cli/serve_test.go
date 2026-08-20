@@ -620,8 +620,8 @@ func TestReplayNamesACassetteItCannotRead(t *testing.T) {
 	}
 
 	status, body := postPath(t, sess.addr, "/c/stale/v1/messages", `{"model":"m","messages":[]}`)
-	if status != http.StatusInternalServerError {
-		t.Errorf("status = %d, want 500 — a stale cassette is not a missing one", status)
+	if status != http.StatusBadRequest {
+		t.Errorf("status = %d, want 400 — a stale cassette must refuse the request, not invite a retry", status)
 	}
 	if !strings.Contains(body, "cassette_unusable") || !strings.Contains(body, "stale") {
 		t.Errorf("the error does not say what is wrong: %s", body)
