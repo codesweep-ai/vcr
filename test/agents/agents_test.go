@@ -141,6 +141,21 @@ func TestReplayFixtures(t *testing.T) {
 			continue
 		}
 		t.Run(sc.name, func(t *testing.T) {
+			// The ruleset the fixture was recorded under, checked before
+			// anything is started. A cassette from an older ruleset is refused
+			// per request rather than at startup, so without this the run
+			// reaches the proxy, is refused, and reports whatever the client
+			// makes of a refusal — and the explanation lives in a log this test
+			// prints only when something else fails.
+			//
+			// A failure rather than a skip, on every host: an agent that is not
+			// installed is a gap in what this machine can cover, but a fixture
+			// recorded under a ruleset this build no longer speaks is committed
+			// and wrong, and is wrong for everybody.
+			if out, err := runCassetteCmd(cassettes, "cassette", "verify", sc.name); err != nil {
+				t.Fatalf("%s cannot be replayed by this build:\n%s\nre-record with `make fixtures`",
+					sc.name, strings.TrimSpace(out))
+			}
 			version := requireAgent(t, sc)
 			// The agent's own version is in its prompt, so a different build
 			// sends a different request. Said plainly here, because the
