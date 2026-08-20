@@ -195,12 +195,21 @@ func (s *Store) Next(req Request, volatile []Rule, lookahead int) (*Selection, *
 		return sel, nil
 	}
 
-	// Nothing new fits. A request identical to the one just served is the
-	// client repeating itself, and repeating the answer is what it expects —
-	// this is a retry, or a probe a client makes twice.
-	if s.last >= 0 {
-		if al, ok := s.aligns(s.last, req, volatile); ok {
-			return &Selection{Entry: s.script[s.last], Expected: s.cursor + 1,
+	// Nothing new fits. A request identical to one already served is the client
+	// repeating itself, and repeating the answer is what it expects — this is a
+	// retry, or a probe a client makes more often on one run than another.
+	//
+	// Any served step, not only the one just served. Codex asks for the model
+	// list at startup and does not always ask the same number of times; when
+	// the extra ask arrives after the session has moved on, the step that
+	// answers it is behind `last` rather than at it. Newest first, because a
+	// repeat is nearly always of something recent.
+	for i := s.last; i >= 0; i-- {
+		if !s.served[i] {
+			continue
+		}
+		if al, ok := s.aligns(i, req, volatile); ok {
+			return &Selection{Entry: s.script[i], Expected: s.cursor + 1,
 				Repeat: true, Tolerated: al.Tolerated}, nil
 		}
 	}

@@ -318,3 +318,29 @@ func TestTheWindowStillBoundsTheSearchAhead(t *testing.T) {
 		t.Fatalf("step 4 was served with a window of 2 from a standing start: %+v", sel)
 	}
 }
+
+// A probe repeated after the session has moved on is answered, not missed.
+//
+// Codex asks for the model list at startup and does not always ask the same
+// number of times. When the extra ask arrives once the session is several
+// steps in, the step that answers it is behind the last one served — and a
+// miss on the model list fails a session as surely as a miss on a prompt.
+func TestARepeatOfAnEarlierStepIsStillARepeat(t *testing.T) {
+	probe := `{"probe":true}`
+	s := script(t, probe, one, two)
+
+	for _, want := range []int{1, 2, 3} {
+		body := []string{probe, one, two}[want-1]
+		if got, miss := s.Next(ask(body), nil, 8); miss != nil || got.Entry.Seq != want {
+			t.Fatalf("step %d: %+v %+v", want, got, miss)
+		}
+	}
+	// The session is at the end; the probe comes again.
+	again, miss := s.Next(ask(probe), nil, 8)
+	if miss != nil {
+		t.Fatalf("a repeated startup probe missed: %+v", miss)
+	}
+	if !again.Repeat || again.Entry.Seq != 1 {
+		t.Errorf("served step %d (repeat=%v), want step 1 again", again.Entry.Seq, again.Repeat)
+	}
+}

@@ -496,7 +496,7 @@ func Default() *Config {
 			// it is recorded in every cassette so that changing a rule refuses the
 			// recordings made under the old ones instead of silently missing them.
 			// Bump it whenever anything below changes, and re-record.
-			Version: 9,
+			Version: 10,
 			// The minimum names: markers and identifiers that change
 			// between two requests the model would answer identically.
 			Strip: []string{
@@ -547,8 +547,14 @@ func Default() *Config {
 				// patch tool answers with a string, and a cassette recorded
 				// on one machine then missed on every other.
 				"input[].output",
-				// Anthropic messages: a tool_result block's content
+				// Anthropic messages: a tool_result block's content, and the
+				// flag beside it saying whether the command failed. The flag is
+				// the same fact as the text: a `git` that exits non-zero on one
+				// machine and zero on another reports both. Measured as
+				// `messages[37].content[0].is_error: false vs true`, on a
+				// session where the output itself was already tolerated.
 				"messages[].content[].content",
+				"messages[].content[].is_error",
 				// OpenAI chat completions: a tool result is a message of its
 				// own, beside the prompt in the same list, so it is reachable
 				// only by the role it names. OpenCode speaks this surface, and
