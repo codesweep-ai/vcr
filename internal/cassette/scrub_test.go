@@ -188,3 +188,44 @@ func TestScrubLeavesAnOrdinarySessionAlone(t *testing.T) {
 		t.Errorf("the request was rewritten:\n%s", b)
 	}
 }
+
+// A key is a key where one starts, not wherever `sk-` falls.
+//
+// Cassettes carry base64: encrypted reasoning, images, attachments. `sk-` turns
+// up inside those runs by chance, and an unanchored pattern then reports — and
+// with --force rewrites — a field that holds no credential at all. Measured on
+// a real recording, where one such field matched 1018 characters.
+func TestKeyDetectorsNeedAKeyToStart(t *testing.T) {
+	// Assembled rather than written out: a key-shaped literal in a source file
+	// is what the repository's own leak scan exists to refuse, and a test for a
+	// key detector is no reason to make an exception.
+	const tail = "abcdefghijklmnopqrstuvwxyz012345"
+	openai := "sk" + "-" + tail
+	anthropic := "sk" + "-ant-" + tail
+
+	for _, tc := range []struct {
+		name string
+		body string
+		want bool
+	}{
+		{"a key where one starts", `{"h":"` + openai + `"}`, true},
+		{"a vendor-prefixed key", `{"h":"` + anthropic + `"}`, true},
+		{"the same run inside base64", `{"reasoning":"QmFzZTY0` + openai + `"}`, false},
+		{"the prefix inside a word", `{"note":"this is a task-specific instruction"}`, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var found bool
+			for _, d := range detectors {
+				if d.kind != "openai-key" && d.kind != "anthropic-key" {
+					continue
+				}
+				if d.re.MatchString(tc.body) {
+					found = true
+				}
+			}
+			if found != tc.want {
+				t.Errorf("detected=%v, want %v for %s", found, tc.want, tc.body)
+			}
+		})
+	}
+}

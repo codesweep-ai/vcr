@@ -273,3 +273,48 @@ func TestAMissReportsAgainstTheStepItCouldHaveBeen(t *testing.T) {
 		t.Errorf("expected = %d, want 2", miss.Expected)
 	}
 }
+
+// A step the session never makes must not pin the window.
+//
+// A client may record a call it does not always make: Claude Code's title
+// generation runs beside the main loop, and a session that recorded it can
+// replay without it. If the window were measured from the oldest unclaimed
+// step, that one step would bound the search for the rest of the session —
+// every later request measured against something that will never be served.
+// Measured on a real recording: 45 steps, of which the replay served 2.
+func TestAStepTheSessionNeverMakesDoesNotPinTheWindow(t *testing.T) {
+	bodies := make([]string, 0, 12)
+	for i := 1; i <= 12; i++ {
+		bodies = append(bodies, fmt.Sprintf(`{"turn":%d}`, i))
+	}
+	s := script(t, bodies...)
+
+	// Step 1 is the one this run does not make. Everything after it is served
+	// in order, including steps far beyond a window anchored at step 1.
+	for i := 2; i <= 12; i++ {
+		got, miss := s.Next(ask(bodies[i-1]), nil, 2)
+		if miss != nil {
+			t.Fatalf("step %d missed with the session at step %d: %+v", i, i-1, miss)
+		}
+		if got.Entry.Seq != i {
+			t.Fatalf("served step %d, want %d", got.Entry.Seq, i)
+		}
+	}
+	// And the straggler is still findable, because the scan still starts at
+	// the cursor rather than at the frontier.
+	if got, miss := s.Next(ask(bodies[0]), nil, 2); miss != nil || got.Entry.Seq != 1 {
+		t.Errorf("the skipped step was lost: %+v %+v", got, miss)
+	}
+}
+
+// The window still bounds the search ahead of where the session has got.
+func TestTheWindowStillBoundsTheSearchAhead(t *testing.T) {
+	bodies := []string{`{"turn":1}`, `{"turn":2}`, `{"turn":3}`, `{"turn":4}`, `{"turn":5}`}
+	s := script(t, bodies...)
+
+	// Nothing served yet, so the frontier is the cursor: step 4 is three ahead
+	// and a window of 2 must refuse it.
+	if sel, miss := s.Next(ask(bodies[3]), nil, 2); miss == nil {
+		t.Fatalf("step 4 was served with a window of 2 from a standing start: %+v", sel)
+	}
+}

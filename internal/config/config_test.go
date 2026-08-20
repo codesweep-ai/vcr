@@ -367,9 +367,20 @@ func TestTheDefaultVolatilePathsCoverWhatBrokeReplay(t *testing.T) {
 		  {"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_01","content":"` + out + `"}]}]}`
 	}
 
+	// An OpenCode turn, on the third surface: chat completions carries a tool
+	// result as a message of its own, beside the prompt in the same list.
+	opencode := func(out string) string {
+		return `{"model":"kimi-k3","messages":[
+		  {"role":"system","content":"You are OpenCode."},
+		  {"role":"user","content":"read the briefing"},
+		  {"role":"assistant","tool_calls":[{"id":"t1","function":{"name":"bash","arguments":"{\"command\":\"ls\"}"}}]},
+		  {"role":"tool","tool_call_id":"t1","content":"` + out + `"}]}`
+	}
+
 	for _, c := range []struct{ what, a, b string }{
 		{"openai responses tool output", codex("0.2"), codex("0.6")},
 		{"anthropic messages tool result", claude("a\\nb\\n"), claude("warning\\na\\nb\\n")},
+		{"openai chat tool result", opencode("a\\nb\\n"), opencode("a\\nb\\nc\\n")},
 	} {
 		got, err := cassette.Align([]byte(c.a), []byte(c.b), rules)
 		if err != nil {
@@ -394,6 +405,17 @@ func TestTheDefaultVolatilePathsCoverWhatBrokeReplay(t *testing.T) {
 	}
 	if got.Matches() {
 		t.Error("the shipped ruleset excuses a changed tool call")
+	}
+	// And on the chat surface, where the tool result and the prompt are
+	// neighbours in one list, the rule must reach one and not the other. This
+	// is the whole reason the path names a role.
+	prompt := strings.Replace(opencode("a"), `"content":"read the briefing"`, `"content":"do something else"`, 1)
+	got, err = cassette.Align([]byte(opencode("a")), []byte(prompt), rules)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Matches() {
+		t.Error("the shipped ruleset excuses a changed prompt on the chat surface")
 	}
 }
 

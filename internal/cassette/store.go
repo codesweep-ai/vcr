@@ -156,15 +156,29 @@ func (s *Store) Next(req Request, volatile []Rule, lookahead int) (*Selection, *
 	candidate := -1
 	var candidateAl Alignment
 
-	seen := 0
+	// The window is measured from how far the session has GOT, not from the
+	// oldest step nobody has claimed.
+	//
+	// A client may record a step it does not always make. Claude Code's title
+	// generation is one: it runs beside the main loop, and a session that
+	// recorded it can replay without it. Anchored at the cursor, that one
+	// unclaimed step pins the window for the rest of the session — every later
+	// request is measured from a step that will never be served, and the
+	// session dies a few turns on, with a miss reported against a request
+	// nobody made. Measured: a 45-step recording that replayed 2 steps.
+	//
+	// Anchoring at the frontier costs nothing in strictness. The scan still
+	// STARTS at the cursor, so a straggler arriving late is still found; the
+	// bound only says how far ahead of the session's own progress a step may
+	// be, which is what a lookahead was always meant to say.
+	frontier := max(s.cursor, s.last+1)
 	for i := s.cursor; i < len(s.script); i++ {
 		if s.served[i] {
 			continue
 		}
-		if seen > lookahead {
+		if i > frontier+lookahead {
 			break
 		}
-		seen++
 		al, ok := s.aligns(i, req, volatile)
 		if !ok {
 			if candidate < 0 && s.script[i].Method == req.Method && s.script[i].Path == req.Path {

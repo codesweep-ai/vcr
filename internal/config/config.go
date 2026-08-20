@@ -486,7 +486,7 @@ func Default() *Config {
 			// it is recorded in every cassette so that changing a rule refuses the
 			// recordings made under the old ones instead of silently missing them.
 			// Bump it whenever anything below changes, and re-record.
-			Version: 7,
+			Version: 8,
 			// The minimum names: markers and identifiers that change
 			// between two requests the model would answer identically.
 			Strip: []string{
@@ -531,6 +531,13 @@ func Default() *Config {
 				"input[].output",
 				// Anthropic messages: a tool_result block's content
 				"messages[].content[].content",
+				// OpenAI chat completions: a tool result is a message of its
+				// own, beside the prompt in the same list, so it is reachable
+				// only by the role it names. OpenCode speaks this surface, and
+				// without the rule its every session missed on the third
+				// request — the first one carrying anything the world had
+				// answered.
+				"messages[role=tool].content",
 			},
 			// Codex asks for the model list at startup and names its own build
 			// in the query: `GET /v1/models?client_version=0.145.0`. The

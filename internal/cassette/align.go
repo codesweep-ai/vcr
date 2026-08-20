@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
-	"strconv"
 	"strings"
 )
 
@@ -73,7 +72,7 @@ func Align(recorded, live []byte, volatile []Rule) (Alignment, error) {
 		return Alignment{}, fmt.Errorf("live request is not JSON: %w", err)
 	}
 	al := &Alignment{}
-	al.walk(a, b, "", volatile)
+	al.walk(a, b, "", "", volatile)
 	return *al, nil
 }
 
@@ -95,12 +94,18 @@ func decode(b []byte) (any, error) {
 	return v, nil
 }
 
-func (a *Alignment) walk(rec, live any, path string, volatile []Rule) {
+// path is what a difference is reported at, and carries the index an element
+// actually had. rulePath is the same walk spelled for rule matching, where an
+// array element that names a role is spelled by that role instead — so
+// `messages[role=tool].content` can claim a tool result without claiming the
+// prompt beside it. Two paths rather than one because both jobs matter: a
+// report that said `messages[role=user]` would stop saying WHICH message.
+func (a *Alignment) walk(rec, live any, path, rulePath string, volatile []Rule) {
 	// Volatility is decided BEFORE the comparison, and stops the descent. A
 	// per-run block like client_metadata differs in its shape as well as its
 	// values — a key present one run and absent the next — so a check that
 	// only covered leaves would report the world's noise as a divergence.
-	if covered(path, volatile) {
+	if covered(rulePath, volatile) {
 		if !equal(rec, live) {
 			a.Tolerated = append(a.Tolerated, Difference{Path: path, Recorded: rec, Live: live})
 		}
@@ -124,7 +129,7 @@ func (a *Alignment) walk(rec, live any, path string, volatile []Rule) {
 			case !inRec:
 				a.Shape = append(a.Shape, Difference{Path: child, Why: "only in the live request"})
 			default:
-				a.walk(r[k], l[k], child, volatile)
+				a.walk(r[k], l[k], child, join(rulePath, k), volatile)
 			}
 		}
 	case []any:
@@ -141,7 +146,7 @@ func (a *Alignment) walk(rec, live any, path string, volatile []Rule) {
 			return
 		}
 		for i := range r {
-			a.walk(r[i], l[i], fmt.Sprintf("%s[%d]", path, i), volatile)
+			a.walk(r[i], l[i], fmt.Sprintf("%s[%d]", path, i), rulePath+role(r[i], i), volatile)
 		}
 	default:
 		if !sameType(rec, live) {
@@ -189,28 +194,49 @@ func matches(rule, path string) bool {
 }
 
 func segMatches(rule, seg string) bool {
-	name, indexed := cutIndex(seg)
-	if want, anyIndex := strings.CutSuffix(rule, "[]"); anyIndex {
-		return indexed && want == name
+	name, inside, bracketed := cutIndex(seg)
+	if want, wantInside, ruleBracketed := cutIndex(rule); ruleBracketed {
+		if !bracketed || want != name {
+			return false
+		}
+		// `[]` claims every element; anything else claims the elements spelled
+		// that way, which is how `messages[role=tool]` reaches a tool result
+		// and leaves the prompt alone.
+		return wantInside == "" || wantInside == inside
 	}
 	// A rule naming no index matches the array itself as well as a bare field,
 	// so `client_metadata` covers it however it is shaped this run.
-	if indexed {
+	if bracketed {
 		return rule == name
 	}
 	return rule == seg
 }
 
-// cutIndex splits `input[2]` into its name and whether it carried an index.
-func cutIndex(seg string) (name string, ok bool) {
+// role spells one array element for rule matching: by the role it names, when
+// it names one, and by its index otherwise.
+//
+// The OpenAI chat surface is why this exists. It carries a tool RESULT as a
+// message with role "tool", beside the prompt in the same list — where the
+// responses surface has `input[].output` and Anthropic has a nested
+// `content[].content`, both reachable by shape alone. Here shape reaches
+// either both or neither, and tolerating the prompt is tolerating the question.
+func role(elem any, i int) string {
+	if m, ok := elem.(map[string]any); ok {
+		if r, ok := m["role"].(string); ok && r != "" {
+			return "[role=" + r + "]"
+		}
+	}
+	return fmt.Sprintf("[%d]", i)
+}
+
+// cutIndex splits `input[2]` or `messages[role=tool]` into its name and
+// whatever the brackets held.
+func cutIndex(seg string) (name, inside string, ok bool) {
 	open := strings.IndexByte(seg, '[')
 	if open < 0 || !strings.HasSuffix(seg, "]") {
-		return seg, false
+		return seg, "", false
 	}
-	if _, err := strconv.Atoi(seg[open+1 : len(seg)-1]); err != nil {
-		return seg, false
-	}
-	return seg[:open], true
+	return seg[:open], seg[open+1 : len(seg)-1], true
 }
 
 func join(path, key string) string {

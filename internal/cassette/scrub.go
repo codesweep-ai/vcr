@@ -57,8 +57,14 @@ type detector struct {
 // case it covers, because it rewrites a prompt that was matching, and `--from-env`
 // is the exact answer for a value this list does not know.
 var detectors = []detector{
-	{"anthropic-key", regexp.MustCompile(`sk-ant-[A-Za-z0-9_-]{16,}`), "<API-KEY>"},
-	{"openai-key", regexp.MustCompile(`sk-(?:proj-)?[A-Za-z0-9_-]{20,}`), "<API-KEY>"},
+	// The leading group is a word boundary Go's RE2 cannot express as one: a
+	// key starts where a run of key characters starts, and `sk-` in the middle
+	// of one is not a key. Without it every base64 blob in a cassette is a
+	// finding — an encrypted-reasoning field matched 1018 characters because
+	// `sk-` happened to fall inside it, and a scrub that cries wolf on ordinary
+	// recordings is one nobody can gate on.
+	{"anthropic-key", regexp.MustCompile(`(^|[^A-Za-z0-9_-])sk-ant-[A-Za-z0-9_-]{16,}`), "${1}<API-KEY>"},
+	{"openai-key", regexp.MustCompile(`(^|[^A-Za-z0-9_-])sk-(?:proj-)?[A-Za-z0-9_-]{20,}`), "${1}<API-KEY>"},
 	{"fireworks-key", regexp.MustCompile(`fw_[A-Za-z0-9]{20,}`), "<API-KEY>"},
 	{"github-token", regexp.MustCompile(`gh[pousr]_[A-Za-z0-9]{30,}`), "<API-KEY>"},
 	// A JWT is an access token in the shape every OAuth provider mints it, and
