@@ -66,6 +66,7 @@ func Normalize(method, path string, body []byte, rules Ruleset) Key {
 	for _, field := range rules.StripFields() {
 		v = strip(v, strings.Split(field, "."))
 	}
+	v = dropBlocks(v, rules.DropBlocks())
 	v = sortToolResults(v)
 	v = collapseSingleTextBlocks(v)
 	// json.Marshal sorts object keys, which is the canonicalization the format
@@ -269,12 +270,74 @@ func toolUseID(b any) string {
 // does not depend on the config package.
 type Ruleset interface {
 	StripFields() []string
+	// DropBlocks names the openings of blocks whose whole list ITEM is
+	// removed before hashing.
+	DropBlocks() []string
 	// StripQuery names the query parameters removed from the request target
 	// before it is hashed.
 	StripQuery() []string
 	// Apply normalizes canonical request text and reports what its
 	// run-specific captures matched.
 	Apply([]byte) ([]byte, map[string]string)
+}
+
+// dropBlocks removes every list item that opens with one of these markers.
+//
+// A client that includes a block only SOMETIMES changes the length of a list,
+// and no substitution on the text can answer that: blanking the words leaves
+// the item, and a list of five items never aligns with one of four. The item
+// has to go, on both sides, before anything is hashed.
+//
+// A tree pass rather than a regex on the canonical text, because removing an
+// element from JSON text means getting its commas right, and a rule that gets
+// them wrong produces a body that will not parse — which reads downstream as a
+// corrupt recording rather than as a bad rule.
+//
+// Matched on the opening marker rather than anywhere in the value: a block
+// announces itself at its start, and a prompt that merely MENTIONS the tag is
+// discussing it, not being it.
+func dropBlocks(v any, markers []string) any {
+	if len(markers) == 0 {
+		return v
+	}
+	switch t := v.(type) {
+	case map[string]any:
+		for k, val := range t {
+			t[k] = dropBlocks(val, markers)
+		}
+		return t
+	case []any:
+		kept := make([]any, 0, len(t))
+		for _, e := range t {
+			if opensWith(e, markers) {
+				continue
+			}
+			kept = append(kept, dropBlocks(e, markers))
+		}
+		return kept
+	}
+	return v
+}
+
+// opensWith reports whether a list item is one of these blocks, by any string
+// it carries directly.
+func opensWith(e any, markers []string) bool {
+	m, ok := e.(map[string]any)
+	if !ok {
+		return false
+	}
+	for _, val := range m {
+		s, ok := val.(string)
+		if !ok {
+			continue
+		}
+		for _, marker := range markers {
+			if strings.HasPrefix(strings.TrimSpace(s), marker) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // hashOf keys an interaction on what identifies it: where it was going, and

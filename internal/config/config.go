@@ -184,6 +184,13 @@ type Normalize struct {
 	// RECORDING run's file, which does not exist. Capture blanks it for
 	// matching and restores this run's value on the way back out.
 	Capture []Capture `yaml:"capture,omitempty"`
+	// Drop names the openings of blocks a client includes only sometimes. The
+	// whole list item is removed before hashing, on both sides.
+	//
+	// Substitution cannot answer this one. Blanking the words leaves the item,
+	// and a list of five items never aligns with one of four — the difference
+	// is the length, not the text.
+	Drop []string `yaml:"drop,omitempty"`
 	// Replace are regex substitutions applied before hashing.
 	//
 	// Field stripping cannot reach what actually breaks a replay: the volatile
@@ -311,6 +318,9 @@ func bare(path string) string {
 // StripFields satisfies the ruleset the cassette package normalizes against,
 // so that package needs no dependency on this one.
 func (n *Normalize) StripFields() []string { return n.Strip }
+
+// DropBlocks names the blocks whose whole list item is removed before hashing.
+func (n *Normalize) DropBlocks() []string { return n.Drop }
 
 // StripQuery satisfies the same ruleset, for the request target.
 func (n *Normalize) StripQuery() []string { return n.Query }
@@ -486,7 +496,7 @@ func Default() *Config {
 			// it is recorded in every cassette so that changing a rule refuses the
 			// recordings made under the old ones instead of silently missing them.
 			// Bump it whenever anything below changes, and re-record.
-			Version: 8,
+			Version: 9,
 			// The minimum names: markers and identifiers that change
 			// between two requests the model would answer identically.
 			Strip: []string{
@@ -520,6 +530,14 @@ func Default() *Config {
 			// at the first path here — the shell's own timing, the id of an
 			// output chunk, and a pyenv warning the login shell emitted on one
 			// run and not the next.
+			// Codex assembles its instruction preamble from whatever the
+			// installation happens to have, and sends each part as a content
+			// item of its own. `<plugins_instructions>` turned up in a replay
+			// and not in the recording it was replaying — "input[2].content: 4
+			// items vs 5" — and a list whose length differs aligns with
+			// nothing. The block describes the client's own installation
+			// rather than the question, so dropping it costs the match nothing.
+			Drop: []string{"<plugins_instructions>"},
 			Volatile: []string{
 				// OpenAI responses: what a tool call answered, in both shapes
 				// that surface uses — a list of typed blocks for a custom

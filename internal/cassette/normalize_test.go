@@ -1,6 +1,7 @@
 package cassette
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -12,6 +13,8 @@ type testRules struct{}
 func (testRules) StripFields() []string { return nil }
 
 func (testRules) StripQuery() []string { return nil }
+
+func (testRules) DropBlocks() []string { return nil }
 
 func (testRules) Apply(b []byte) ([]byte, map[string]string) { return b, nil }
 
@@ -136,5 +139,53 @@ func TestAnUntouchedQueryIsNotRewritten(t *testing.T) {
 	const target = "/v1/models?b=2&a=1&x=%2Fslash"
 	if got := Normalize("GET", target, nil, queryRules{}).Target; got != target {
 		t.Errorf("Target = %q, want it unchanged at %q", got, target)
+	}
+}
+
+// dropRules is testRules that drops one block, for the case about a client
+// that sends a preamble item only sometimes.
+type dropRules struct{ testRules }
+
+func (dropRules) DropBlocks() []string { return []string{"<plugins_instructions>"} }
+
+// A block the client includes only sometimes must leave no trace of having
+// been there, so the run that sent it keys the same as the run that did not.
+//
+// Measured on a real Codex session: the recording carried four content items
+// and the replay five, and a list whose length differs aligns with nothing.
+func TestABlockSentOnlySometimesIsDropped(t *testing.T) {
+	body := func(items ...string) []byte {
+		var b strings.Builder
+		b.WriteString(`{"input":[{"content":[`)
+		for i, it := range items {
+			if i > 0 {
+				b.WriteString(",")
+			}
+			fmt.Fprintf(&b, `{"text":%q,"type":"input_text"}`, it)
+		}
+		b.WriteString(`]}]}`)
+		return []byte(b.String())
+	}
+
+	with := Normalize("POST", "/responses", body("<permissions instructions>...", "<plugins_instructions>\n## Plugins\n...", "<skills_instructions>..."), dropRules{})
+	without := Normalize("POST", "/responses", body("<permissions instructions>...", "<skills_instructions>..."), dropRules{})
+
+	if with.Hash != without.Hash {
+		t.Errorf("a run that sent the block keys differently:\n  with:    %s\n  without: %s", with.Canonical, without.Canonical)
+	}
+	if strings.Contains(string(with.Canonical), "plugins_instructions") {
+		t.Errorf("the block survived canonicalization:\n%s", with.Canonical)
+	}
+	// What the block sat between is untouched: dropping an item must not cost
+	// the ones around it.
+	for _, want := range []string{"permissions instructions", "skills_instructions"} {
+		if !strings.Contains(string(with.Canonical), want) {
+			t.Errorf("%q went with it:\n%s", want, with.Canonical)
+		}
+	}
+	// And a prompt that merely mentions the tag is discussing it, not being it.
+	talking := Normalize("POST", "/responses", body("please explain <plugins_instructions> to me"), dropRules{})
+	if !strings.Contains(string(talking.Canonical), "please explain") {
+		t.Errorf("a prompt about the block was dropped as the block:\n%s", talking.Canonical)
 	}
 }

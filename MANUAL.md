@@ -339,7 +339,8 @@ decision:
 |---|---|---|
 | a per-run identifier in the prompt *and* in a path the agent opens | `capture` | an identifier for one run, not part of the question |
 | a wall clock or a pid in tool output | `volatile`, or `replace` outside a tool result | the agent reports it and does not act on it |
-| a block the client includes only sometimes | `replace` | not part of the question |
+| a sentence the client includes only sometimes | `replace` | not part of the question |
+| a whole list ITEM the client includes only sometimes | `drop` | it changes the list's length, which no substitution reaches |
 | the `tools` list, when MCP servers connect on one run and not the next | `strip_fields` | see below |
 
 The `tools` row needs thought before you copy it. A model offered different tools can answer
@@ -352,6 +353,19 @@ the turns you are recording:
 normalize:
   strip_fields: [tools]
 ```
+
+`drop` is the one for a preamble block. Codex assembles its instructions from whatever the
+installation has, and sends each part as a content item of its own. A run with a plugin installed
+sends one item more than a run without. Blanking the words leaves the item, and a list of five items
+aligns with none of four — the item has to go, on both sides:
+
+```yaml
+normalize:
+  drop: ["<plugins_instructions>"]
+```
+
+A marker matches where a block opens, not wherever it appears. A prompt that mentions the tag is
+discussing the block, not being it.
 
 Write a `capture` pattern by enumerating the contexts an identifier appears in, such as a path, a
 tool argument or a tag. Do not match its shape:
