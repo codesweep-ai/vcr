@@ -1,0 +1,20 @@
+{
+  "id": "VCR-013",
+  "title": "A recording that fails because the model skipped its tool is reported as a sandbox fault",
+  "type": "defect",
+  "severity": "low",
+  "status": "open",
+  "foundBy": "session agent, when one scenario failed during a re-record and passed on a retry",
+  "opened": "2026-08-20",
+  "resolved": null,
+  "stint": null,
+  "evidence": {
+    "commits": [],
+    "integrated": [],
+    "verified": null
+  },
+  "resolution": null,
+  "details": "Recording `opencode-fireworks` failed once because the model answered \"done\" without ever creating hello.txt. It had simply not called the write tool. Re-running that one scenario recorded and replayed cleanly, so nothing was wrong with the code or the cassette.\n\nThe suite prints a hint when a replay served every step and the work still did not happen. It reads: \"The agent could not run its own tool — on Linux that is usually a sandbox denied an unprivileged user namespace\". That names one cause, and there are two. A model that chose not to call its tool produces the same evidence, and the hint sends the reader to check bubblewrap and namespaces instead of running it again.\n\nTwo things would help, and they are independent. The hint could name both causes and say that a retry separates them. And `make fixtures` could say that a scenario which failed this way is worth re-running before it is investigated, because a recording run is not reliably idempotent when a model decides what to do.",
+  "notes": [],
+  "links": []
+}

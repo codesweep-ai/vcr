@@ -1,10 +1,14 @@
 {
-  "recommendedBy": "session agent, after closing VCR-010",
+  "recommendedBy": "session agent, after closing VCR-012",
   "updated": "2026-08-20",
   "items": [
     {
       "id": "VCR-006",
       "why": "The first install route a new reader takes still leads to an empty page."
+    },
+    {
+      "id": "VCR-013",
+      "why": "A one-line hint currently sends a re-recording contributor after the wrong cause."
     }
   ]
 }
