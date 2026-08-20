@@ -486,7 +486,7 @@ func Default() *Config {
 			// it is recorded in every cassette so that changing a rule refuses the
 			// recordings made under the old ones instead of silently missing them.
 			// Bump it whenever anything below changes, and re-record.
-			Version: 6,
+			Version: 7,
 			// The minimum names: markers and identifiers that change
 			// between two requests the model would answer identically.
 			Strip: []string{
@@ -594,6 +594,18 @@ func Default() *Config {
 				// this, a cassette one developer records misses for every other
 				// one, and carries their address into the repository it is
 				// committed to.
+				//
+				// The whole block goes, not just the address. Claude Code learns
+				// the account from a subscription asynchronously, so the reminder
+				// carries a `# userEmail` section on one run of a task and none at
+				// all on the next — measured between a recording and its replay,
+				// where blanking the address alone still left `2 items vs 3` and
+				// missed every request of the session. Removing the section makes
+				// present and absent normalize to the same thing, which is the only
+				// way a rule can answer a block that comes and goes.
+				{Pattern: `\\n# userEmail\\nThe user's email address is [^"\\]*`, With: ``},
+				// The same address wherever else it is written, for the clients
+				// that place it outside that block.
 				{Pattern: `(The user's email address is )[^@\s"\\]+@[^\s"\\]+`, With: `${1}<EMAIL>`},
 			},
 			// The scratchpad directory Claude Code is told to use carries a

@@ -295,17 +295,50 @@ func TestDefaultNormalizesTheMachineAndTheAccount(t *testing.T) {
 	}
 	// Each rule stops where its value does. A greedy one would swallow the rest
 	// of the prompt, which is the part that has to keep matching.
-	for _, want := range []string{"Shell: unknown", "Today's date is <DATE>", "# userEmail"} {
+	for _, want := range []string{"Shell: unknown", "Today's date is <DATE>"} {
 		if !strings.Contains(string(laptop), want) {
 			t.Errorf("%q was consumed along with the value it follows:\n%s", want, laptop)
 		}
 	}
 	// And it is the value that goes, not the label: a reader of the recording
 	// has to be able to see which line was normalized.
-	for _, want := range []string{"Platform: <PLATFORM>", "OS Version: <OS>", "address is <EMAIL>"} {
+	for _, want := range []string{"Platform: <PLATFORM>", "OS Version: <OS>"} {
 		if !strings.Contains(string(laptop), want) {
 			t.Errorf("%q is missing from the normalized form:\n%s", want, laptop)
 		}
+	}
+	// The account block is the exception, and goes whole. See the test below
+	// for why blanking the address is not enough.
+	if strings.Contains(string(laptop), "userEmail") {
+		t.Errorf("the account block must not survive:\n%s", laptop)
+	}
+}
+
+// The account reminder comes and goes between two runs of one task.
+//
+// Claude Code learns the account behind a subscription asynchronously, so the
+// system reminder at the head of the first user message carries a `# userEmail`
+// section on one run and none at all on the next. Blanking the address leaves
+// the sentence, and a sentence that is present once and absent once is still a
+// difference — measured between a recording and its replay, as `2 items vs 3`
+// on every request of the session. Only removing the section makes the two
+// normalize alike.
+func TestDefaultNormalizesAnAccountBlockThatComesAndGoes(t *testing.T) {
+	n := Default().Normalize
+	if err := n.Compile(); err != nil {
+		t.Fatal(err)
+	}
+	const head = `"# Environment\n - Shell: unknown`
+	const tail = `\n# currentDate\nToday's date is 2026-08-15.\n"`
+
+	with, _ := n.Apply([]byte(head + `\n# userEmail\nThe user's email address is ada@example.com.` + tail))
+	without, _ := n.Apply([]byte(head + tail))
+	if string(with) != string(without) {
+		t.Errorf("a run that learned the account and one that did not still differ:\n  %s\n  %s", with, without)
+	}
+	// And what follows the block is still there to match on.
+	if !strings.Contains(string(with), "Today's date is <DATE>") {
+		t.Errorf("the rule swallowed the rest of the prompt:\n%s", with)
 	}
 }
 
