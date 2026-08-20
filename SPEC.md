@@ -151,18 +151,21 @@ by aligning the request that arrived against the one recorded there.
 ### 5.1 Selection
 
 ```
-1. from the step the session is at, scan forward over unserved steps: that one, and at most
-   `lookahead` more, so 0 is strict
+1. scan forward over unserved steps from the step the session is at, reaching at most
+   `lookahead` steps past the furthest step already served
 2. serve the first that aligns: same method, same path, and a body that aligns
-3. if none does, but the request aligns with the step just served, serve that step again
+3. if none does, serve again the most recently served step the request aligns with
 4. otherwise report a miss
 ```
 
 **R5.** Selection **MUST** compare the method and path as well as the body. *Every agent's startup
 probes are bodiless, so two of them would otherwise align with each other trivially.*
 
-**R6.** cs-vcr **MUST** serve the most recently served step again when the request aligns with it
-and nothing new does. *This is a client retrying, or a probe it issues twice.*
+**R6.** cs-vcr **MUST** serve an already-served step again when nothing new aligns and that step
+does, taking the most recently served of them. *This is a client retrying, or a probe it issues more
+often on one run than on another. Codex asks for the model list at startup and does not always ask
+the same number of times. The extra ask can arrive after the session has moved past the step that
+answers it.*
 
 **R7.** A step served out of order **MUST** be served, and **MUST** be reported and counted.
 
@@ -173,6 +176,12 @@ paths that disagreed.
 and Claude Code runs title generation alongside its main loop. A larger window cannot serve a wrong
 step, because alignment is exact, so a step that aligns is this request. The window bounds the
 search, not the similarity: too small costs a loud failure, never a quietly wrong answer.*
+
+*Why it is measured from the furthest step served rather than from the session's own position: a
+client may record a request it does not always make. Claude Code's title generation is one, running
+beside the main loop. Anchored at the cursor, one such step pins the window for the rest of the
+session. Every later request is then measured from a step that will never be served, and a 45-step
+recording replayed 2 of them.*
 
 ### 5.2 Alignment
 
@@ -203,13 +212,15 @@ be identical: the model itself, its tools, the instructions, and each tool call'
 and id. What the world answered back may differ, because cs-vcr replays the model and never claimed
 to reproduce a shell.
 
-The shipped defaults name a tool result on each surface, and neither names a tool call:
+The shipped defaults name a tool result on each surface, and none of them names a tool call:
 
 ```yaml
 normalize:
   volatile:
-    - input[].output                 # OpenAI responses: what a tool call answered
-    - messages[].content[].content   # Anthropic messages: tool_result
+    - input[].output                  # OpenAI responses: what a tool call answered
+    - messages[].content[].content    # Anthropic messages: tool_result
+    - messages[].content[].is_error   # Anthropic messages: whether that tool failed
+    - messages[role=tool].content     # OpenAI chat: a tool result is a message of its own
 ```
 
 ### 5.3 Normalization
@@ -219,6 +230,11 @@ and the configured rules applied. `<`, `>` and `&` are left unescaped, because a
 them and an escaped form is neither readable in review nor addressable by a rule.
 
 **R13.** Each `strip_fields` path **MUST** be removed from the body before comparing.
+
+**R13a.** Each `drop` marker **MUST** remove the whole list item that carries it, on both sides,
+before comparing. *Codex assembles its instruction preamble from what the installation has, and
+sends each part as a content item of its own. An item present in one run and absent in the next
+changes the list's length, and a list whose length differs aligns with nothing.*
 
 **R14.** Each `strip_query` parameter **MUST** be removed from the request target. The query
 **MUST NOT** be dropped as a class, because a parameter can select provider behaviour.
@@ -407,7 +423,7 @@ cassettes/refactor-auth/
 format_version: 3
 created: 2026-08-12T18:04:11Z
 proxy_version: 0.1.0
-normalize_version: 6
+normalize_version: 11
 ```
 
 `format_version` covers everything the build decides: the layout, and the canonical form a request
@@ -514,10 +530,11 @@ cassette_provider:
   refactor-auth: anthropic
 
 normalize:
-  version: 6
+  version: 11
   volatile: ["input[].output", "messages[].content[].content"]
   strip_fields: [client_metadata, prompt_cache_key]
   strip_query: [client_version]
+  drop: ["<plugins_instructions>"]
   replace:
     - {pattern: "(Today's date is )\\d{4}-\\d{2}-\\d{2}", with: "${1}<DATE>"}
   capture:
@@ -551,7 +568,10 @@ model.*
 **R47.** The configuration **MUST NOT** contain a credential.
 
 `volatile`, `strip_fields` and `strip_query` take JSON paths, where `[]` descends into every element
-of an array and a path covers everything beneath it.
+of an array and a path covers everything beneath it. A volatile path may instead name an array
+element by the role it carries, as in `messages[role=tool]`. That reaches a tool result on a surface
+which puts one beside the prompt in the same list. `drop` is not a path: it names the opening of a
+block, and removes whichever list item carries it.
 
 | Variable | Effect |
 |---|---|
@@ -673,6 +693,12 @@ step to a client that then failed is not a replayed session.*
 fixture was recorded with, and **MUST** be able to fail instead of skipping. *An agent's own version
 is in its prompt, so a different build sends a different request; and a job that silently skipped its
 whole matrix reports the same green as one that ran it.*
+
+**R54a.** Replay **MUST** refuse a fixture recorded under a different normalization ruleset, before
+it starts the agent, and **MUST** fail rather than skip. *An agent that is not installed is a gap in
+what one host can cover. A fixture recorded under a ruleset the build no longer speaks is committed
+and wrong for everybody. Refused per request instead, it arrives as an error the agent retries, and
+the run reports a timeout rather than a cause.*
 
 An agent builds its prompt from what it can see, so the two runs have to see the same things. Three
 mechanisms, in the order they matter:
