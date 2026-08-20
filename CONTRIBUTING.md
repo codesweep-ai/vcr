@@ -10,7 +10,7 @@ vulnerability reporting on this repository's Security tab, rather than opening a
 
 ```bash
 make check        # gofmt, vet, unit tests, the race detector and every linter
-make test-smoke   # three real agents replaying committed cassettes, about 5s
+make test-smoke   # three real agents replaying every committed cassette, about 20s
 ```
 
 `make check` shells out to two tools that do not come with Go, and the ledger below needs a third.
@@ -53,9 +53,10 @@ behavior genuinely cannot be observed in a test — say so in the PR.
   handling or the cassette format — those are the things a hand-written fixture cannot check. When a
   change alters what a real session sends, re-record with `make fixtures` (see
   [INSTALL.md](INSTALL.md#4-run-the-live-agent-suite)) and commit the cassettes with the code.
-- `make test-smoke` is a named subset of that: one scenario per agent, covering all three surfaces,
-  in about five seconds. It is the one to run before every push. CI runs the full matrix, which is
-  cheap enough not to need a subset — this profile is for you, not for it.
+- `make test-smoke` replays the same matrix into its own coverage tier, in about twenty seconds. It
+  is the one to run before every push. Every combination runs, because a chosen subset has to be
+  re-chosen whenever a scenario is added, and the one nobody adds is the one that rots unnoticed.
+  `SMOKE_SCENARIOS=<name>` narrows it while you work on a single scenario.
 - **Every gate fires with both a positive and a negative test.** The negative half is usually the
   one that matters: that an unknown replay refuses *and did not dial*, or that a miss *fails the
   session* rather than passing quietly.

@@ -123,8 +123,8 @@ make test-integration  # replay:    fabricated credentials, no provider reachabl
 ```
 
 Recording runs on a developer's machine and never in CI. Replaying needs the agents installed and no
-credentials at all, so it is what CI runs on every push. `make test-smoke` is the same replay for one
-scenario per agent, in about five seconds, and is the one to run before pushing.
+credentials at all, so it is what CI runs on every push. `make test-smoke` is the same replay into its
+own coverage tier, and is the one to run before pushing.
 
 Each scenario starts cs-vcr in replay mode, then hands the agent a fabricated credential and a base
 URL. It then checks three things: no provider was contacted, no request missed, and the agent did

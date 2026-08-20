@@ -115,27 +115,32 @@ test-integration:
 	  go test $(COVERFLAGS) ./test/agents -run TestReplayFixtures -v -timeout 30m -count=1 \
 	  -args -test.gocoverdir=$(COVER_ABS)/integration
 
-## test-smoke: the profile to run before pushing — one scenario per agent, and
-## between them all three surfaces cs-vcr routes, in about five seconds. A
-## subset of test-integration, which stays cheap enough for CI to run whole.
+## test-smoke: the profile to run before pushing — every committed fixture,
+## replayed by the agent that recorded it, in about twenty seconds.
 ##
-## The members are spelled out rather than picked by rule: a profile that took
-## the first three scenarios would stop covering a surface the day one is
-## renamed, and say nothing about it.
-SMOKE_SCENARIOS ?= claude-code-subscription \
-                   codex-api-key \
-                   opencode-fireworks
+## The whole matrix rather than a chosen few. A subset has to be re-chosen every
+## time a scenario is added, and the combination nobody remembers to add is the
+## one that goes untested: the profile stays green while what it stopped
+## covering rots. Twenty seconds does not need rationing.
+##
+## SMOKE_SCENARIOS narrows the run while working on one scenario, as a `|`
+## alternation of names: `make test-smoke SMOKE_SCENARIOS=codex-chatgpt`. Empty
+## is the default and means all of them, so no combination can go missing by
+## being left out of a list.
+SMOKE_SCENARIOS ?=
 
 # Joined into one -run alternation. A backslash continuation becomes a space in
 # make, so the spaces are substituted out here.
 empty :=
 space := $(empty) $(empty)
 SMOKE_RUN := $(subst $(space),|,$(strip $(SMOKE_SCENARIOS)))
+# No names means no subtest filter at all, which is what runs the whole matrix.
+SMOKE_TARGET := TestReplayFixtures$(if $(SMOKE_RUN),/($(SMOKE_RUN)))
 
 test-smoke:
 	@scripts/coverage.sh reset smoke
 	CS_VCR_AGENTS=1 CS_COVERDIR=$(COVER_ABS)/smoke \
-	  go test $(COVERFLAGS) ./test/agents -run 'TestReplayFixtures/($(SMOKE_RUN))' -v -timeout 10m -count=1 \
+	  go test $(COVERFLAGS) ./test/agents -run '$(SMOKE_TARGET)' -v -timeout 10m -count=1 \
 	  -args -test.gocoverdir=$(COVER_ABS)/smoke
 
 ## agent-versions: the agent versions the committed fixtures were recorded with,

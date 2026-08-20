@@ -654,7 +654,7 @@ surface as the row above it, reaching a model Anthropic does not serve.
 ```bash
 make fixtures          # record: real logins, real providers, spends money
 make test-integration  # replay: fabricated credentials, no provider configured or reachable
-make test-smoke        # the same, for one scenario per agent — the pre-push profile
+make test-smoke        # the same matrix again, into its own tier — the pre-push profile
 ```
 
 **R51.** Recording **MUST** skip a scenario this host cannot sign in for, and **MUST** say which
