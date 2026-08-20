@@ -496,7 +496,7 @@ func Default() *Config {
 			// it is recorded in every cassette so that changing a rule refuses the
 			// recordings made under the old ones instead of silently missing them.
 			// Bump it whenever anything below changes, and re-record.
-			Version: 10,
+			Version: 11,
 			// The minimum names: markers and identifiers that change
 			// between two requests the model would answer identically.
 			Strip: []string{
@@ -521,6 +521,22 @@ func Default() *Config {
 				// metadata.user_id rather than a query parameter that selects
 				// behaviour.
 				"prompt_cache_key",
+				// Codex 0.148.0 gives every element of `input` an id of its
+				// own, minted per run: `msg_01a02023-b134-76d0-…`. It names the
+				// message rather than saying anything about it, so two runs
+				// asking the same question carry different ones.
+				//
+				// It is what made 0.148.0 unrecordable. The replay that
+				// `make fixtures` performs before keeping a cassette compared a
+				// recording against the run that had just produced it and
+				// missed on the first request, so no Codex fixture could be
+				// kept at all.
+				//
+				// Stripped rather than tolerated: a volatile path reports each
+				// difference it allows, and this one differs on every message
+				// of every request. The session summary would fill with
+				// observations about a nonce.
+				"input[].id",
 			},
 			// What the world answers, in each surface's spelling. Both name a
 			// tool RESULT and neither names a tool call: the call is the

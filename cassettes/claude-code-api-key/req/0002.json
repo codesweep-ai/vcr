@@ -25,14 +25,9 @@
     {
       "content": [
         {
-          "signature": "Eq8CCqUBCBAYAipAIIIaMg0+lDMOSxgWokO794Rj7vuM7VDYP+CIM3/4mfdhm2n9JBQBQ6+44PrSNJzIYETyo+n3fvQNKR7pkd0UJzIPY2xhdWRlLXNvbm5ldC01OABCCHRoaW5raW5nWiRhNjMzZTQxNC1iMTNmLTRkMTAtOThiMi0yMDRhZTM1NTAyY2NyEHG8maPNlX8uFJk36QZYWD6IAQGoAdXcnNQGEgwfvMGNNxxTSbayswEaDGNx7md4t3ZtabK/UiIwr9Zl0Zqvuj4RR6axR+N23o8iC7uAcUPtQ+d4NOAV3tOcBkKOrcTiAouFtKRWKe9AKjcNVvdGrtcGza0BLr4E419kSOgWxDvNI7bghBo5K3Gd2bF16LpZqgP1Z3nYT3qr8t0SmJ9m9ZALGAE=",
-          "thinking": "",
-          "type": "thinking"
-        },
-        {
-          "id": "toolu_01E9EDAZDFmryEUDthjzGzK2",
+          "id": "toolu_01PgomcHWht3gYGDAwjpaob6",
           "input": {
-            "content": "hello world.",
+            "content": "hello world",
             "file_path": "<ROOT>/work/hello.txt"
           },
           "name": "Write",
@@ -45,7 +40,7 @@
       "content": [
         {
           "content": "File created successfully at: <ROOT>/work/hello.txt (file state is current in your context — no need to Read it back)",
-          "tool_use_id": "toolu_01E9EDAZDFmryEUDthjzGzK2",
+          "tool_use_id": "toolu_01PgomcHWht3gYGDAwjpaob6",
           "type": "tool_result"
         }
       ],

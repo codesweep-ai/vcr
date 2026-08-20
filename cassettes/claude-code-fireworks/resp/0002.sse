@@ -1,5 +1,5 @@
 event: message_start
-data: {"type":"message_start","message":{"content":[],"id":"msg_279040376f21931c21943d48","model":"accounts/fireworks/models/kimi-k3","role":"assistant","stop_details":null,"stop_reason":null,"stop_sequence":null,"type":"message","usage":{"input_tokens":0,"output_tokens":0,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"cache_creation":null,"service_tier":null,"inference_geo":null}}}
+data: {"type":"message_start","message":{"content":[],"id":"msg_d1ca974d75fe7a2c7a6855a5","model":"accounts/fireworks/models/kimi-k3","role":"assistant","stop_details":null,"stop_reason":null,"stop_sequence":null,"type":"message","usage":{"input_tokens":0,"output_tokens":0,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"cache_creation":null,"service_tier":null,"inference_geo":null}}}
 
 event: ping
 data: {"type":"ping"}
@@ -14,7 +14,7 @@ event: content_block_stop
 data: {"type":"content_block_stop","index":0}
 
 event: message_delta
-data: {"context_management":{"applied_edits":[]},"delta":{"stop_reason":"end_turn","stop_sequence":null,"stop_details":null},"type":"message_delta","usage":{"input_tokens":223,"output_tokens":14,"cache_creation_input_tokens":0,"cache_read_input_tokens":1622}}
+data: {"context_management":{"applied_edits":[]},"delta":{"stop_reason":"end_turn","stop_sequence":null,"stop_details":null},"type":"message_delta","usage":{"input_tokens":175,"output_tokens":14,"cache_creation_input_tokens":0,"cache_read_input_tokens":1622}}
 
 event: message_stop
 data: {"type":"message_stop"}

@@ -1,12 +1,12 @@
-data: {"id":"chatcmpl-0af14ff5cb4a41cba4b05843db0a0368","object":"chat.completion.chunk","created":1787244186,"model":"accounts/fireworks/models/kimi-k3","choices":[{"index":0,"delta":{"role":"assistant"},"finish_reason":null,"raw_output":null}],"usage":null}
+data: {"id":"chatcmpl-5d2de5a42096491497d381141a60bd9c","object":"chat.completion.chunk","created":1787246149,"model":"accounts/fireworks/models/kimi-k3","choices":[{"index":0,"delta":{"role":"assistant"},"finish_reason":null,"raw_output":null}],"usage":null}
 
-data: {"choices":[{"delta":{"reasoning_content":"Create a file named hello.txt with content \"hello world\", then reply \"done\"."},"finish_reason":null,"index":0,"raw_output":null}],"created":1787244186,"id":"chatcmpl-0af14ff5cb4a41cba4b05843db0a0368","model":"accounts/fireworks/models/kimi-k3","object":"chat.completion.chunk","usage":null}
+data: {"choices":[{"delta":{"reasoning_content":"The user wants me to create a file named hello.txt containing exactly \"hello world\" and then reply with \"done\". Simple task. Let me check the working directory first... Actually, I can just write the file directly since the working directory is given.\n\nI'll use the write tool to create the file."},"finish_reason":null,"index":0,"raw_output":null}],"created":1787246149,"id":"chatcmpl-5d2de5a42096491497d381141a60bd9c","model":"accounts/fireworks/models/kimi-k3","object":"chat.completion.chunk","usage":null}
 
-data: {"choices":[{"delta":{"tool_calls":[{"function":{"arguments":"{\"filePath\": \"<ROOT>/work/hello.txt\", \"content\": \"hello world\"}","name":"write"},"id":"write_0","index":0,"type":"function"}]},"finish_reason":null,"index":0,"raw_output":null}],"created":1787244186,"id":"chatcmpl-0af14ff5cb4a41cba4b05843db0a0368","model":"accounts/fireworks/models/kimi-k3","object":"chat.completion.chunk","usage":null}
+data: {"choices":[{"delta":{"tool_calls":[{"function":{"arguments":"{\"filePath\": \"<ROOT>/work/hello.txt\", \"content\": \"hello world\"}","name":"write"},"id":"write_0","index":0,"type":"function"}]},"finish_reason":null,"index":0,"raw_output":null}],"created":1787246149,"id":"chatcmpl-5d2de5a42096491497d381141a60bd9c","model":"accounts/fireworks/models/kimi-k3","object":"chat.completion.chunk","usage":null}
 
-data: {"id":"chatcmpl-0af14ff5cb4a41cba4b05843db0a0368","object":"chat.completion.chunk","created":1787244186,"model":"accounts/fireworks/models/kimi-k3","choices":[{"index":0,"delta":{},"finish_reason":"tool_calls","raw_output":null}],"usage":null}
+data: {"id":"chatcmpl-5d2de5a42096491497d381141a60bd9c","object":"chat.completion.chunk","created":1787246149,"model":"accounts/fireworks/models/kimi-k3","choices":[{"index":0,"delta":{},"finish_reason":"tool_calls","raw_output":null}],"usage":null}
 
-data: {"id":"chatcmpl-0af14ff5cb4a41cba4b05843db0a0368","object":"chat.completion.chunk","created":1787244186,"model":"accounts/fireworks/models/kimi-k3","choices":[],"usage":{"prompt_tokens":6824,"total_tokens":6926,"completion_tokens":102,"prompt_tokens_details":{"cached_tokens":0},"completion_tokens_details":{"reasoning_tokens":17},"output_tokens_details":{"reasoning_tokens":17}}}
+data: {"id":"chatcmpl-5d2de5a42096491497d381141a60bd9c","object":"chat.completion.chunk","created":1787246149,"model":"accounts/fireworks/models/kimi-k3","choices":[],"usage":{"prompt_tokens":6824,"total_tokens":6970,"completion_tokens":146,"prompt_tokens_details":{"cached_tokens":0},"completion_tokens_details":{"reasoning_tokens":61},"output_tokens_details":{"reasoning_tokens":61}}}
 
 data: [DONE]
 

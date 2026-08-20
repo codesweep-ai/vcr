@@ -342,6 +342,37 @@ func TestDefaultNormalizesAnAccountBlockThatComesAndGoes(t *testing.T) {
 	}
 }
 
+// Codex 0.148.0 gives every element of `input` an id minted per run, which made
+// the replay that `make fixtures` performs before keeping a cassette miss on the
+// first request of every Codex session. Two runs asking the same question have
+// to normalize to the same bytes.
+//
+// The negative half is the one that matters. `call_id` names a tool call, which
+// SPEC.md §5.2 puts on the exact side of the line: the model decided it, and a
+// rule broad enough to take both ids would let a replay agree with a session
+// that called something else.
+func TestTheDefaultStripTakesCodexMessageIdsAndLeavesToolCallIds(t *testing.T) {
+	n := Default().Normalize
+	if err := n.Compile(); err != nil {
+		t.Fatal(err)
+	}
+	key := func(msg, call string) cassette.Key {
+		body := []byte(`{"model":"gpt-5.6-sol","input":[
+		  {"id":"` + msg + `","role":"user","content":[{"type":"input_text","text":"list the files"}]},
+		  {"id":"` + msg + `-2","call_id":"` + call + `","type":"custom_tool_call","name":"exec","input":"ls"}]}`)
+		return cassette.Normalize("POST", "/v1/responses", body, &n)
+	}
+	first := key("msg_01a02023-b134-76d0-b0fe-06cf1a749449", "c1")
+	again := key("msg_01a02023-cfca-7a61-9081-2e183aeb3d62", "c1")
+	if first.Hash != again.Hash {
+		t.Errorf("two runs of the same question still differ:\n  %s\n  %s", first.Canonical, again.Canonical)
+	}
+	other := key("msg_01a02023-b134-76d0-b0fe-06cf1a749449", "c2")
+	if first.Hash == other.Hash {
+		t.Errorf("call_id went with it, so two different tool calls now match:\n%s", first.Canonical)
+	}
+}
+
 // The shipped volatile paths have to reach what actually broke, in each
 // surface's own spelling. Asserted against the real shapes rather than against
 // the strings themselves, so that renaming a path in the ruleset cannot pass
