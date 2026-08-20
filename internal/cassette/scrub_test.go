@@ -212,11 +212,13 @@ func TestKeyDetectorsNeedAKeyToStart(t *testing.T) {
 		{"a vendor-prefixed key", `{"h":"` + anthropic + `"}`, true},
 		{"the same run inside base64", `{"reasoning":"QmFzZTY0` + openai + `"}`, false},
 		{"the prefix inside a word", `{"note":"this is a task-specific instruction"}`, false},
+		{"a provider key where one starts", `{"h":"fw_` + tail + `"}`, true},
+		{"the same run inside base64", `{"reasoning":"QmFzZTY0fw_` + tail + `"}`, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var found bool
 			for _, d := range detectors {
-				if d.kind != "openai-key" && d.kind != "anthropic-key" {
+				if !strings.HasSuffix(d.kind, "-key") && !strings.HasSuffix(d.kind, "-token") {
 					continue
 				}
 				if d.re.MatchString(tc.body) {

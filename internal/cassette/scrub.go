@@ -65,8 +65,8 @@ var detectors = []detector{
 	// recordings is one nobody can gate on.
 	{"anthropic-key", regexp.MustCompile(`(^|[^A-Za-z0-9_-])sk-ant-[A-Za-z0-9_-]{16,}`), "${1}<API-KEY>"},
 	{"openai-key", regexp.MustCompile(`(^|[^A-Za-z0-9_-])sk-(?:proj-)?[A-Za-z0-9_-]{20,}`), "${1}<API-KEY>"},
-	{"fireworks-key", regexp.MustCompile(`fw_[A-Za-z0-9]{20,}`), "<API-KEY>"},
-	{"github-token", regexp.MustCompile(`gh[pousr]_[A-Za-z0-9]{30,}`), "<API-KEY>"},
+	{"fireworks-key", regexp.MustCompile(`(^|[^A-Za-z0-9_-])fw_[A-Za-z0-9]{20,}`), "${1}<API-KEY>"},
+	{"github-token", regexp.MustCompile(`(^|[^A-Za-z0-9_-])gh[pousr]_[A-Za-z0-9]{30,}`), "${1}<API-KEY>"},
 	// A JWT is an access token in the shape every OAuth provider mints it, and
 	// its middle segment is a readable account record.
 	{"jwt", regexp.MustCompile(`eyJ[A-Za-z0-9_-]{8,}\.eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}`), "<JWT>"},
