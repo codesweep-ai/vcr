@@ -1,0 +1,22 @@
+{
+  "id": "VCR-009",
+  "title": "The agent suite ran to its timeout instead of naming a fixture it cannot replay",
+  "type": "defect",
+  "severity": "med",
+  "status": "closed",
+  "foundBy": "session agent, investigating a report that `make test-smoke` hangs",
+  "opened": "2026-08-20",
+  "resolved": "2026-08-20",
+  "stint": "2026-08-20 test-smoke hang investigation",
+  "evidence": {
+    "commits": [
+      "abbf6d6"
+    ],
+    "integrated": [],
+    "verified": "`CS_VCR_AGENTS=1 go test ./test/agents -run 'TestReplayFixtures/(claude-code-subscription|codex-api-key|opencode-fireworks)'` failed in 0.54s, naming ruleset v6 against v10 for all three scenarios. The same command previously ran to the ten-minute timeout."
+  },
+  "resolution": null,
+  "details": "TestReplayFixtures starts a proxy and a real agent for each fixture. A cassette recorded under an older normalization ruleset is refused per request rather than at startup, so the suite had no signal until the agent gave up or the test timed out.\n\nThe suite already guards the other half of the same problem. It compares the recorded prompt against the current one and fails with a message telling the reader to run `make fixtures`. The ruleset version had no equivalent check, although `cs-vcr cassette verify` exists and reports exactly that.\n\nThe new check is a failure rather than a skip, on every host. An agent that is not installed is a gap in what one machine can cover. A fixture recorded under a ruleset the build no longer speaks is committed and wrong for everybody.",
+  "notes": [],
+  "links": []
+}

@@ -1,0 +1,20 @@
+{
+  "id": "VCR-011",
+  "title": "A mistyped cassette name may reach the operator as an unknown model error",
+  "type": "defect",
+  "severity": "low",
+  "status": "open",
+  "foundBy": "session agent, while changing the status an unusable cassette answers",
+  "opened": "2026-08-20",
+  "resolved": null,
+  "stint": null,
+  "evidence": {
+    "commits": [],
+    "integrated": [],
+    "verified": null
+  },
+  "resolution": null,
+  "details": "An `unknown_cassette` reply answers 404. Rule R31 in SPEC.md records that a 404 on `/v1/messages` is how the Anthropic API reports an unknown model, and that one cassette miss consequently reached an operator as advice to check their model access. The `unknown_cassette` path returns the same status on the same endpoint, so it is open to the same misreading.\n\nThis is reasoned from that rule rather than reproduced. No run has been observed in which a client renamed a mistyped cassette prefix.\n\nThe status also carries a distinction the code argues for deliberately. A cassette that is absent and one that will not open are different mistakes, and the reply is meant to say which. Any change has to keep that distinction while avoiding the renaming, which is why this was left alone rather than decided in passing.",
+  "notes": [],
+  "links": []
+}

@@ -1,0 +1,22 @@
+{
+  "id": "VCR-008",
+  "title": "A cassette from another build answered 500, so clients retried instead of stopping",
+  "type": "defect",
+  "severity": "high",
+  "status": "closed",
+  "foundBy": "session agent, investigating a report that `make test-smoke` hangs",
+  "opened": "2026-08-20",
+  "resolved": "2026-08-20",
+  "stint": "2026-08-20 test-smoke hang investigation",
+  "evidence": {
+    "commits": [
+      "efe088a"
+    ],
+    "integrated": [],
+    "verified": "A `replay` session over the committed cassettes answered `curl` with 400 and the `cassette_unusable` body, naming ruleset v6 against v10, where it had answered 500. `go test ./... -race -count=1` passes, including TestReplayNamesACassetteItCannotRead, which now asserts 400."
+  },
+  "resolution": null,
+  "details": "`make test-smoke` ran for its full ten-minute timeout and said nothing about why. Every process sat at 0% CPU, so it read as a deadlock rather than as a refusal.\n\nThe cause was a refusal the client kept retrying. The committed cassettes were recorded under normalization ruleset v6 and this build had moved to v10, so `Cassette.Usable` refused each one. The proxy reported that as HTTP 500. Stainless-generated SDKs retry a 5xx, so Claude Code backed off and asked again, doubling the wait each time: 0.5s, 1.1s, 2.4s, 4.4s, 8.4s, 16.5s, 36.8s.\n\nThe refusal message named both ruleset versions and said to record the cassette again. Nobody saw it, because the client swallowed the 500 and the run looked like a hang.\n\nThe miss path already answered 400 for this exact reason, and rule R31 in SPEC.md recorded why. The path that opens a cassette never applied it. The `cassette_corrupt` reply had the same defect and moved with it.",
+  "notes": [],
+  "links": []
+}

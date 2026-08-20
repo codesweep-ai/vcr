@@ -1,0 +1,23 @@
+{
+  "id": "VCR-010",
+  "title": "Every committed cassette is at ruleset v6 while the build is at v10, so none replay",
+  "type": "defect",
+  "severity": "high",
+  "status": "open",
+  "foundBy": "session agent, investigating a report that `make test-smoke` hangs",
+  "opened": "2026-08-20",
+  "resolved": null,
+  "stint": null,
+  "evidence": {
+    "commits": [],
+    "integrated": [],
+    "verified": null
+  },
+  "resolution": null,
+  "details": "The eight cassettes under `cassettes/` all record `normalize_version: 6`. This build's ruleset is v10. A cassette whose ruleset is not the build's is refused, so no fixture replays, and `make test-smoke` and `make test-integration` both fail.\n\nFour commits moved the ruleset without re-recording. `3da5d83` took it to v7, `3c98639` to v8, `85f574b` to v9 and `ceb0594` to v10. CONTRIBUTING.md requires a ruleset change to bump the version and re-record in the same pull request.\n\nThe remedy is `make fixtures`, which records one real session per scenario. It needs a Claude Pro or Max login, an Anthropic key, an OpenAI key and a Fireworks key, and it spends money. That is why it was not done in the session that found this.\n\nThe two defects closed beside this one changed how the failure presents. It is now reported in under a second, naming both versions and the remedy. Neither of them re-records anything, so this stays open until the fixtures are recorded again.",
+  "notes": [],
+  "links": [
+    "VCR-008",
+    "VCR-009"
+  ]
+}

@@ -1,5 +1,10 @@
 {
-  "recommendedBy": "session agent, after closing VCR-001 and VCR-002",
-  "updated": "2026-08-17",
-  "items": []
+  "recommendedBy": "session agent, after closing VCR-008 and VCR-009",
+  "updated": "2026-08-20",
+  "items": [
+    {
+      "id": "VCR-010",
+      "why": "No committed fixture replays, so the pre-push smoke gate cannot pass."
+    }
+  ]
 }
