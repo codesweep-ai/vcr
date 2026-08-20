@@ -33,7 +33,7 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      # The two tools `make check` shells out to. golangci-lint is pinned
+      # The three tools `make check` shells out to. golangci-lint is pinned
       # because it gains checks between releases: unpinned, somebody else's
       # release becomes a red build on a pull request that touched nothing.
       - name: linters
@@ -41,6 +41,7 @@ jobs:
           set -euo pipefail
           go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.2
           go install golang.org/x/tools/cmd/deadcode@latest
+          go install github.com/codesweep-ai/lint/cmd/cs-lint@latest
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
 
       # fmt, vet, the Go linters and the unit tests: the same target a
