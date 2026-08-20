@@ -131,7 +131,7 @@ func runServe(ctx context.Context, app *App, out io.Writer, offline bool, dumpMi
 			}
 			return store, err
 		}
-		return cassette.OpenStore(dir, Version, cfg.Normalize.Version,
+		return cassette.OpenStore(dir, buildVersion(), cfg.Normalize.Version,
 			func() int64 { return time.Now().Unix() })
 	}
 	srv = srv.WithOpener(open)

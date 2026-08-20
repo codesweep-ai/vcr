@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"os"
 	"runtime"
+	"runtime/debug"
 	"strings"
 
 	"github.com/codesweep-ai/vcr"
@@ -18,8 +19,26 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// devVersion marks a binary that carried no release stamp.
+const devVersion = "0.1.0-dev"
+
 // Version is the tool version (set via -ldflags at release).
-var Version = "0.1.0-dev"
+var Version = devVersion
+
+// buildVersion reports the release stamp when there is one, and otherwise the
+// module version the toolchain recorded. A binary installed straight from the
+// module path carries no stamp, so without this it would answer the dev
+// sentinel and leave the provenance of a recording unsayable.
+func buildVersion() string {
+	if Version != devVersion {
+		return Version
+	}
+	info, ok := debug.ReadBuildInfo()
+	if !ok || info.Main.Version == "" || info.Main.Version == "(devel)" {
+		return Version
+	}
+	return info.Main.Version
+}
 
 // App holds process-wide dependencies resolved once at startup.
 type App struct {
@@ -141,7 +160,7 @@ func newVersionCmd() *cobra.Command {
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			fmt.Fprintf(cmd.OutOrStdout(), "cs-vcr %s (%s/%s, %s)\n",
-				Version, runtime.GOOS, runtime.GOARCH, runtime.Version())
+				buildVersion(), runtime.GOOS, runtime.GOARCH, runtime.Version())
 			return nil
 		},
 	}
