@@ -677,6 +677,20 @@ make test-integration  # replay: fabricated credentials, no provider configured 
 make test-smoke        # the same matrix again, into its own tier: the pre-push profile
 ```
 
+Recording runs on a developer's machine and never in CI. Replaying needs the agents installed and no
+credentials at all, so it is what CI runs on every push. Each scenario starts cs-vcr in replay mode,
+then hands the agent a fabricated credential and a base URL. The whole suite takes about twenty
+seconds and costs nothing.
+
+A scenario this host cannot cover is skipped with the reason, and the reason names what it wanted:
+
+```console
+$ make fixtures
+--- PASS: TestRecordFixtures/claude-code-subscription (4.25s)
+--- SKIP: TestRecordFixtures/claude-code-api-key (0.09s)
+        claude-code-api-key cannot be recorded here: ANTHROPIC_API_KEY is not set in this environment
+```
+
 **R51.** Recording **MUST** skip a scenario this host cannot sign in for, and **MUST** say which
 credential was missing. *A suite that fails for want of a login is one contributors learn to ignore.*
 
