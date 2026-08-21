@@ -142,6 +142,10 @@ type Stats struct {
 	// answer would change the prompt. Reported because a tunnel is the one path
 	// through cs-vcr that records nothing — without a counter it is the traffic
 	// nobody can see afterwards.
+	//
+	// Apart from Requests, and that separation is load-bearing: a recording
+	// session asserts that everything Requests counted was recorded, and a
+	// tunnel is by definition not.
 	TunnelOpened  int            `json:"tunnel_opened"`
 	TunnelBlocked int            `json:"tunnel_blocked"`
 	InFlight      int            `json:"in_flight"`

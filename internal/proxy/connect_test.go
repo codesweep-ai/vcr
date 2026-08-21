@@ -140,6 +140,47 @@ func TestConnectTunnelsEverythingElse(t *testing.T) {
 	}
 }
 
+// TestConnectLeavesTheRequestCountersAlone: a recording session asserts that
+// every request it counted was recorded, and a tunnel records nothing. Counting
+// one as a request failed that assertion for every agent that reaches past its
+// base URL, which was six of the eight fixtures.
+func TestConnectLeavesTheRequestCountersAlone(t *testing.T) {
+	srv := connectServer(t, online)
+	addr := srv.Listener.Addr().String()
+
+	// One refused, and one carried.
+	code, conn, _ := connectTo(t, addr, "api.anthropic.com:443")
+	if conn != nil {
+		conn.Close()
+	}
+	if code != http.StatusForbidden {
+		t.Fatalf("CONNECT to a listed host = %d, want 403", code)
+	}
+	upstream, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer upstream.Close()
+	go func() {
+		if c, err := upstream.Accept(); err == nil {
+			c.Close()
+		}
+	}()
+	if code, conn, _ := connectTo(t, addr, upstream.Addr().String()); code == http.StatusOK {
+		conn.Close()
+	} else {
+		t.Fatalf("CONNECT to an unlisted host = %d, want 200", code)
+	}
+
+	got := srv.Config.Handler.(*Server).Snapshot()
+	if got.TunnelOpened != 1 || got.TunnelBlocked != 1 {
+		t.Errorf("tunnel counters = opened %d blocked %d, want 1 and 1", got.TunnelOpened, got.TunnelBlocked)
+	}
+	if got.Requests != 0 {
+		t.Errorf("Requests = %d after two tunnels and no provider call, want 0", got.Requests)
+	}
+}
+
 // TestConnectRefusesProvidersWhileReplaying: `replay` says of itself that no
 // provider will be contacted. A tunnel is the one way a client could reach one
 // through cs-vcr anyway, so an offline session refuses the configured providers

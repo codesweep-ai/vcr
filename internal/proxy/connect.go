@@ -89,8 +89,11 @@ func hostOnly(hostport string) string {
 func (s *Server) serveConnect(w http.ResponseWriter, r *http.Request) {
 	target := r.Host // CONNECT carries authority-form: host:port
 	host := hostOnly(target)
-	s.count(func(st *Stats) { st.Requests++ })
-
+	// Counted by the two tunnel counters and by nothing else. Requests means
+	// requests to a provider surface — the things a session can record — and the
+	// recording half asserts that every one of them was recorded. A tunnel
+	// records nothing, so counting one here fails that assertion for every agent
+	// that reaches past its base URL.
 	if why := s.tunnelRefusal(host); why != "" {
 		s.count(func(st *Stats) { st.TunnelBlocked++ })
 		s.log.Info("tunnel refused", slog.String("host", host))
@@ -100,7 +103,6 @@ func (s *Server) serveConnect(w http.ResponseWriter, r *http.Request) {
 
 	upstream, err := net.DialTimeout("tcp", target, 10*time.Second)
 	if err != nil {
-		s.count(func(st *Stats) { st.Rejected++ })
 		s.log.Warn("tunnel could not be opened", slog.String("host", host), slog.Any("err", err))
 		writeError(w, http.StatusBadGateway, "tunnel_failed", err.Error())
 		return
@@ -109,13 +111,11 @@ func (s *Server) serveConnect(w http.ResponseWriter, r *http.Request) {
 
 	hj, ok := w.(http.Hijacker)
 	if !ok {
-		s.count(func(st *Stats) { st.Rejected++ })
 		writeError(w, http.StatusInternalServerError, "tunnel_unsupported", "this server cannot hijack a connection")
 		return
 	}
 	client, buf, err := hj.Hijack()
 	if err != nil {
-		s.count(func(st *Stats) { st.Rejected++ })
 		return
 	}
 	defer client.Close()
