@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -68,6 +69,12 @@ func TestRecordFixtures(t *testing.T) {
 			if err != nil {
 				skip(t, "%s cannot be recorded here: %v", sc.name, err)
 			}
+			// Before the cassette is touched: prove this credential still works
+			// by using it, against the provider, with no cs-vcr in the way. A
+			// failure here leaves the committed cassette where it was, which is
+			// the whole reason this runs before the removal below and not after.
+			preflight(t, sc, cred)
+
 			// Re-recording replaces the session rather than appending to it: a
 			// cassette holds ONE session, and a second recording into the same
 			// directory leaves a script holding both.
@@ -232,7 +239,7 @@ func runScenario(t *testing.T, sc scenario, cred credential, m mode, cassettes s
 	if err := sc.prepare(sc, ws, cred, m, base); err != nil {
 		t.Fatal(err)
 	}
-	cmd := sc.command(sc, ws, cred, m, base)
+	cmd := sc.command(sc, ws, cred, m, base, prompt)
 	out, agentErr := combined(ctx, cmd)
 
 	stopped = true
@@ -278,6 +285,56 @@ func runScenario(t *testing.T, sc scenario, cred credential, m mode, cassettes s
 		t.Errorf("%s: %d of %d requests were recorded\n%s", sc.name, s.Recorded, s.Requests, tail(p.log(), 40))
 	}
 	return s.Recorded
+}
+
+// probePrompt is what the preflight asks for: one word, so the answer is
+// unambiguous and the turn costs almost nothing.
+const probePrompt = "reply with the single word: ok"
+
+// probeAnswered matches the word on its own, never inside another.
+var probeAnswered = regexp.MustCompile(`(?i)\bok\b`)
+
+// preflight runs the agent against its real provider, with no cs-vcr anywhere,
+// and fails the scenario if it does not answer.
+//
+// It exists because a credential that is present is not a credential that works.
+// A key can be revoked, and the Codex login carries no expiry anyone can read,
+// so a stale one used to surface as a 401 partway through a recording — with the
+// scenarios before it already paid for, and the cassette it was writing left
+// half-built.
+//
+// Through the agent rather than against the provider's API: the agent is what
+// the recording runs, so this exercises the same binary, the same profile
+// directory and the same credential discovery. A hand-written HTTP request would
+// only approximate all three, and a model-list endpoint would answer 200 for a
+// token that cannot infer.
+//
+// Its own workspace, thrown away after: the recording gets a fresh one, and
+// nothing this leaves behind should reach it.
+func preflight(t *testing.T, sc scenario, cred credential) {
+	t.Helper()
+	ws, err := newWorkspace(sc.name, "preflight")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The provider itself, not a proxy. Same suffix the client appends when it
+	// is pointed at cs-vcr, so the URL is shaped the way this agent expects.
+	base := sc.upstream + sc.urlSuffix
+	if err := sc.prepare(sc, ws, cred, record, base); err != nil {
+		t.Fatalf("%s: preflight setup: %v", sc.name, err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer cancel()
+	cmd := sc.command(sc, ws, cred, record, base, probePrompt)
+	out, err := combined(ctx, cmd)
+	// The whole word, and a clean exit. Substring matching is not enough for a
+	// word this short: "token" contains "ok", so an authentication error reads
+	// as the answer it is complaining about, and the run goes on to overwrite a
+	// cassette with six recorded 401s.
+	if err != nil || !probeAnswered.MatchString(out) {
+		t.Fatalf("%s: the agent could not reach %s with %s — the committed cassette is untouched.\n%v\n%s",
+			sc.name, sc.upstream, sc.auth, err, tail(out, 15))
+	}
 }
 
 // hostHint separates a cassette that stopped matching from a host that cannot

@@ -73,8 +73,14 @@ type scenario struct {
 	// prepare writes the agent's configuration and credentials. It runs after
 	// the proxy is up, because the port is part of the configuration.
 	prepare func(sc scenario, ws *workspace, c credential, m mode, base string) error
-	// command is the agent invocation, with its whole environment.
-	command func(sc scenario, ws *workspace, c credential, m mode, base string) *exec.Cmd
+	// command is the agent invocation, with its whole environment. It takes the
+	// prompt rather than closing over one, so the preflight below can ask for a
+	// word where a recording asks for a session.
+	command func(sc scenario, ws *workspace, c credential, m mode, base, prompt string) *exec.Cmd
+	// upstream is where this scenario's provider actually lives. cs-vcr forwards
+	// there while recording; the preflight goes there directly, to prove the
+	// credential works before a cassette is opened.
+	upstream string
 }
 
 // credential is what the recording half signs in with: a file the developer
@@ -186,7 +192,7 @@ func claudeCode(name, auth, key, model, upstream string) scenario {
 	}
 	return scenario{
 		name: name, bin: "claude", auth: auth, model: model,
-		login: login, keyFrom: key, keyAs: keyAs,
+		login: login, keyFrom: key, keyAs: keyAs, upstream: upstream,
 		// Claude Code appends the whole API path to what it is given.
 		urlSuffix: "",
 		vcrConfig: "providers:\n  anthropic: {base_url: " + upstream + "}\ndefault_provider: anthropic\n",
@@ -218,7 +224,7 @@ func claudeCode(name, auth, key, model, upstream string) scenario {
 			}
 			return ws.write(".claude/.credentials.json", fakeClaudeLogin(), 0o600)
 		},
-		command: func(sc scenario, ws *workspace, c credential, m mode, base string) *exec.Cmd {
+		command: func(sc scenario, ws *workspace, c credential, m mode, base, prompt string) *exec.Cmd {
 			cmd := exec.Command("claude", "-p",
 				// Every customization off: a developer's CLAUDE.md, skills,
 				// plugins, hooks and MCP servers are all prompt content, and none
@@ -302,7 +308,7 @@ wire_api = "responses"
 func codexChatGPT() scenario {
 	return scenario{
 		name: "codex-chatgpt", bin: "codex", auth: "a ChatGPT subscription", model: "gpt-5.6-sol",
-		login: true,
+		login: true, upstream: "https://chatgpt.com/backend-api/codex",
 		// A ChatGPT login is accepted by the ChatGPT backend, whose endpoint is
 		// /responses with no version prefix — so the base URL carries none.
 		urlSuffix: "",
@@ -331,7 +337,7 @@ func codexChatGPT() scenario {
 func codexAPIKey() scenario {
 	return scenario{
 		name: "codex-api-key", bin: "codex", auth: "an OpenAI API key", model: "gpt-5.6-sol",
-		keyFrom: "OPENAI_API_KEY", keyAs: "OPENAI_API_KEY",
+		keyFrom: "OPENAI_API_KEY", keyAs: "OPENAI_API_KEY", upstream: "https://api.openai.com",
 		// With a key the traffic goes to the versioned API, so the base URL ends
 		// in /v1 and cs-vcr's openai provider stays where it points by default.
 		urlSuffix: "/v1",
@@ -345,7 +351,7 @@ func codexAPIKey() scenario {
 	}
 }
 
-func codexCommand(_ scenario, ws *workspace, c credential, m mode, _ string) *exec.Cmd {
+func codexCommand(_ scenario, ws *workspace, c credential, m mode, _, prompt string) *exec.Cmd {
 	cmd := exec.Command("codex", "exec",
 		// The workspace is deliberately not a git repository, so that the state
 		// of one cannot reach the prompt.
@@ -424,7 +430,7 @@ func openCode(name, auth, model, provider, upstream, key string) scenario {
 		config += fmt.Sprintf("cassette_provider:\n  %s: %s\n", name, provider)
 	}
 	return scenario{
-		name: name, bin: "opencode", auth: auth, model: model,
+		name: name, bin: "opencode", auth: auth, model: model, upstream: upstream,
 		// Each of these providers reads the key from the variable it is named
 		// for, so the agent is handed it under the name it was found in.
 		keyFrom: key, keyAs: key,
@@ -448,7 +454,7 @@ func openCode(name, auth, model, provider, upstream, key string) scenario {
 			}
 			return os.WriteFile(filepath.Join(ws.work, "opencode.json"), b, 0o644)
 		},
-		command: func(sc scenario, ws *workspace, c credential, m mode, _ string) *exec.Cmd {
+		command: func(sc scenario, ws *workspace, c credential, m mode, _, prompt string) *exec.Cmd {
 			cmd := exec.Command("opencode", "run",
 				// No plugins, and no permission prompt to answer.
 				"--pure", "--auto",

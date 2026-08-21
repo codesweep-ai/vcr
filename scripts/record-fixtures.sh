@@ -55,7 +55,7 @@ missing=0
 
 echo "API keys (.env):"
 for v in ANTHROPIC_API_KEY OPENAI_API_KEY FIREWORKS_API_KEY; do
-  if [[ -n ${!v:-} ]]; then ok "$v"; else bad "$v is not set"; missing=1; fi
+  if [[ -n ${!v:-} ]]; then ok "$v is set"; else bad "$v is not set"; missing=1; fi
 done
 
 echo
@@ -89,7 +89,7 @@ for a in claude codex opencode; do
   if command -v "$a" >/dev/null; then ok "$a — $(command -v "$a")"; else bad "$a is not on PATH"; missing=1; fi
 done
 
-echo
+
 if (( missing )); then
   fail "Something above is missing. fixtures-strict fails on the first one rather
 than skipping it, so fix them before spending anything."
