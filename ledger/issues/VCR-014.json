@@ -1,0 +1,27 @@
+{
+  "id": "VCR-014",
+  "title": "Ruleset v12 landed without the fixtures, so every cassette was refused and CI went red",
+  "type": "defect",
+  "severity": "high",
+  "status": "closed",
+  "foundBy": "session agent, investigating a report that the GitHub CI build is broken",
+  "opened": "2026-08-21",
+  "resolved": "2026-08-21",
+  "stint": "2026-08-21 CI failure investigation",
+  "evidence": {
+    "commits": [
+      "d313eb4"
+    ],
+    "integrated": [],
+    "verified": "`./bin/cs-vcr cassette verify` reports all eight cassettes ok and exits 0, where it exited 4 naming 21 stale entries. `make test-smoke` replays all eight fixtures against Claude Code 2.1.232, Codex 0.148.0 and OpenCode 1.18.11 in 17.6s, all PASS. `./bin/cs-vcr cassette scrub` reports all eight clean, and `make check` exits 0."
+  },
+  "resolution": null,
+  "details": "`d3b0e62` added `<skills_instructions>` to the drop list and took the ruleset to v12 without re-recording. The eight committed cassettes all still read `normalize_version: 11`, and a cassette whose ruleset is not the build's is refused by name, so no fixture replayed.\n\nTwo CI jobs failed on it. `cassette verify` exited 4 reporting 21 stale entries across all eight cassettes, and `integration` failed every subtest of `TestReplayFixtures` with the same version mismatch.\n\nThis is the second time the ruleset has moved without the fixtures following it; VCR-010 was the same defect across four commits. CONTRIBUTING requires the bump and the re-recording in one pull request, and nothing enforces that locally before a push.\n\nThe remedy taken was a renormalization rather than a re-recording. Every committed request body is the canonical form the recorder hashed, which was confirmed by normalizing each one under v11 and finding it byte-identical with a hash matching its index line. v12 differs from v11 only by dropping a whole list item, so normalizing the committed bodies under v12 produces exactly what a recording under v12 would have written. Four Codex requests lost their skills list, 2826 bytes each; the other seventeen entries were unchanged.",
+  "notes": [
+    {
+      "date": "2026-08-21",
+      "text": "`make fixtures` was not an option on the host that fixed this: it has an OpenAI and a Fireworks key but no Anthropic key, and the Claude Pro/Max and ChatGPT scenarios need interactive logins. A partial recording run would have left at least three cassettes at v11 and CI still red."
+    }
+  ],
+  "links": ["VCR-010"]
+}
