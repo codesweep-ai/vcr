@@ -189,3 +189,43 @@ func TestABlockSentOnlySometimesIsDropped(t *testing.T) {
 		t.Errorf("a prompt about the block was dropped as the block:\n%s", talking.Canonical)
 	}
 }
+
+// preambleRules carries the drop list the shipped configuration uses for
+// Codex's instruction preamble.
+type preambleRules struct{ testRules }
+
+func (preambleRules) DropBlocks() []string {
+	return []string{"<plugins_instructions>", "<skills_instructions>"}
+}
+
+// Codex's instruction preamble is whatever the installation happens to carry,
+// and it varies between two runs a minute apart. `<plugins_instructions>` was
+// the loud version — a content item present on one side only. This is the
+// quiet one: the skills list is present in both runs and one ENTRY of it is
+// not, because a member VM fetches its curated-skill cache when it fetches it.
+// Measured on codex-subscription as 5200 characters against 4743, identical
+// but for a `plugin-management` line.
+func TestTheInstallationsOwnPreambleIsDropped(t *testing.T) {
+	body := func(skills string) []byte {
+		return []byte(`{"input":[{"role":"developer","content":[` +
+			`{"type":"input_text","text":"` + skills + `"},` +
+			`{"type":"input_text","text":"<permissions instructions>sandboxed</permissions instructions>"}` +
+			`]},{"role":"user","content":[{"type":"input_text","text":"list the files"}]}]}`)
+	}
+	withPlugin := body(`<skills_instructions>\n- skill-installer: install\n- plugin-management: manage\n</skills_instructions>`)
+	without := body(`<skills_instructions>\n- skill-installer: install\n</skills_instructions>`)
+
+	a := Normalize("POST", "/responses", withPlugin, preambleRules{})
+	b := Normalize("POST", "/responses", without, preambleRules{})
+	if a.Hash != b.Hash {
+		t.Fatalf("a differing skills list still changes the key:\n%s\n\n%s", a.Canonical, b.Canonical)
+	}
+	// The neighbouring block is not collateral: it says what the model may do,
+	// not what the installation happens to have.
+	if !strings.Contains(string(a.Canonical), "permissions instructions") {
+		t.Fatalf("dropping the skills block took the permissions block with it:\n%s", a.Canonical)
+	}
+	if !strings.Contains(string(a.Canonical), "list the files") {
+		t.Fatalf("the question itself was dropped:\n%s", a.Canonical)
+	}
+}

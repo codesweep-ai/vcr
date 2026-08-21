@@ -496,7 +496,13 @@ func Default() *Config {
 			// it is recorded in every cassette so that changing a rule refuses the
 			// recordings made under the old ones instead of silently missing them.
 			// Bump it whenever anything below changes, and re-record.
-			Version: 11,
+			//
+			// v12 adds `<skills_instructions>` to Drop. A dropped block changes
+			// the canonical form, so it changes every key — which is exactly
+			// what this counter is for, and why cassettes recorded under v11
+			// are refused by name rather than left to miss one request at a
+			// time.
+			Version: 12,
 			// The minimum names: markers and identifiers that change
 			// between two requests the model would answer identically.
 			Strip: []string{
@@ -553,7 +559,17 @@ func Default() *Config {
 			// items vs 5" — and a list whose length differs aligns with
 			// nothing. The block describes the client's own installation
 			// rather than the question, so dropping it costs the match nothing.
-			Drop: []string{"<plugins_instructions>"},
+			//
+			// `<skills_instructions>` is the same block by another name, and
+			// was missed the first time because it varies more quietly: the
+			// list is there in both runs and one LINE of it differs. Codex
+			// caches curated skills under ~/.cs-codex/plugins/cache, a member
+			// VM fetches them when it fetches them, and a recording made a
+			// minute earlier listed `plugin-management` where the replay did
+			// not — 5200 characters against 4743, identical but for that entry.
+			// Same cause, same remedy: what the installation happens to carry
+			// is not what the model was asked.
+			Drop: []string{"<plugins_instructions>", "<skills_instructions>"},
 			Volatile: []string{
 				// OpenAI responses: what a tool call answered, in both shapes
 				// that surface uses — a list of typed blocks for a custom

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -493,5 +494,27 @@ func TestAShallowRootHasNoBareForm(t *testing.T) {
 	}
 	if !strings.Contains(string(got), "<ROOT>") {
 		t.Errorf("the absolute form was not normalized: %s", got)
+	}
+}
+
+// The shipped ruleset drops both halves of Codex's instruction preamble, and
+// says so by version.
+//
+// The pairing is the point: `<skills_instructions>` was added after
+// `<plugins_instructions>` had already been found and fixed, because the two
+// vary in different ways — one block appears or does not, the other is always
+// there with one line more or less. A drop changes the canonical form and so
+// changes every key, which is what the version counter exists to announce:
+// cassettes recorded under v11 must be refused by name, not left to miss one
+// request at a time.
+func TestTheShippedRulesetDropsBothPreambleBlocks(t *testing.T) {
+	n := Default().Normalize
+	if n.Version != 12 {
+		t.Fatalf("normalize ruleset version = %d, want 12", n.Version)
+	}
+	for _, want := range []string{"<plugins_instructions>", "<skills_instructions>"} {
+		if !slices.Contains(n.Drop, want) {
+			t.Errorf("%s is not dropped; Drop = %v", want, n.Drop)
+		}
 	}
 }
