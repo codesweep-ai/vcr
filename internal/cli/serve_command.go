@@ -274,6 +274,15 @@ func summarize(out io.Writer, st proxy.Stats, offline bool) error {
 	if st.Drifted > 0 {
 		fmt.Fprintf(tw, "drifted observations\t%d\n", st.Drifted)
 	}
+	// Its own line, and worded as a warning rather than a count, because it is
+	// the one tolerance that can cost a session its result: the client was
+	// handed the answer to a command that did not succeed here. A run can pass
+	// with these and often does -- a recorded command naming the recording's
+	// own commit will always fail on a fresh checkout -- but a reader deciding
+	// whether to trust a green replay needs to know it happened.
+	if st.ToleratedFailures > 0 {
+		fmt.Fprintf(tw, "commands that failed here\t%d\t(succeeded when recorded; answers were replayed anyway)\n", st.ToleratedFailures)
+	}
 	if st.OutOfOrder > 0 {
 		fmt.Fprintf(tw, "out of recorded order\t%d\n", st.OutOfOrder)
 	}

@@ -117,6 +117,22 @@ type Stats struct {
 	// Drifted counts differences accepted under a volatile path: the world
 	// answering differently than it did when the cassette was recorded.
 	Drifted int `json:"drifted"`
+	// ToleratedFailures counts the drifts that were not the world answering
+	// differently but the world answering WORSE: a tool result the recording
+	// captured as a success and this run reports as a failure.
+	//
+	// Counted apart from Drifted because it is the one kind of tolerance that
+	// can cost a session its outcome, and it is invisible among the others.
+	// Measured on a cs-campaign replay: the orchestrator's `git diff <base>`
+	// failed live because the base commit belongs to the recording's repo, the
+	// difference was tolerated, and the client was handed the diff the command
+	// had not produced. It survived that one; the same shape on a different
+	// command ended a campaign with its verdict unsent.
+	//
+	// Reported, not fatal. Tolerating this is load-bearing -- a replay that
+	// refused it would fail on any run-specific identifier a recorded command
+	// carries -- so the fix is to make it visible, not to make it fail.
+	ToleratedFailures int `json:"tolerated_failures"`
 	// InFlight counts the requests still being answered. It is worth reporting
 	// at the END, where it is no longer a request in flight but an interaction
 	// the session walked out on: the entry is written once the response is done,
@@ -428,6 +444,14 @@ func (s *Server) serveFromCassette(w http.ResponseWriter, store *cassette.Store,
 	// cassette becomes visible instead of becoming a wrong answer.
 	for _, d := range sel.Tolerated {
 		s.count(func(st *Stats) { st.Drifted++ })
+		if failedLive(d) {
+			s.count(func(st *Stats) { st.ToleratedFailures++ })
+			s.log.Warn("tolerated a command that FAILED here and succeeded when recorded",
+				slog.Int("seq", entry.Seq), slog.String("path", d.Path),
+				slog.String("cassette", name),
+				slog.String("live", cassette.Short(d.Live)))
+			continue
+		}
 		s.log.Warn("tolerated a changed observation",
 			slog.Int("seq", entry.Seq), slog.String("path", d.Path),
 			slog.String("recorded", cassette.Short(d.Recorded)), slog.String("live", cassette.Short(d.Live)))
@@ -878,4 +902,24 @@ func capturedValues(captured map[string]string) []string {
 	}
 	sort.Slice(out, func(i, j int) bool { return len(out[i]) > len(out[j]) })
 	return out
+}
+
+// failedLive reports whether a tolerated difference is a tool result that
+// succeeded when recorded and failed on this run.
+//
+// Only Anthropic's surface says so in a field: `is_error` beside the tool
+// result. OpenAI's carries the same fact as free text, where no rule can read
+// it without guessing at prose -- so this catches what is stated and stays
+// quiet about what is not, rather than inventing a heuristic that would be
+// wrong on the day it mattered.
+func failedLive(d cassette.Difference) bool {
+	if !strings.HasSuffix(d.Path, ".is_error") {
+		return false
+	}
+	was, ok := d.Recorded.(bool)
+	if !ok {
+		return false
+	}
+	now, ok := d.Live.(bool)
+	return ok && !was && now
 }

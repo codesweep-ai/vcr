@@ -382,3 +382,31 @@ func sessionStore(t *testing.T, s *Server) *cassette.Store {
 	}
 	return store
 }
+
+// A tolerated difference that flips a tool result from success to failure is
+// counted apart from the rest.
+//
+// It is still tolerated: refusing it would fail every replay where a recorded
+// command names the recording's own commit, which is ordinary. But it is the
+// one tolerance that can cost a session its outcome — the client is handed the
+// answer to a command that did not succeed here — and among a hundred ordinary
+// drifts nobody would find it. Measured on a cs-campaign replay, where exactly
+// this hid the reason a campaign ended with its verdict unsent.
+func TestAToleratedFailureIsCountedApartFromOrdinaryDrift(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		d        cassette.Difference
+		wantFlag bool
+	}{
+		{"success became failure", cassette.Difference{Path: "messages[41].content[0].is_error", Recorded: false, Live: true}, true},
+		{"failure became success", cassette.Difference{Path: "messages[41].content[0].is_error", Recorded: true, Live: false}, false},
+		{"unchanged flag", cassette.Difference{Path: "messages[41].content[0].is_error", Recorded: false, Live: false}, false},
+		{"an ordinary output drift", cassette.Difference{Path: "messages[41].content[0].content", Recorded: "a", Live: "b"}, false},
+		{"a path that merely ends in prose", cassette.Difference{Path: "messages[0].text", Recorded: "x", Live: "y"}, false},
+		{"non-boolean values", cassette.Difference{Path: "x.is_error", Recorded: "false", Live: "true"}, false},
+	} {
+		if got := failedLive(tc.d); got != tc.wantFlag {
+			t.Errorf("%s: failedLive = %v, want %v", tc.name, got, tc.wantFlag)
+		}
+	}
+}
