@@ -137,9 +137,16 @@ type Stats struct {
 	// at the END, where it is no longer a request in flight but an interaction
 	// the session walked out on: the entry is written once the response is done,
 	// so each one left here is a provider call whose answer nothing kept.
-	InFlight   int            `json:"in_flight"`
-	BySurface  map[string]int `json:"by_surface"`
-	ByCassette map[string]int `json:"by_cassette"`
+	// TunnelOpened and TunnelBlocked count CONNECT requests: the ones carried
+	// to the host that asked for them, and the ones refused because what they
+	// answer would change the prompt. Reported because a tunnel is the one path
+	// through cs-vcr that records nothing — without a counter it is the traffic
+	// nobody can see afterwards.
+	TunnelOpened  int            `json:"tunnel_opened"`
+	TunnelBlocked int            `json:"tunnel_blocked"`
+	InFlight      int            `json:"in_flight"`
+	BySurface     map[string]int `json:"by_surface"`
+	ByCassette    map[string]int `json:"by_cassette"`
 }
 
 // New builds a server. The logger is required: every rejection path logs, and
@@ -227,6 +234,14 @@ func (s *Server) count(f func(*Stats)) {
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// CONNECT before anything else. It carries an authority (host:port) rather
+	// than a path, so every routing decision below would read it wrongly, and
+	// it is not a request to a provider at all — it is the agent, or a tool the
+	// agent launched, asking to reach somewhere on its own. See connect.go.
+	if r.Method == http.MethodConnect {
+		s.serveConnect(w, r)
+		return
+	}
 	// WHICH CASSETTE first, and from the connection: a /c/<name> prefix on the
 	// base URL names it. That costs a client nothing but its base URL, works
 	// for a caller with no token to be identified by, and rides on every

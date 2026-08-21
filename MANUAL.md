@@ -395,6 +395,45 @@ Matching by shape would be shorter and wrong. Go's regexp is RE2 and has no look
 `b[a-z0-9]{8}` matches any nine-letter word beginning with b, **behaviors** in a system prompt
 included. Blanking those alters the prompt while leaving the request looking normalized.
 
+### The calls a base URL does not govern
+
+Pointing an agent at cs-vcr aims its model calls here. It does not aim the rest. Claude Code checks
+its OAuth session against `api.anthropic.com`. Codex reaches `chatgpt.com` for its subscription
+transport and `ab.chatgpt.com` for experiment assignment. Each happens whatever base URL the client
+was given.
+
+Those answers change the prompt. A real login makes them succeed. A fabricated one makes them return
+401, and the request the agent sends next is not the one the cassette holds. A recording made on a
+developer's machine then fails to replay on a machine that holds no login.
+
+So cs-vcr answers `CONNECT` on the same port it serves. Point `HTTP_PROXY` at it and the agent's own
+reaching-out arrives here too:
+
+```
+export ANTHROPIC_BASE_URL=http://127.0.0.1:8080/c/my-cassette
+export HTTP_PROXY=http://127.0.0.1:8080
+export HTTPS_PROXY=http://127.0.0.1:8080
+export NO_PROXY=127.0.0.1,localhost
+```
+
+One address for both. `NO_PROXY` sends the model calls straight to the base URL above, and everything
+else is offered to the tunnel.
+
+The tunnel refuses three hosts: `api.anthropic.com`, `chatgpt.com` and `ab.chatgpt.com`. Everything
+else is carried. That is a refusal list rather than an allowlist on purpose. An agent's tools share
+its environment, so a blanket block would take away `git`, `curl` and every package manager it might
+shell out to. `github.com` is carried for the same reason, though Codex reaches it: nothing it
+returns has been seen to change a prompt.
+
+Refuse the same hosts while recording as while replaying. Blocked in both halves, the two runs ask
+the same question, which is the whole point.
+
+No certificate is involved. A `CONNECT` proxy pipes bytes and TLS stays end to end. The hostname it
+decides on is the one in the `CONNECT` line, before any of that begins.
+
+A `replay` session refuses the configured providers as well. It says of itself that no provider will
+be contacted, and a tunnel that carried a client to one would make that untrue.
+
 ## Notes for agents
 
 - Every command is non-interactive and exits with a meaningful status. Nothing prompts.
