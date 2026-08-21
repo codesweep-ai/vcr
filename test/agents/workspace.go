@@ -27,6 +27,9 @@ type workspace struct {
 	root string
 	home string
 	work string
+	// proxy is the HTTP_PROXY the agent is given: cs-vcr's own origin. Empty
+	// until the proxy is up, which is why it is set rather than constructed.
+	proxy string
 }
 
 // newWorkspace builds a clean workspace for one scenario in one mode.
@@ -95,12 +98,17 @@ func (w *workspace) env(extra map[string]string) []string {
 		// No terminal. Every one of these agents draws differently when it
 		// thinks it has one, and one of them asks it how wide it is.
 		"TERM": "dumb",
-		// The agent's only route to a network is cs-vcr, on loopback. Everything
-		// else fails to connect, in the recording half as well as the replay
-		// half — see the package comment for what changes when it does not.
-		"HTTP_PROXY":  deadProxy,
-		"HTTPS_PROXY": deadProxy,
-		"ALL_PROXY":   deadProxy,
+		// Everything the agent reaches for on its own goes through cs-vcr too,
+		// which refuses the handful of hosts whose answers change the prompt and
+		// tunnels the rest — in the recording half as well as the replay half.
+		// See the package comment for what changes when it does not, and
+		// internal/proxy/connect.go for the list.
+		//
+		// The model calls do not use it: they are aimed at cs-vcr by base URL,
+		// on loopback, which NO_PROXY sends direct.
+		"HTTP_PROXY":  w.proxy,
+		"HTTPS_PROXY": w.proxy,
+		"ALL_PROXY":   w.proxy,
 		"NO_PROXY":    "127.0.0.1,localhost",
 		"no_proxy":    "127.0.0.1,localhost",
 	}
@@ -111,11 +119,6 @@ func (w *workspace) env(extra map[string]string) []string {
 	}
 	return out
 }
-
-// deadProxy is a port nothing listens on, which is how the agent is denied
-// egress. A refused connection rather than a black hole: an agent that hangs
-// until its own timeout turns a two-minute suite into a twenty-minute one.
-const deadProxy = "http://127.0.0.1:1"
 
 // hello is what the prompt asks for, and what both halves assert afterwards.
 // Small on purpose: a fixture is a few thousand tokens to record and a diff a

@@ -152,6 +152,11 @@ func startProxy(ctx context.Context, ws *workspace, cassettes, configPath string
 // cassette its traffic belongs to, and whatever path fragment the client
 // expects to be given. Where the prefix sits relative to that fragment is the
 // thing this suite is proving, so it is composed here and nowhere else.
+// origin is the proxy without any cassette path: what HTTP_PROXY takes.
+func (p *proxy) origin() string {
+	return "http://127.0.0.1:" + strconv.Itoa(p.port)
+}
+
 func (p *proxy) baseURL(cassette, suffix string) string {
 	return "http://127.0.0.1:" + strconv.Itoa(p.port) + config.CassettePrefix + cassette + suffix
 }

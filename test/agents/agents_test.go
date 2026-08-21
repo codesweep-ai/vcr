@@ -226,6 +226,9 @@ func runScenario(t *testing.T, sc scenario, cred credential, m mode, cassettes s
 	}()
 
 	base := p.baseURL(sc.name, sc.urlSuffix)
+	// One endpoint: the same cs-vcr answers the model calls by base URL and the
+	// agent's own reaching-out by CONNECT.
+	ws.proxy = p.origin()
 	if err := sc.prepare(sc, ws, cred, m, base); err != nil {
 		t.Fatal(err)
 	}
