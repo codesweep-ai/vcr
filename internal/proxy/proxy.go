@@ -21,6 +21,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -754,7 +755,17 @@ func (s *Server) record(t *tap, rec recordCtx, started time.Time, complete, clie
 		// joining the fragments is what makes the value reachable. Then the
 		// response gets the same treatment as the request, because a client
 		// echoes a recorded tool argument straight back into its next one.
-		Response: s.cfg.Normalize.ApplyResponse(cassette.CoalesceToolInput(t.body.Bytes()), rec.key.Captured),
+		//
+		// The visible answer needs the same reach, but only where a value
+		// actually straddles the events it arrived in — an agent that writes
+		// its own answer to a file carries whatever is in it into the next
+		// turn, so a name split across deltas escapes blanking and reappears
+		// in the replay as the recording's identity. Passing this request's
+		// captured values keeps the fold to the events that carry one.
+		Response: s.cfg.Normalize.ApplyResponse(
+			cassette.CoalesceTextSpanning(
+				cassette.CoalesceToolInput(t.body.Bytes()), capturedValues(rec.key.Captured)),
+			rec.key.Captured),
 	})
 	if err != nil {
 		// A failed write is not worth failing the client's request over: the
@@ -854,4 +865,17 @@ func writeError(w http.ResponseWriter, status int, kind, msg string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(b)
+}
+
+// capturedValues is the run-specific values a request matched, which are what
+// the response answering it has to be blanked of. Sorted longest first for the
+// same reason ApplyResponse sorts: one value that is a prefix of another must
+// not partly claim it.
+func capturedValues(captured map[string]string) []string {
+	out := make([]string, 0, len(captured))
+	for _, v := range captured {
+		out = append(out, v)
+	}
+	sort.Slice(out, func(i, j int) bool { return len(out[i]) > len(out[j]) })
+	return out
 }

@@ -138,6 +138,22 @@ func (a *Alignment) walk(rec, live any, path, rulePath string, volatile []Rule) 
 			a.shape(path, rec, live)
 			return
 		}
+		// An item left with no content says nothing to the model, and whether
+		// it is there at all is not the client's considered decision. Dropping
+		// `<plugins_instructions>` is what empties one: the block was the
+		// entire content of a developer message, so the strip leaves an item
+		// carrying `"content": []` behind. Codex sends that husk on some runs
+		// and not others — measured on codex-subscription as `input: 11 items
+		// vs 10` — and an item that asks nothing must not be why a list of
+		// eleven fails to align with a list of ten.
+		//
+		// Tolerated here rather than normalized away in the canonical form, on
+		// purpose. Removing it there would change every key and force a
+		// ruleset bump, which invalidates cassettes that never had the problem;
+		// tolerating it here only ever makes possible a match that was not
+		// before, so every recording made under this ruleset stays as valid as
+		// it was.
+		r, l = withoutContentless(r), withoutContentless(l)
 		// Length before elements: two lists of different lengths have no
 		// element-wise correspondence, and reporting one difference per element
 		// would bury the fact that an item was added.
@@ -403,4 +419,45 @@ func Short(v any) string {
 		return s[:120] + "…"
 	}
 	return s
+}
+
+// withoutContentless drops list items whose `content` is present and empty.
+//
+// Only that exact shape: a map with a `content` key holding an empty list. An
+// item with no `content` key at all is a different thing entirely — a tool
+// call, a function output — and one whose content is an empty STRING was a
+// deliberate empty message. Neither is a husk left behind by a strip.
+//
+// The list is returned unchanged when it holds none, so the ordinary path
+// allocates nothing.
+func withoutContentless(items []any) []any {
+	n := 0
+	for _, it := range items {
+		if contentless(it) {
+			n++
+		}
+	}
+	if n == 0 {
+		return items
+	}
+	kept := make([]any, 0, len(items)-n)
+	for _, it := range items {
+		if !contentless(it) {
+			kept = append(kept, it)
+		}
+	}
+	return kept
+}
+
+func contentless(item any) bool {
+	m, ok := item.(map[string]any)
+	if !ok {
+		return false
+	}
+	c, ok := m["content"]
+	if !ok {
+		return false
+	}
+	list, ok := c.([]any)
+	return ok && len(list) == 0
 }

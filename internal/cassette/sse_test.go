@@ -1,7 +1,9 @@
 package cassette
 
 import (
+	"bytes"
 	"encoding/json"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -298,5 +300,67 @@ data: {"choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}
 `
 	if got := string(CoalesceToolInput([]byte(stream))); got != stream {
 		t.Errorf("a text stream was rewritten:\n%s", got)
+	}
+}
+
+// The visible answer is left in pieces until a value that must be substituted
+// straddles them.
+//
+// Measured on opencode-fireworks: the orchestrator's readback summary named
+// `orchestrator-5235a8fe`, the RECORDING's own sandbox, and the name arrived
+// across delta events. Nothing could blank it, the cassette kept it, and the
+// replay handed the member the recording's identity beside its own.
+func TestCoalesceTextSpanningFoldsOnlyTheRunCarryingAValue(t *testing.T) {
+	chunk := func(s string) string {
+		return `data: {"choices":[{"index":0,"delta":{"content":` + strconv.Quote(s) + `}}]}` + "\n\n"
+	}
+	stream := []byte(
+		chunk("Ordinary ") + chunk("prose ") + chunk("first.") +
+			`data: {"choices":[{"index":0,"delta":{"role":"assistant"}}]}` + "\n\n" +
+			chunk("branch is orch") + chunk("estrator-5235") + chunk("a8fe now"))
+
+	got := CoalesceTextSpanning(stream, []string{"orchestrator-5235a8fe"})
+	if !bytes.Contains(got, []byte("orchestrator-5235a8fe")) {
+		t.Fatalf("the value is still split, so nothing can substitute it:\n%s", got)
+	}
+	// The prose before it keeps its own pacing: three chunks in, three out.
+	if n := bytes.Count(got, []byte(`"content":"Ordinary "`)); n != 1 {
+		t.Errorf("the untouched run was rewritten (%d), want it verbatim:\n%s", n, got)
+	}
+	if !bytes.Contains(got, []byte(`"content":"prose "`)) {
+		t.Errorf("an untouched chunk was folded into its neighbour:\n%s", got)
+	}
+}
+
+// No value to reach means nothing to fold, and a stream carrying none must
+// come back byte for byte — the pacing of an answer is what a replayed session
+// reproduces for whoever is watching it.
+func TestCoalesceTextSpanningLeavesAStreamWithoutAValueAlone(t *testing.T) {
+	stream := []byte(
+		`data: {"choices":[{"index":0,"delta":{"content":"all "}}]}` + "\n\n" +
+			`data: {"choices":[{"index":0,"delta":{"content":"ordinary"}}]}` + "\n\n")
+	if got := CoalesceTextSpanning(stream, []string{"orchestrator-5235a8fe"}); !bytes.Equal(got, stream) {
+		t.Errorf("a stream with nothing to substitute was rewritten:\n%s", got)
+	}
+	if got := CoalesceTextSpanning(stream, nil); !bytes.Equal(got, stream) {
+		t.Errorf("no values at all still rewrote the stream:\n%s", got)
+	}
+}
+
+// Every surface spells a text delta differently, and a fix that reached only
+// the one it was found on would leave the other two carrying the same defect.
+func TestCoalesceTextSpanningReachesEverySurface(t *testing.T) {
+	for name, stream := range map[string]string{
+		"anthropic.messages": `data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"orch"}}` + "\n\n" +
+			`data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"estrator-5235a8fe"}}` + "\n\n",
+		"openai.responses": `data: {"type":"response.output_text.delta","item_id":"m1","output_index":0,"delta":"orch"}` + "\n\n" +
+			`data: {"type":"response.output_text.delta","item_id":"m1","output_index":0,"delta":"estrator-5235a8fe"}` + "\n\n",
+		"openai.chat": `data: {"choices":[{"index":0,"delta":{"content":"orch"}}]}` + "\n\n" +
+			`data: {"choices":[{"index":0,"delta":{"content":"estrator-5235a8fe"}}]}` + "\n\n",
+	} {
+		got := CoalesceTextSpanning([]byte(stream), []string{"orchestrator-5235a8fe"})
+		if !bytes.Contains(got, []byte("orchestrator-5235a8fe")) {
+			t.Errorf("%s: the value is still split:\n%s", name, got)
+		}
 	}
 }

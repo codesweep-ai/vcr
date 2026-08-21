@@ -302,3 +302,58 @@ func TestALongListIsNotEnumerated(t *testing.T) {
 		t.Errorf("a 20-item list was enumerated: %q", got.Shape[0].Why)
 	}
 }
+
+// Codex leaves a husk behind. Dropping `<plugins_instructions>` empties the
+// developer message that carried it, and whether the husk is sent at all
+// varies run to run — which showed up as `input: 11 items vs 10` on
+// codex-subscription and stalled every replay of it. An item asking nothing
+// cannot be the reason two conversations fail to correspond.
+func TestAContentlessItemDoesNotBreakAlignment(t *testing.T) {
+	withHusk := []byte(`{"input":[
+	  {"role":"developer","content":[]},
+	  {"role":"user","content":[{"type":"input_text","text":"list the files"}]}
+	]}`)
+	without := []byte(`{"input":[
+	  {"role":"user","content":[{"type":"input_text","text":"list the files"}]}
+	]}`)
+
+	for _, tc := range []struct {
+		name      string
+		rec, live []byte
+	}{
+		{"husk recorded, absent live", withHusk, without},
+		{"husk live, absent in the recording", without, withHusk},
+		{"husk on both sides", withHusk, withHusk},
+	} {
+		got, err := Align(tc.rec, tc.live, nil)
+		if err != nil {
+			t.Fatalf("%s: %v", tc.name, err)
+		}
+		if !got.Matches() {
+			t.Errorf("%s: shape=%v leaf=%v, want a match", tc.name, got.Shape, got.Leaf)
+		}
+	}
+}
+
+// The tolerance is for husks and nothing else. An item with content, an item
+// with no `content` key at all, and an item whose content is an empty STRING
+// are each a real part of the conversation: a list that gained or lost one is
+// a different question, and must still fail.
+func TestOnlyAnEmptyContentListIsTolerated(t *testing.T) {
+	base := `{"input":[{"role":"user","content":[{"type":"input_text","text":"go"}]}]}`
+	for _, extra := range []string{
+		`{"role":"user","content":[{"type":"input_text","text":"and hurry"}]}`,
+		`{"type":"custom_tool_call","name":"shell"}`,
+		`{"role":"developer","content":""}`,
+	} {
+		live := []byte(`{"input":[` + extra + `,` +
+			`{"role":"user","content":[{"type":"input_text","text":"go"}]}]}`)
+		got, err := Align([]byte(base), live, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.Matches() {
+			t.Errorf("an added %s was accepted; only a contentless husk may be", extra)
+		}
+	}
+}

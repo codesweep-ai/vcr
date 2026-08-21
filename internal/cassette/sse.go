@@ -339,3 +339,195 @@ func eventData(ev []byte) ([]byte, bool) {
 	}
 	return nil, false
 }
+
+// CoalesceTextSpanning joins a model's VISIBLE answer, but only across the
+// events some value that must be substituted straddles.
+//
+// CoalesceToolInput above deliberately leaves the visible answer alone: its
+// event boundaries are what a replayed session reproduces for a person
+// watching, and a path inside it is usually one the model is describing rather
+// than one a client will act on.
+//
+// That holds until an agent is the reader. Under cs-campaign the member writes
+// its own answer to a file and the next turn carries the file back as
+// conversation state, so a run-specific name inside the visible text IS acted
+// on — and, split across deltas, it is invisible to the substitution that
+// should have blanked it. Measured on opencode-fireworks: the orchestrator's
+// readback summary named `orchestrator-5235a8fe`, the recording's own sandbox,
+// spread across delta events. It survived into the cassette, the replay served
+// it back, and the member then held two different orchestrator names — the
+// recording's in its summary and this run's in its environment. The capture
+// numbered them in order of appearance, the summary's became <ORCHESTRATOR:2>
+// where the recording had <ORCHESTRATOR:1>, and every later request missed.
+//
+// So this joins the minimum: a run of text fragments is folded into one event
+// only when the joined text actually contains one of the values, and is
+// written through untouched otherwise. The pacing of ordinary prose survives,
+// which is what CoalesceToolInput's reasoning was protecting; the few events a
+// name lands in do not, which is the point.
+func CoalesceTextSpanning(stream []byte, values []string) []byte {
+	needles := make([][]byte, 0, len(values))
+	for _, v := range values {
+		if v != "" {
+			needles = append(needles, []byte(v))
+		}
+	}
+	if len(needles) == 0 || !hasTextFragments(stream) {
+		return stream
+	}
+	var out bytes.Buffer
+	var pending *pendingInput
+	var raw [][]byte // the pending run's original events, kept for the untouched case
+
+	flush := func() {
+		if pending == nil {
+			return
+		}
+		joined := pending.text.Bytes()
+		folded := false
+		for _, n := range needles {
+			if bytes.Contains(joined, n) {
+				folded = true
+				break
+			}
+		}
+		if folded {
+			out.Write(pending.render())
+		} else {
+			for _, ev := range raw {
+				out.Write(ev)
+			}
+		}
+		pending, raw = nil, nil
+	}
+
+	for _, ev := range splitEvents(stream) {
+		data, ok := eventData(ev)
+		if !ok {
+			flush()
+			out.Write(ev)
+			continue
+		}
+		var msg map[string]any
+		if err := json.Unmarshal(data, &msg); err != nil {
+			flush()
+			out.Write(ev)
+			continue
+		}
+		frag, ok := textFragment(msg)
+		if !ok {
+			flush()
+			out.Write(ev)
+			continue
+		}
+		if pending != nil && pending.key != frag.key {
+			flush()
+		}
+		if pending == nil {
+			pending = &pendingInput{key: frag.key, frame: ev, msg: msg, set: frag.set}
+		}
+		pending.text.WriteString(frag.text)
+		raw = append(raw, ev)
+	}
+	flush()
+	return out.Bytes()
+}
+
+// hasTextFragments is the cheap check that a stream carries visible answer
+// text at all, in any of the three surfaces' spellings.
+func hasTextFragments(stream []byte) bool {
+	for _, marker := range [][]byte{
+		[]byte("text_delta"),        // anthropic.messages
+		[]byte("output_text.delta"), // openai.responses
+		[]byte(`"content"`),         // openai.chat
+	} {
+		if bytes.Contains(stream, marker) {
+			return true
+		}
+	}
+	return false
+}
+
+// textFragment recognizes a fragment of the model's visible answer, in the
+// same three surfaces toolFragment covers. An event carrying anything besides
+// the text — a tool call, a finish reason — is not one, so it is written
+// through rather than folded into a neighbour.
+func textFragment(msg map[string]any) (fragment, bool) {
+	// anthropic.messages: content_block_delta carrying text_delta.
+	if typ, _ := msg["type"].(string); typ == "content_block_delta" {
+		idx, hasIdx := msg["index"].(float64)
+		d, _ := msg["delta"].(map[string]any)
+		if !hasIdx || d == nil {
+			return fragment{}, false
+		}
+		if dt, _ := d["type"].(string); dt != "text_delta" {
+			return fragment{}, false
+		}
+		text, _ := d["text"].(string)
+		return fragment{
+			key:  "text-block:" + strconv.FormatFloat(idx, 'f', -1, 64),
+			text: text,
+			set: func(m map[string]any, joined string) {
+				if d, _ := m["delta"].(map[string]any); d != nil {
+					d["text"] = joined
+				}
+			},
+		}, true
+	}
+	// openai.responses: one delta event per fragment of the output text.
+	if typ, _ := msg["type"].(string); typ == "response.output_text.delta" {
+		text, ok := msg["delta"].(string)
+		if !ok {
+			return fragment{}, false
+		}
+		item, _ := msg["item_id"].(string)
+		out, _ := msg["output_index"].(float64)
+		return fragment{
+			key:  "text-item:" + item + ":" + strconv.FormatFloat(out, 'f', -1, 64),
+			text: text,
+			set:  func(m map[string]any, joined string) { m["delta"] = joined },
+		}, true
+	}
+	// openai.chat: the text is the first choice's delta.content, and that must
+	// be all it carries.
+	choices, _ := msg["choices"].([]any)
+	if len(choices) != 1 {
+		return fragment{}, false
+	}
+	choice, _ := choices[0].(map[string]any)
+	if choice == nil {
+		return fragment{}, false
+	}
+	if fr, ok := choice["finish_reason"].(string); ok && fr != "" {
+		return fragment{}, false
+	}
+	d, _ := choice["delta"].(map[string]any)
+	if d == nil {
+		return fragment{}, false
+	}
+	if _, hasTools := d["tool_calls"]; hasTools {
+		return fragment{}, false
+	}
+	text, ok := d["content"].(string)
+	if !ok {
+		return fragment{}, false
+	}
+	idx, _ := choice["index"].(float64)
+	return fragment{
+		key:  "text-choice:" + strconv.FormatFloat(idx, 'f', -1, 64),
+		text: text,
+		set: func(m map[string]any, joined string) {
+			cs, _ := m["choices"].([]any)
+			if len(cs) != 1 {
+				return
+			}
+			c, _ := cs[0].(map[string]any)
+			if c == nil {
+				return
+			}
+			if dd, _ := c["delta"].(map[string]any); dd != nil {
+				dd["content"] = joined
+			}
+		},
+	}, true
+}
