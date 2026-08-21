@@ -274,6 +274,13 @@ func summarize(out io.Writer, st proxy.Stats, offline bool) error {
 	if st.Drifted > 0 {
 		fmt.Fprintf(tw, "drifted observations\t%d\n", st.Drifted)
 	}
+	// Only when the session was used as a proxy, which most are not. A tunnel is
+	// the one path through cs-vcr that records nothing, so these are the only
+	// place that traffic is visible after the fact.
+	if st.TunnelOpened > 0 || st.TunnelBlocked > 0 {
+		fmt.Fprintf(tw, "tunnelled\t%d\n", st.TunnelOpened)
+		fmt.Fprintf(tw, "tunnel refused\t%d\n", st.TunnelBlocked)
+	}
 	// Its own line, and worded as a warning rather than a count, because it is
 	// the one tolerance that can cost a session its result: the client was
 	// handed the answer to a command that did not succeed here. A run can pass

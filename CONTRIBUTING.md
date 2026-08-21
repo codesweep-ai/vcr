@@ -89,6 +89,13 @@ Cassettes are committed and reviewed, which is what the directory-per-cassette f
 a change alters recorded traffic, the diff has to be legible in the PR. If it is not, fix the
 format rather than asking the reviewer to cope.
 
+`make fixtures` records what this host can sign in for and skips the rest with the reason.
+`make fixtures-strict` fails on a skip instead, which is what a host holding every credential
+wants. `scripts/record-fixtures.sh` sets the environment for both and checks it first.
+
+Recording asks each agent for one word against its real provider before it opens a cassette, so a
+revoked key costs nothing and leaves the committed fixture where it was.
+
 `cassette verify` gates merges. A change to the normalization ruleset means bumping
 `normalize.version` and re-recording, in the same PR.
 

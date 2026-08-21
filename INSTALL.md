@@ -89,6 +89,11 @@ cs-vcr record
 ANTHROPIC_BASE_URL=http://127.0.0.1:8080/c/build claude -p "add a /version endpoint"
 ```
 
+For a session you mean to replay, point the agent's proxy at cs-vcr as well. A base URL aims the
+model calls. These agents also contact hosts of their own, and what those answer changes the prompt
+they send. `cs-vcr config <agent>` prints the settings, and
+[MANUAL.md](MANUAL.md#the-calls-a-base-url-does-not-govern) says what they cover.
+
 The `/c/build` on the end names the cassette this run belongs to. Nothing declares it: `record`
 creates it on the first request, and `replay` serves it.
 

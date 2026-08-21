@@ -20,6 +20,7 @@ time.
 1. A recorded session **MUST** replay with no provider reachable and no credential configured.
 2. A cassette **MUST** be reviewable as a text diff in a pull request.
 3. Pointing an agent at cs-vcr, at any cassette, **MUST** require no change to it beyond a base URL.
+   An agent that contacts hosts of its own also takes a proxy setting, naming that same address.
 4. An agent's own credential **MUST** reach the provider unchanged.
 
 ### 1.2 Non-goals
@@ -284,6 +285,37 @@ when present, and by `default_provider` when not.
 subscription login sends `Authorization: Bearer` exactly like an OpenAI client, and Claude Code's
 `HEAD /api/hello` startup probe carries no identifying header at all.*
 
+### 6.1 Tunnelling
+
+A base URL aims an agent's model calls at cs-vcr. It does not aim the rest. Claude Code checks its
+OAuth session against `api.anthropic.com`. Codex reaches `chatgpt.com` for its subscription
+transport and `ab.chatgpt.com` for experiment assignment. Each happens whatever base URL the client
+was given.
+
+Those answers change the prompt. A real login makes them succeed. A fabricated one makes them
+return 401, and the request the agent sends next is not the one the cassette holds.
+
+So cs-vcr answers `CONNECT` on the listener it already serves, and an agent may point `HTTP_PROXY`
+at the same address as its base URL.
+
+**R30.** A `CONNECT` to a host on the refusal list **MUST** be refused, in a recording session as
+well as a replaying one. *Blocked in both halves, the two runs ask the same question. Blocked in
+one, a recording carries a block of prompt that a replay cannot rebuild.*
+
+**R31.** Every other host **MUST** be tunnelled. *An agent's tools share its environment. A blanket
+refusal takes away `git`, `curl` and every package manager the agent might shell out to, and
+nothing they return changes the prompt.*
+
+**R32.** A replaying session **MUST** also refuse the providers it was configured with. *It says of
+itself that it contacts none, and a tunnel is the one way a client could reach one through cs-vcr
+anyway.*
+
+**R33.** A tunnel **MUST NOT** count as a request. *Requests are what a session can record, and a
+recording asserts that it recorded every one of them. A tunnel records nothing.*
+
+No certificate is involved. A `CONNECT` proxy pipes bytes, and TLS stays end to end between the
+client and the host it dialled. The hostname this decides on is the one in the `CONNECT` line.
+
 ## 7. Recording
 
 **R22.** cs-vcr **MUST** record the response bytes the client received, captured as they pass
@@ -382,6 +414,7 @@ Both commands print a summary on exit. It is the artifact a CI log shows.
 | `abandoned` | Printed when the session exited with requests still in flight. |
 | `drifted observations` | Printed when a difference was tolerated at a volatile path. |
 | `out of recorded order` | Printed when a step was served out of sequence. |
+| `tunnelled` / `tunnel refused` | Printed when the session was used as a proxy. See section 6.1. |
 | `surface …` / `cassette …` | Requests per surface, and per cassette the session touched. |
 
 ### 8.2 Calibrate
@@ -682,6 +715,10 @@ credentials at all, so it is what CI runs on every push. Each scenario starts cs
 then hands the agent a fabricated credential and a base URL. The whole suite takes about twenty
 seconds and costs nothing.
 
+Both halves point the agent's `HTTP_PROXY` at the same cs-vcr, so the hosts it contacts on its own
+are refused identically either way (R30). That is what lets a session recorded under a real
+subscription replay under a fabricated one.
+
 A scenario this host cannot cover is skipped with the reason, and the reason names what it wanted:
 
 ```console
@@ -693,6 +730,12 @@ $ make fixtures
 
 **R51.** Recording **MUST** skip a scenario this host cannot sign in for, and **MUST** say which
 credential was missing. *A suite that fails for want of a login is one contributors learn to ignore.*
+
+**R51a.** Recording **MUST** prove a credential works before it opens a cassette, by running the
+agent against its real provider with no cs-vcr in the way. *A credential that is present is not one
+that works. A key can be revoked, and a subscription login carries no expiry anyone can read. A stale
+one surfaced partway through a run, with the scenarios before it already paid for. Proven first,
+the committed cassette is still there to fall back on.*
 
 **R52.** A recorded cassette **MUST** be scrubbed and then replayed before it is kept. *A fixture
 that cannot be played back is not a fixture. It is also what proves the scrub was safe: taking a
