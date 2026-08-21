@@ -731,6 +731,19 @@ mechanisms, in the order they matter:
 
 What is left is what the ruleset in section 13 is for.
 
+### 11.7 Coverage
+
+Every test target writes coverage into its own tier under `.coverage/`, so running several
+aggregates rather than overwrites. `make coverage` merges what is there and prints the report.
+
+`make coverage-check` runs inside `make check` and in CI. It fails when a package
+`.coverage-baseline` lists stops being reached: presence, not a percentage. What it catches is a
+suite that stopped running while the tests still report green. When a package is meant to lose its
+coverage, rerun `make coverage-baseline` and commit the result.
+
+The live and cassette tiers build `cs-vcr` with `-cover`, so what the real binary runs counts too.
+`test/agents` is harness, so it stays out of `-coverpkg`.
+
 ## 12. Conformance
 
 An implementation is compliant when:

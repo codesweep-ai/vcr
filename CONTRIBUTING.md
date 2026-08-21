@@ -69,36 +69,19 @@ makes "no redaction" safe rather than reckless, so keep it that way.
 Ship a test with your change. Where a behaviour genuinely cannot be observed in a test, say so in
 the pull request.
 
-- `make test` is the tier a change usually needs. Everything cs-vcr does is observable from a Go
-  test: the cobra tree driven with a fake environment, the proxy driven against a local upstream, a
-  cassette in a temp dir. That is where the costly-if-silently-wrong things live, such as the
-  record/replay round trip and SSE framing.
-- `make test-smoke` replays the committed cassettes in about twenty seconds, and is the one to run
-  before every push. `SMOKE_SCENARIOS=<name>` narrows it while you work on a single scenario.
-- `make test-integration` replays the same matrix against the real clients. Run it after touching
-  normalization, the SSE handling or the cassette format, which are the things a hand-written
-  fixture cannot check.
-- **Every gate fires with both a positive and a negative test.** The negative half is usually the
-  one that matters: that an unknown replay refuses *and did not dial*, or that a miss *fails the
-  session* rather than passing quietly.
-- Test the contract, not the implementation: the exit code, the bytes that reached the client, the
-  header that arrived upstream. Say *why* the case matters in a comment when it isn't obvious.
+`make test` is the tier a change usually needs, because everything cs-vcr does is observable from a
+Go test. Run `make test-smoke` before every push: it replays the committed cassettes in about twenty
+seconds, and `SMOKE_SCENARIOS=<name>` narrows it while you work on one scenario. After touching
+normalization, the SSE handling or the cassette format, run `make test-integration`, because those
+are the things a hand-written fixture cannot check.
 
-[`SPEC.md`](SPEC.md) holds what each tier proves, the scenario matrix, and what recording and
-replaying a cassette require. Read it before you add a scenario or re-record one.
+Test the contract, not the implementation: the exit code, the bytes that reached the client, the
+header that arrived upstream. Test what happens when it fails, not only when it works. Say why the
+case matters in a comment when it is not obvious.
 
-### Coverage
-
-Every test target writes coverage into its own tier under `.coverage/`, so running several
-aggregates rather than overwrites. `make coverage` merges what is there and prints the report.
-
-`make coverage-check` runs inside `make check` and in CI. It fails when a package
-`.coverage-baseline` lists stops being reached: presence, not a percentage. What it catches is a
-suite that stopped running while the tests still report green. When a package is meant to lose its
-coverage, rerun `make coverage-baseline` and commit the result.
-
-The live and cassette tiers build `cs-vcr` with `-cover`, so what the real binary runs counts too.
-`test/agents` is harness, so it stays out of `-coverpkg`.
+Never lower a coverage baseline to make a run green. [`SPEC.md`](SPEC.md#115-testing) holds what
+each tier proves, the scenario matrix, what recording and replaying a cassette require, and how
+coverage is measured. Read it before you add a scenario or re-record one.
 
 ## Cassettes
 
