@@ -37,7 +37,7 @@ COVER_ABS  := $(abspath $(COVERDIR))
 COVERPKG    = $(shell go list ./... | grep -v '/test/' | paste -sd, -)
 COVERFLAGS  = -covermode=atomic -coverpkg=$(COVERPKG)
 
-.PHONY: help build build-go build-cover install uninstall test test-race fixtures test-integration test-smoke coverage coverage-check coverage-baseline agent-versions vet fmt fmt-check check lint deadcode docs oss walkthrough cs-lint-installed ledger snapshot release release-check clean
+.PHONY: help build build-go build-cover install uninstall test test-race fixtures fixtures-strict test-integration test-smoke coverage coverage-check coverage-baseline agent-versions vet fmt fmt-check check lint deadcode docs oss walkthrough cs-lint-installed ledger snapshot release release-check clean
 
 .DEFAULT_GOAL := help
 
@@ -104,6 +104,15 @@ test-race:
 ## skipped with the reason. Local only — CI replays what this commits.
 fixtures:
 	CS_VCR_AGENTS_RECORD=1 go test ./test/agents -run TestRecordFixtures -v -timeout 60m -count=1
+
+## fixtures-strict: the same recording, with a skip treated as a failure. For a
+## host that holds every credential and means to re-record the whole matrix: a
+## missing login skips with its reason under `fixtures`, and a run that recorded
+## nothing reports the same green as one that recorded everything. Use
+## `fixtures` while working with the subset this host can sign in for.
+fixtures-strict:
+	CS_VCR_AGENTS_RECORD=1 CS_VCR_AGENTS_STRICT=1 \
+	  go test ./test/agents -run TestRecordFixtures -v -timeout 60m -count=1
 
 ## test-integration: the live tier — replay every committed fixture with the
 ## real agents, fabricated credentials and no provider configured or reachable.
