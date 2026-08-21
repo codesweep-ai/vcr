@@ -144,13 +144,24 @@ $ cs-vcr config codex --cassette refactor-auth
 # Codex → cassette "refactor-auth" on http://127.0.0.1:8080
 
 # Run it:
-codex exec -c 'model_provider="cs-vcr"' \
+HTTP_PROXY=http://127.0.0.1:8080 HTTPS_PROXY=http://127.0.0.1:8080 ALL_PROXY=http://127.0.0.1:8080 \
+  NO_PROXY=127.0.0.1,localhost no_proxy=127.0.0.1,localhost \
+  codex exec -c 'model_provider="cs-vcr"' \
   -c 'model_providers.cs-vcr={name="cs-vcr", base_url="http://127.0.0.1:8080/c/refactor-auth/v1", env_key="OPENAI_API_KEY", wire_api="responses"}' \
-  "add a /version endpoint"
 …
 ```
 
-The blocks below are the same settings, written out.
+The proxy settings are on that line for a reason. A base URL aims the model calls; these agents also
+reach hosts of their own, and what those answer changes the prompt. cs-vcr refuses that handful on
+the same address and tunnels the rest, so the tools the agent runs keep their network. Set them
+while recording as well as while replaying.
+
+The blocks below leave them out to keep the settings under discussion visible. Export them once and
+they apply to all three:
+
+```bash
+set -a; . <(cs-vcr config claude --cassette build --env-only); set +a
+```
 
 ### 1. Claude Code
 

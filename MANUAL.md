@@ -132,6 +132,10 @@ command to run, the environment to set instead, and the file to pin it in. The a
 `claude`, `codex` and `opencode`. Where the `/c/<name>` prefix goes relative to the `/v1` a client
 appends differs by client, and this is what says which.
 
+The output carries the proxy settings beside the base URL. They cover the calls the base URL does
+not, and a session recorded without them is one no other machine can replay. See "The calls a base
+URL does not govern" below.
+
 `--env-only` prints just the `VAR=VALUE` lines, so a build can source them:
 
 ```bash

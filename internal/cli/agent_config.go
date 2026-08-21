@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/url"
 	"slices"
 	"strings"
 
@@ -180,6 +181,56 @@ func findAgent(name string) (agent, bool) {
 	return agent{}, false
 }
 
+// tunnelEnv is the proxy settings that send an agent's OWN reaching-out to
+// cs-vcr, alongside the base URL that sends its model calls there.
+//
+// Printed for every agent, because the calls it covers are not the ones a base
+// URL governs. Claude Code checks its OAuth session against api.anthropic.com,
+// Codex reaches chatgpt.com and ab.chatgpt.com, and each does so whatever base
+// URL it was given. What those answer changes the prompt, so a session that
+// leaves them alone records something no other machine can replay.
+//
+// NO_PROXY carries cs-vcr's own host, which is what keeps the model calls off
+// the tunnel and pointed straight at the base URL above.
+func tunnelEnv(proxyURL string) []envVar {
+	host := proxyURL
+	if u, err := url.Parse(proxyURL); err == nil && u.Host != "" {
+		host = u.Hostname()
+	}
+	direct := host
+	if host != "localhost" {
+		direct = host + ",localhost"
+	}
+	// Both cases: the agents read the upper-case names, and much of what they
+	// shell out to reads the lower-case ones.
+	return []envVar{
+		{"HTTP_PROXY", proxyURL},
+		{"HTTPS_PROXY", proxyURL},
+		{"ALL_PROXY", proxyURL},
+		{"NO_PROXY", direct},
+		{"no_proxy", direct},
+	}
+}
+
+// tunnelPrefix is the tunnel settings as a shell prefix for the runnable line,
+// wrapped so a reader can see where the agent's own command starts.
+//
+// Printed as part of the command rather than left to the environment block
+// below it, because the line above is the one people copy. A copy that records
+// a session nothing can replay is the failure this whole prefix exists to
+// prevent.
+func tunnelPrefix(proxyURL string) string {
+	vars := tunnelEnv(proxyURL)
+	parts := make([]string, 0, len(vars))
+	for _, v := range vars {
+		parts = append(parts, v.name+"="+v.value)
+	}
+	// Three, then the rest, then the agent's own command: three assignments is
+	// about as much as reads at a glance on one line.
+	return strings.Join(parts[:3], " ") + " \\\n  " +
+		strings.Join(parts[3:], " ") + " \\\n  "
+}
+
 // printAgentConfig writes what one agent needs in order to record into or
 // replay from one cassette.
 func printAgentConfig(out io.Writer, a agent, proxyURL, cassette string, envOnly bool) error {
@@ -189,12 +240,13 @@ func printAgentConfig(out io.Writer, a agent, proxyURL, cassette string, envOnly
 	if a.env != nil {
 		vars = a.env(base)
 	}
+	vars = append(vars, tunnelEnv(proxyURL)...)
 	if envOnly {
 		return writeEnv(out, vars)
 	}
 
 	fmt.Fprintf(out, "# %s → cassette %q on %s\n\n", a.title, cassette, proxyURL)
-	fmt.Fprintf(out, "# Run it:\n%s\n", a.command(base))
+	fmt.Fprintf(out, "# Run it:\n%s%s\n", tunnelPrefix(proxyURL), a.command(base))
 
 	if len(vars) > 0 {
 		fmt.Fprintf(out, "\n# Or set the environment once, and run %s as you normally would:\n", a.name)
@@ -211,6 +263,20 @@ func printAgentConfig(out io.Writer, a agent, proxyURL, cassette string, envOnly
 		for _, line := range a.notes(base) {
 			fmt.Fprintln(out, strings.TrimRight("# "+line, " "))
 		}
+	}
+	for _, line := range []string{
+		"",
+		"The proxy lines are not optional for a session you mean to replay.",
+		"This agent contacts hosts of its own beyond the base URL, and what they",
+		"answer changes the prompt it sends. cs-vcr refuses those on the same",
+		"address and tunnels everything else, so the tools the agent runs keep",
+		"their network. Set them while RECORDING as well: blocked in both halves,",
+		"the two runs ask the same question.",
+		"",
+		"A file that pins only the base URL misses them, so pin these too or",
+		"export them beside it.",
+	} {
+		fmt.Fprintln(out, strings.TrimRight("# "+line, " "))
 	}
 	return nil
 }

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -320,13 +321,31 @@ func TestConfigPrintsHowToPointEachAgentAtACassette(t *testing.T) {
 			t.Errorf("%s: output has no command to run:\n%s", tc.agent, out)
 		}
 	}
-	// And the environment-only form is bare VAR=VALUE, for sourcing.
+	// And the environment-only form is bare VAR=VALUE, for sourcing: no export,
+	// no comment, no blank line, whatever number of settings it carries.
 	out, err := runWithConfig(t, "", nil, "config", "claude", "--cassette", "build", "--env-only")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.TrimSpace(out) != "ANTHROPIC_BASE_URL=http://127.0.0.1:8080/c/build" {
-		t.Errorf("--env-only is not a bare assignment:\n%q", out)
+	lines := strings.Split(strings.TrimSpace(out), "\n")
+	for _, l := range lines {
+		name, value, ok := strings.Cut(l, "=")
+		if !ok || name == "" || value == "" || strings.ContainsAny(name, " \t#") {
+			t.Errorf("--env-only line is not a bare assignment: %q\n%s", l, out)
+		}
+	}
+	// The base URL aims the model calls, the proxy aims everything the agent
+	// reaches for on its own. A sourced environment missing either is one that
+	// records a session no other machine replays.
+	for _, want := range []string{
+		"ANTHROPIC_BASE_URL=http://127.0.0.1:8080/c/build",
+		"HTTP_PROXY=http://127.0.0.1:8080",
+		"HTTPS_PROXY=http://127.0.0.1:8080",
+		"NO_PROXY=127.0.0.1,localhost",
+	} {
+		if !slices.Contains(lines, want) {
+			t.Errorf("--env-only is missing %q:\n%s", want, out)
+		}
 	}
 }
 
