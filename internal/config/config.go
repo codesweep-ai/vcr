@@ -122,6 +122,23 @@ type Config struct {
 	// low costs a loud failure, never a quietly wrong answer. 0 is strict.
 	Lookahead int `yaml:"lookahead"`
 
+	// AuxiliaryTurns relaxes matching for a client's own bookkeeping calls:
+	// one message, no tools, and no part of the session's work. Claude Code's
+	// title generation is the case this exists for.
+	//
+	// Such a call is not reproducible. Whether the client makes it, how many
+	// times, and which model it picks all vary between runs: one recording
+	// took it on haiku and the replay of that same cassette took it on sonnet,
+	// so the request keys differ and nothing aligns. It is the first request
+	// of the session, so the miss lands before anything has been served.
+	//
+	// With this set, an auxiliary request is answered by any recorded
+	// auxiliary turn, whatever model recorded it, and by the most recent one
+	// when the cassette has no unserved auxiliary left. Off by default,
+	// because it trades exactness for a call whose answer the session does not
+	// act on, and only a client that makes such calls needs it.
+	AuxiliaryTurns bool `yaml:"auxiliary_turns"`
+
 	// Normalize is the versioned strip list. It is a semantic claim
 	// about what makes two requests equivalent, so it is configuration with a
 	// version rather than a constant in the code.

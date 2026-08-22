@@ -1,6 +1,7 @@
 package cassette
 
 import (
+	"encoding/json"
 	"os"
 	"sync"
 	"time"
@@ -110,6 +111,9 @@ type Selection struct {
 	// Expected is where the cursor stood. Equal to Entry.Seq in a session that
 	// reproduced the recorded order exactly, which is the point of saying it.
 	Expected int
+	// Auxiliary marks an entry served to a bookkeeping call under
+	// Config.AuxiliaryTurns, matched on shape rather than on its body.
+	Auxiliary bool
 	// Repeat marks an entry served a second time: a client retrying, or Codex
 	// asking for the model list twice at startup.
 	Repeat bool
@@ -144,7 +148,7 @@ type Miss struct {
 // `GET /models` at startup, and Claude Code runs title generation in parallel
 // with its main loop; both would fail a strictly positional match through no
 // fault of the session.
-func (s *Store) Next(req Request, volatile []Rule, lookahead int) (*Selection, *Miss) {
+func (s *Store) Next(req Request, volatile []Rule, lookahead int, auxiliaryTurns bool) (*Selection, *Miss) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -211,6 +215,33 @@ func (s *Store) Next(req Request, volatile []Rule, lookahead int) (*Selection, *
 		if al, ok := s.aligns(i, req, volatile); ok {
 			return &Selection{Entry: s.script[i], Expected: s.cursor + 1,
 				Repeat: true, Tolerated: al.Tolerated}, nil
+		}
+	}
+
+	// A bookkeeping call the client makes beside its own work, matched loosely
+	// because it is not reproducible: see Config.AuxiliaryTurns. Any recorded
+	// auxiliary turn answers it, and the newest already-served one answers it
+	// when none is left, because a title the session never reads is not worth
+	// a stalled replay.
+	if auxiliaryTurns && auxiliary(req.Canonical) {
+		for i := 0; i < len(s.script); i++ {
+			if s.served[i] || !s.auxiliaryEntry(i) {
+				continue
+			}
+			s.served[i] = true
+			if i > s.last {
+				s.last = i
+			}
+			for s.cursor < len(s.script) && s.served[s.cursor] {
+				s.cursor++
+			}
+			return &Selection{Entry: s.script[i], Expected: s.cursor, Auxiliary: true}, nil
+		}
+		for i := s.last; i >= 0; i-- {
+			if s.served[i] && s.auxiliaryEntry(i) {
+				return &Selection{Entry: s.script[i], Expected: s.cursor + 1,
+					Repeat: true, Auxiliary: true}, nil
+			}
 		}
 	}
 
@@ -324,3 +355,31 @@ func (s *Store) Append(r Recording) (Entry, error) {
 // unixTime converts a unix second count to a time, keeping the time package out
 // of the Store's signature so callers can inject a clock in tests.
 func unixTime(sec int64) time.Time { return time.Unix(sec, 0).UTC() }
+
+// auxiliary reports whether a canonical body is a client's own bookkeeping
+// call rather than the session's work: exactly one message and no tools. The
+// campaign turns this product drives carry a full tool list on every real
+// turn, so the shape separates the two cleanly.
+func auxiliary(canonical []byte) bool {
+	var b struct {
+		Messages []json.RawMessage `json:"messages"`
+		Input    []json.RawMessage `json:"input"`
+		Tools    []json.RawMessage `json:"tools"`
+	}
+	if err := json.Unmarshal(canonical, &b); err != nil {
+		return false
+	}
+	if len(b.Tools) != 0 {
+		return false
+	}
+	return len(b.Messages)+len(b.Input) == 1
+}
+
+// auxiliaryEntry is auxiliary() for the recorded step at i.
+func (s *Store) auxiliaryEntry(i int) bool {
+	canon, err := s.canonical(i)
+	if err != nil {
+		return false
+	}
+	return auxiliary(canon)
+}

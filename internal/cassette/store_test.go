@@ -48,7 +48,7 @@ const (
 func TestAScriptIsServedInOrder(t *testing.T) {
 	s := script(t, one, two, three)
 	for i, body := range []string{one, two, three} {
-		sel, miss := s.Next(ask(body), nil, 8)
+		sel, miss := s.Next(ask(body), nil, 8, false)
 		if miss != nil {
 			t.Fatalf("step %d missed: %+v", i+1, miss)
 		}
@@ -67,8 +67,8 @@ func TestAScriptIsServedInOrder(t *testing.T) {
 func TestARepeatedRequestIsServedTheSameStep(t *testing.T) {
 	s := script(t, one, two)
 
-	first, _ := s.Next(ask(one), nil, 8)
-	again, miss := s.Next(ask(one), nil, 8)
+	first, _ := s.Next(ask(one), nil, 8, false)
+	again, miss := s.Next(ask(one), nil, 8, false)
 	if miss != nil {
 		t.Fatalf("a repeated request missed: %+v", miss)
 	}
@@ -76,7 +76,7 @@ func TestARepeatedRequestIsServedTheSameStep(t *testing.T) {
 		t.Errorf("repeat served step %d (repeat=%v), want step %d again", again.Entry.Seq, again.Repeat, first.Entry.Seq)
 	}
 	// And the session has not moved on: the next new request is still step 2.
-	next, miss := s.Next(ask(two), nil, 8)
+	next, miss := s.Next(ask(two), nil, 8, false)
 	if miss != nil || next.Entry.Seq != 2 {
 		t.Errorf("after a repeat, next = %+v %+v, want step 2", next, miss)
 	}
@@ -88,7 +88,7 @@ func TestARepeatedRequestIsServedTheSameStep(t *testing.T) {
 func TestARequestThatArrivesEarlyIsServedWithinTheWindow(t *testing.T) {
 	s := script(t, one, two, three)
 
-	sel, miss := s.Next(ask(three), nil, 8)
+	sel, miss := s.Next(ask(three), nil, 8, false)
 	if miss != nil {
 		t.Fatalf("a pipelined request missed: %+v", miss)
 	}
@@ -102,7 +102,7 @@ func TestARequestThatArrivesEarlyIsServedWithinTheWindow(t *testing.T) {
 	}
 	// The skipped steps are still there, in order.
 	for i, body := range []string{one, two} {
-		got, miss := s.Next(ask(body), nil, 8)
+		got, miss := s.Next(ask(body), nil, 8, false)
 		if miss != nil || got.Entry.Seq != i+1 {
 			t.Errorf("step %d: %+v %+v", i+1, got, miss)
 		}
@@ -114,17 +114,17 @@ func TestARequestThatArrivesEarlyIsServedWithinTheWindow(t *testing.T) {
 func TestBeyondTheWindowIsAMiss(t *testing.T) {
 	s := script(t, one, two, three)
 
-	if sel, miss := s.Next(ask(three), nil, 1); miss == nil {
+	if sel, miss := s.Next(ask(three), nil, 1, false); miss == nil {
 		t.Fatalf("step 3 was served with a window of 1: %+v", sel)
 	} else if miss.Expected != 1 || miss.Entry == nil || miss.Entry.Seq != 1 {
 		t.Errorf("miss = %+v, want it to name step 1", miss)
 	}
 	// Zero is strict: only the step the session is actually at.
 	s2 := script(t, one, two)
-	if _, miss := s2.Next(ask(two), nil, 0); miss == nil {
+	if _, miss := s2.Next(ask(two), nil, 0, false); miss == nil {
 		t.Error("a strict window served a request out of order")
 	}
-	if _, miss := s2.Next(ask(one), nil, 0); miss != nil {
+	if _, miss := s2.Next(ask(one), nil, 0, false); miss != nil {
 		t.Errorf("a strict window missed the request it was expecting: %+v", miss)
 	}
 }
@@ -134,7 +134,7 @@ func TestBeyondTheWindowIsAMiss(t *testing.T) {
 // failure and an abandoned tool.
 func TestARequestTheSessionNeverMadeMisses(t *testing.T) {
 	s := script(t, one, two)
-	sel, miss := s.Next(ask(`{"turn":"something else"}`), nil, 8)
+	sel, miss := s.Next(ask(`{"turn":"something else"}`), nil, 8, false)
 	if miss == nil {
 		t.Fatalf("an unrecorded request was served step %d", sel.Entry.Seq)
 	}
@@ -150,10 +150,10 @@ func TestARequestTheSessionNeverMadeMisses(t *testing.T) {
 // against an entry that does not exist.
 func TestAnExhaustedScriptSaysSo(t *testing.T) {
 	s := script(t, one)
-	if _, miss := s.Next(ask(one), nil, 8); miss != nil {
+	if _, miss := s.Next(ask(one), nil, 8, false); miss != nil {
 		t.Fatalf("step 1 missed: %+v", miss)
 	}
-	_, miss := s.Next(ask(two), nil, 8)
+	_, miss := s.Next(ask(two), nil, 8, false)
 	if miss == nil {
 		t.Fatal("a request past the end of the script was served")
 	}
@@ -188,7 +188,7 @@ func TestABodilessRequestIsNotServedAnotherPathsEntry(t *testing.T) {
 	}
 
 	// The second probe, asked for first: same (empty) body, different path.
-	sel, miss := s.Next(Request{Method: "GET", Path: "/api/hello"}, nil, 8)
+	sel, miss := s.Next(Request{Method: "GET", Path: "/api/hello"}, nil, 8, false)
 	if miss != nil {
 		t.Fatalf("a bodiless request missed: %+v", miss)
 	}
@@ -201,7 +201,7 @@ func TestABodilessRequestIsNotServedAnotherPathsEntry(t *testing.T) {
 // run can report it. The entry is still the recorded one.
 func TestAToleratedDifferenceIsCarriedOutOfTheSelection(t *testing.T) {
 	s := script(t, `{"turn":1,"observed":"a"}`)
-	sel, miss := s.Next(ask(`{"turn":1,"observed":"b"}`), []Rule{"observed"}, 8)
+	sel, miss := s.Next(ask(`{"turn":1,"observed":"b"}`), []Rule{"observed"}, 8, false)
 	if miss != nil {
 		t.Fatalf("a declared difference missed: %+v", miss)
 	}
@@ -214,7 +214,7 @@ func TestAToleratedDifferenceIsCarriedOutOfTheSelection(t *testing.T) {
 // to be able to say which steps were never reached.
 func TestRemainingNamesWhatWasNeverServed(t *testing.T) {
 	s := script(t, one, two, three)
-	s.Next(ask(one), nil, 8)
+	s.Next(ask(one), nil, 8, false)
 
 	left := s.Remaining()
 	if len(left) != 2 || left[0].Seq != 2 || left[1].Seq != 3 {
@@ -254,11 +254,11 @@ func TestAMissReportsAgainstTheStepItCouldHaveBeen(t *testing.T) {
 	}
 
 	// One probe where the recording made two, then a prompt one block short.
-	if _, miss := s.Next(Request{Method: "GET", Path: "/models"}, nil, 8); miss != nil {
+	if _, miss := s.Next(Request{Method: "GET", Path: "/models"}, nil, 8, false); miss != nil {
 		t.Fatalf("the probe missed: %+v", miss)
 	}
 	_, miss := s.Next(Request{Method: "POST", Path: "/responses",
-		Canonical: []byte(`{"input":[{"text":"a"}]}`)}, nil, 8)
+		Canonical: []byte(`{"input":[{"text":"a"}]}`)}, nil, 8, false)
 	if miss == nil {
 		t.Fatal("a prompt one block short of the recording was served")
 	}
@@ -292,7 +292,7 @@ func TestAStepTheSessionNeverMakesDoesNotPinTheWindow(t *testing.T) {
 	// Step 1 is the one this run does not make. Everything after it is served
 	// in order, including steps far beyond a window anchored at step 1.
 	for i := 2; i <= 12; i++ {
-		got, miss := s.Next(ask(bodies[i-1]), nil, 2)
+		got, miss := s.Next(ask(bodies[i-1]), nil, 2, false)
 		if miss != nil {
 			t.Fatalf("step %d missed with the session at step %d: %+v", i, i-1, miss)
 		}
@@ -302,7 +302,7 @@ func TestAStepTheSessionNeverMakesDoesNotPinTheWindow(t *testing.T) {
 	}
 	// And the straggler is still findable, because the scan still starts at
 	// the cursor rather than at the frontier.
-	if got, miss := s.Next(ask(bodies[0]), nil, 2); miss != nil || got.Entry.Seq != 1 {
+	if got, miss := s.Next(ask(bodies[0]), nil, 2, false); miss != nil || got.Entry.Seq != 1 {
 		t.Errorf("the skipped step was lost: %+v %+v", got, miss)
 	}
 }
@@ -314,7 +314,7 @@ func TestTheWindowStillBoundsTheSearchAhead(t *testing.T) {
 
 	// Nothing served yet, so the frontier is the cursor: step 4 is three ahead
 	// and a window of 2 must refuse it.
-	if sel, miss := s.Next(ask(bodies[3]), nil, 2); miss == nil {
+	if sel, miss := s.Next(ask(bodies[3]), nil, 2, false); miss == nil {
 		t.Fatalf("step 4 was served with a window of 2 from a standing start: %+v", sel)
 	}
 }
@@ -331,16 +331,80 @@ func TestARepeatOfAnEarlierStepIsStillARepeat(t *testing.T) {
 
 	for _, want := range []int{1, 2, 3} {
 		body := []string{probe, one, two}[want-1]
-		if got, miss := s.Next(ask(body), nil, 8); miss != nil || got.Entry.Seq != want {
+		if got, miss := s.Next(ask(body), nil, 8, false); miss != nil || got.Entry.Seq != want {
 			t.Fatalf("step %d: %+v %+v", want, got, miss)
 		}
 	}
 	// The session is at the end; the probe comes again.
-	again, miss := s.Next(ask(probe), nil, 8)
+	again, miss := s.Next(ask(probe), nil, 8, false)
 	if miss != nil {
 		t.Fatalf("a repeated startup probe missed: %+v", miss)
 	}
 	if !again.Repeat || again.Entry.Seq != 1 {
 		t.Errorf("served step %d (repeat=%v), want step 1 again", again.Entry.Seq, again.Repeat)
+	}
+}
+
+// Claude Code's title generation, which is what Config.AuxiliaryTurns exists
+// for. The recording took it on haiku and the replay takes it on sonnet, so
+// the two request keys share nothing: without the relaxation it misses as the
+// session's first request, before anything has been served, and the campaign
+// that measured this reported four such misses on a cassette recorded minutes
+// earlier.
+func TestAnAuxiliaryTurnIsMatchedOnShape(t *testing.T) {
+	const (
+		title = `{"messages":[{"text":"name this"}],"model":"claude-haiku-4-5","max_tokens":32000}`
+		work  = `{"messages":[{"text":"do it"},{"text":"ok"}],"tools":[{"name":"bash"}],"model":"claude-sonnet-5"}`
+		// The same call, on the model this run happened to pick.
+		liveTitle = `{"messages":[{"text":"name this"}],"model":"claude-sonnet-5","max_tokens":64000}`
+	)
+
+	s := script(t, title, work)
+	if _, miss := s.Next(ask(liveTitle), nil, 8, false); miss == nil {
+		t.Fatal("without the relaxation the title turn must still miss, or this test proves nothing")
+	}
+
+	s = script(t, title, work)
+	sel, miss := s.Next(ask(liveTitle), nil, 8, true)
+	if miss != nil {
+		t.Fatalf("the title turn missed: %+v", miss)
+	}
+	if !sel.Auxiliary || sel.Entry.Seq != 1 {
+		t.Fatalf("served %+v, want the recorded title turn marked auxiliary", sel)
+	}
+	// The session's own work still has to align exactly.
+	if _, miss := s.Next(ask(work), nil, 8, true); miss != nil {
+		t.Fatalf("the real turn missed after the title turn was absorbed: %+v", miss)
+	}
+}
+
+// A run that makes more auxiliary calls than the recording did must not stall:
+// the count varies between runs the same way the model does.
+func TestAnUnrecordedAuxiliaryTurnRepeatsTheLastOne(t *testing.T) {
+	const (
+		title = `{"messages":[{"text":"name this"}],"model":"claude-haiku-4-5"}`
+		work  = `{"messages":[{"text":"a"},{"text":"b"}],"tools":[{"name":"bash"}]}`
+	)
+	s := script(t, title, work)
+	if _, miss := s.Next(ask(title), nil, 8, true); miss != nil {
+		t.Fatalf("the recorded title turn missed: %+v", miss)
+	}
+	sel, miss := s.Next(ask(`{"messages":[{"text":"and again"}]}`), nil, 8, true)
+	if miss != nil {
+		t.Fatalf("a second title turn the recording never made missed: %+v", miss)
+	}
+	if !sel.Repeat || !sel.Auxiliary {
+		t.Fatalf("served %+v, want the recorded title answer repeated", sel)
+	}
+}
+
+// The relaxation is for bookkeeping calls only. A single-message turn that
+// carries tools is the session's work, and must still align exactly.
+func TestWorkIsNotTreatedAsAuxiliary(t *testing.T) {
+	const recorded = `{"messages":[{"text":"a"}],"tools":[{"name":"bash"}]}`
+	const live = `{"messages":[{"text":"different"}],"tools":[{"name":"bash"}]}`
+	s := script(t, recorded)
+	if _, miss := s.Next(ask(live), nil, 8, true); miss == nil {
+		t.Fatal("a turn carrying tools was absorbed as bookkeeping")
 	}
 }

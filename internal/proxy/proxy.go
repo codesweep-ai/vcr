@@ -351,7 +351,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		sel, miss := store.Next(cassette.Request{
 			Method: r.Method, Path: key.Target, Canonical: key.Canonical,
-		}, cassette.Rules(s.cfg.Normalize.VolatilePaths()), s.cfg.Lookahead)
+		}, cassette.Rules(s.cfg.Normalize.VolatilePaths()), s.cfg.Lookahead, s.cfg.AuxiliaryTurns)
 		if miss != nil {
 			s.count(func(st *Stats) { st.Rejected++; st.Misses++ })
 			// key.Target, not r.URL.Path: the entry records a target, so a
