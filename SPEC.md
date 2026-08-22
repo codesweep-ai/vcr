@@ -156,7 +156,7 @@ by aligning the request that arrived against the one recorded there.
    `lookahead` steps past the furthest step already served
 2. serve the first that aligns: same method, same path, and a body that aligns
 3. if none does, serve again the most recently served step the request aligns with
-4. under `auxiliary_turns`, answer a bookkeeping call from any recorded bookkeeping call
+4. answer a bookkeeping call from any recorded bookkeeping call, unless `auxiliary_turns` is off
 5. otherwise report a miss
 ```
 
@@ -554,7 +554,7 @@ listen: 127.0.0.1:8080
 admin: 127.0.0.1:8081
 cassettes: ./cassettes
 lookahead: 8
-auxiliary_turns: false
+auxiliary_turns: true
 
 providers:
   anthropic: {base_url: https://api.anthropic.com}

@@ -117,6 +117,10 @@ type Stats struct {
 	// Drifted counts differences accepted under a volatile path: the world
 	// answering differently than it did when the cassette was recorded.
 	Drifted int `json:"drifted"`
+
+	// Auxiliary counts bookkeeping calls answered on shape: a title generation
+	// whose model varies per run. See Config.AuxiliaryTurns.
+	Auxiliary int `json:"auxiliary"`
 	// ToleratedFailures counts the drifts that were not the world answering
 	// differently but the world answering WORSE: a tool result the recording
 	// captured as a success and this run reports as a failure.
@@ -351,7 +355,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		sel, miss := store.Next(cassette.Request{
 			Method: r.Method, Path: key.Target, Canonical: key.Canonical,
-		}, cassette.Rules(s.cfg.Normalize.VolatilePaths()), s.cfg.Lookahead, s.cfg.AuxiliaryTurns)
+		}, cassette.Rules(s.cfg.Normalize.VolatilePaths()), s.cfg.Lookahead, s.cfg.AuxiliaryTurnsEnabled())
 		if miss != nil {
 			s.count(func(st *Stats) { st.Rejected++; st.Misses++ })
 			// key.Target, not r.URL.Path: the entry records a target, so a
@@ -458,6 +462,17 @@ func (s *Server) serveFromCassette(w http.ResponseWriter, store *cassette.Store,
 			slog.Int("expected", sel.Expected), slog.Int("served", entry.Seq),
 			slog.String("cassette", name))
 	}
+	// A bookkeeping call matched on shape rather than on its body. Never
+	// silent: this is the one place replay serves a response the request did
+	// not align with, so a run that hid it would be claiming an exactness it
+	// did not have.
+	if sel.Auxiliary {
+		s.count(func(st *Stats) { st.Auxiliary++ })
+		s.log.Warn("answered a bookkeeping call from a recorded one",
+			slog.Int("seq", entry.Seq), slog.String("cassette", name),
+			slog.Bool("repeat", sel.Repeat))
+	}
+
 	// What differed under a volatile path is the world answering differently.
 	// Accepted, never silent: it is how an environment that moved under a
 	// cassette becomes visible instead of becoming a wrong answer.

@@ -518,3 +518,20 @@ func TestTheShippedRulesetDropsBothPreambleBlocks(t *testing.T) {
 		}
 	}
 }
+
+// Bookkeeping calls are absorbed unless a config says otherwise. The setting
+// exists for a client whose real work is one message and no tools; everyone
+// else gets the behaviour that does not strand a replay on the first request.
+func TestAuxiliaryTurnsDefaultsOn(t *testing.T) {
+	if !Default().AuxiliaryTurnsEnabled() {
+		t.Fatal("the default is off, so every replay starts with the broken behaviour")
+	}
+	off := false
+	if (Config{AuxiliaryTurns: &off}).AuxiliaryTurnsEnabled() {
+		t.Fatal("auxiliary_turns: false did not turn it off")
+	}
+	on := true
+	if !(Config{AuxiliaryTurns: &on}).AuxiliaryTurnsEnabled() {
+		t.Fatal("auxiliary_turns: true did not turn it on")
+	}
+}

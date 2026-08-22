@@ -132,12 +132,19 @@ type Config struct {
 	// so the request keys differ and nothing aligns. It is the first request
 	// of the session, so the miss lands before anything has been served.
 	//
-	// With this set, an auxiliary request is answered by any recorded
-	// auxiliary turn, whatever model recorded it, and by the most recent one
-	// when the cassette has no unserved auxiliary left. Off by default,
-	// because it trades exactness for a call whose answer the session does not
-	// act on, and only a client that makes such calls needs it.
-	AuxiliaryTurns bool `yaml:"auxiliary_turns"`
+	// An auxiliary request is answered by any recorded auxiliary turn, whatever
+	// model recorded it, and by the most recent one when the cassette has no
+	// unserved auxiliary left. A recorded turn counts as auxiliary only when it
+	// is ALSO on a model the cassette does not otherwise use, so a cassette
+	// recorded on one model has nothing to absorb with.
+	//
+	// On by default, and false turns it off. It only ever fires where the
+	// alternative is a miss, so it cannot pull a session off a step that
+	// aligned; and every loose match is warned and counted, so it buys a
+	// tolerance that is visible rather than a quietly wrong answer. Left off,
+	// the default would be the broken behaviour, discoverable only by whoever
+	// reads this file after losing an afternoon to it.
+	AuxiliaryTurns *bool `yaml:"auxiliary_turns"`
 
 	// Normalize is the versioned strip list. It is a semantic claim
 	// about what makes two requests equivalent, so it is configuration with a
@@ -508,6 +515,7 @@ func Default() *Config {
 		},
 		DefaultProvider: "anthropic",
 		Lookahead:       8,
+		AuxiliaryTurns:  new(true),
 		Normalize: Normalize{
 			// The version is a counter, not a claim about how many rulesets exist:
 			// it is recorded in every cassette so that changing a rule refuses the
@@ -891,3 +899,9 @@ func splitCassettePath(path string) (name, rest string, prefixed bool) {
 	// Nothing after the name: a request for the provider's own root.
 	return after, "/", true
 }
+
+// A *bool is how a yaml key tells "absent" from "false". A plain bool cannot,
+// and a key whose default is true has to hear the difference.
+
+// AuxiliaryTurnsEnabled reports the setting, defaulting to on.
+func (c Config) AuxiliaryTurnsEnabled() bool { return c.AuxiliaryTurns == nil || *c.AuxiliaryTurns }

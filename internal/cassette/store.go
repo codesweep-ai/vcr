@@ -27,6 +27,9 @@ type Recording struct {
 // entry made every non-semantic byte of a 60 KB prompt load-bearing, and the
 // ruleset that had to anticipate them all went through four versions in a week.
 type Store struct {
+	// dominant caches dominantModel(): nil until computed.
+	dominant *string
+
 	c *Cassette
 
 	mu     sync.Mutex
@@ -157,7 +160,14 @@ func (s *Store) Next(req Request, volatile []Rule, lookahead int, auxiliaryTurns
 	// reports against, because the cursor is often something else entirely: a
 	// session that skipped a startup probe would otherwise be told its prompt
 	// differs from `GET /models`, which sends its reader nowhere.
-	candidate := -1
+	// candidate is scored, not first-come. Every call to one provider shares a
+	// path, so "the first unserved step with this method and path" is just the
+	// oldest unclaimed step, and a miss reported against it shows a diff
+	// against a request nobody was trying to make. A campaign chasing four
+	// misses was told each time that its prompt differed from a title
+	// generation it had never sent. Fewest differences is the step this
+	// request most nearly was, which is the only one worth printing.
+	candidate, candidateCost := -1, 0
 	var candidateAl Alignment
 
 	// The window is measured from how far the session has GOT, not from the
@@ -185,8 +195,13 @@ func (s *Store) Next(req Request, volatile []Rule, lookahead int, auxiliaryTurns
 		}
 		al, ok := s.aligns(i, req, volatile)
 		if !ok {
-			if candidate < 0 && s.script[i].Method == req.Method && s.script[i].Path == req.Path {
-				candidate, candidateAl = i, al
+			// cost 0 with no match is aligns() bailing before it compared
+			// anything, which says nothing about how close this step was.
+			cost := len(al.Shape) + len(al.Leaf)
+			if cost > 0 && s.script[i].Method == req.Method && s.script[i].Path == req.Path {
+				if candidate < 0 || cost < candidateCost {
+					candidate, candidateAl, candidateCost = i, al, cost
+				}
 			}
 			continue
 		}
@@ -356,30 +371,81 @@ func (s *Store) Append(r Recording) (Entry, error) {
 // of the Store's signature so callers can inject a clock in tests.
 func unixTime(sec int64) time.Time { return time.Unix(sec, 0).UTC() }
 
-// auxiliary reports whether a canonical body is a client's own bookkeeping
-// call rather than the session's work: exactly one message and no tools. The
-// campaign turns this product drives carry a full tool list on every real
-// turn, so the shape separates the two cleanly.
-func auxiliary(canonical []byte) bool {
+// shaped reports the two things that make a request look like bookkeeping
+// rather than work: one message, and no tools. It also returns the model,
+// because shape alone is far too broad to act on. A single-block prompt with
+// no tools is an ordinary request for most clients, and treating every one of
+// them as skippable turns a miss that should be loud into a served answer.
+func shaped(canonical []byte) (model string, ok bool) {
 	var b struct {
 		Messages []json.RawMessage `json:"messages"`
 		Input    []json.RawMessage `json:"input"`
 		Tools    []json.RawMessage `json:"tools"`
+		Model    string            `json:"model"`
 	}
 	if err := json.Unmarshal(canonical, &b); err != nil {
-		return false
+		return "", false
 	}
 	if len(b.Tools) != 0 {
-		return false
+		return "", false
 	}
-	return len(b.Messages)+len(b.Input) == 1
+	return b.Model, len(b.Messages)+len(b.Input) == 1
 }
 
-// auxiliaryEntry is auxiliary() for the recorded step at i.
+// auxiliary reports whether a live request may be answered by a recorded
+// bookkeeping call. Shape only: the model is deliberately NOT compared, since
+// the whole fault is that the client picks a different one per run, and the
+// run that exposed this took on sonnet the call it had recorded on haiku.
+func auxiliary(canonical []byte) bool {
+	_, ok := shaped(canonical)
+	return ok
+}
+
+// auxiliaryEntry reports whether the recorded step at i is a bookkeeping call.
+//
+// Stricter than the live side, and this is what keeps the relaxation from
+// swallowing ordinary traffic: the step must ALSO be on a model this cassette
+// does not otherwise use. A bookkeeping call is cheap by construction, which
+// is why it is on another model at all, and a cassette whose steps are all one
+// model has no such call to offer. Without this a recording of a client that
+// sends single-block prompts and no tools would answer any of its own misses
+// with any other step.
 func (s *Store) auxiliaryEntry(i int) bool {
 	canon, err := s.canonical(i)
 	if err != nil {
 		return false
 	}
-	return auxiliary(canon)
+	model, ok := shaped(canon)
+	if !ok || model == "" {
+		return false
+	}
+	return model != s.dominantModel()
+}
+
+// dominantModel is the model most of this cassette's steps were recorded on,
+// which is the session's own work. Computed once.
+func (s *Store) dominantModel() string {
+	if s.dominant == nil {
+		counts := map[string]int{}
+		for i := range s.script {
+			canon, err := s.canonical(i)
+			if err != nil {
+				continue
+			}
+			var b struct {
+				Model string `json:"model"`
+			}
+			if json.Unmarshal(canon, &b) == nil && b.Model != "" {
+				counts[b.Model]++
+			}
+		}
+		best := ""
+		for m, n := range counts {
+			if n > counts[best] || (n == counts[best] && m < best) {
+				best = m
+			}
+		}
+		s.dominant = &best
+	}
+	return *s.dominant
 }

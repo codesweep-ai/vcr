@@ -355,16 +355,17 @@ func TestAnAuxiliaryTurnIsMatchedOnShape(t *testing.T) {
 	const (
 		title = `{"messages":[{"text":"name this"}],"model":"claude-haiku-4-5","max_tokens":32000}`
 		work  = `{"messages":[{"text":"do it"},{"text":"ok"}],"tools":[{"name":"bash"}],"model":"claude-sonnet-5"}`
+		more  = `{"messages":[{"text":"do it"},{"text":"ok"},{"text":"next"}],"tools":[{"name":"bash"}],"model":"claude-sonnet-5"}`
 		// The same call, on the model this run happened to pick.
 		liveTitle = `{"messages":[{"text":"name this"}],"model":"claude-sonnet-5","max_tokens":64000}`
 	)
 
-	s := script(t, title, work)
+	s := script(t, title, work, more)
 	if _, miss := s.Next(ask(liveTitle), nil, 8, false); miss == nil {
 		t.Fatal("without the relaxation the title turn must still miss, or this test proves nothing")
 	}
 
-	s = script(t, title, work)
+	s = script(t, title, work, more)
 	sel, miss := s.Next(ask(liveTitle), nil, 8, true)
 	if miss != nil {
 		t.Fatalf("the title turn missed: %+v", miss)
@@ -383,9 +384,10 @@ func TestAnAuxiliaryTurnIsMatchedOnShape(t *testing.T) {
 func TestAnUnrecordedAuxiliaryTurnRepeatsTheLastOne(t *testing.T) {
 	const (
 		title = `{"messages":[{"text":"name this"}],"model":"claude-haiku-4-5"}`
-		work  = `{"messages":[{"text":"a"},{"text":"b"}],"tools":[{"name":"bash"}]}`
+		work  = `{"messages":[{"text":"a"},{"text":"b"}],"tools":[{"name":"bash"}],"model":"claude-sonnet-5"}`
+		more  = `{"messages":[{"text":"a"},{"text":"c"}],"tools":[{"name":"bash"}],"model":"claude-sonnet-5"}`
 	)
-	s := script(t, title, work)
+	s := script(t, title, work, more)
 	if _, miss := s.Next(ask(title), nil, 8, true); miss != nil {
 		t.Fatalf("the recorded title turn missed: %+v", miss)
 	}
@@ -406,5 +408,43 @@ func TestWorkIsNotTreatedAsAuxiliary(t *testing.T) {
 	s := script(t, recorded)
 	if _, miss := s.Next(ask(live), nil, 8, true); miss == nil {
 		t.Fatal("a turn carrying tools was absorbed as bookkeeping")
+	}
+}
+
+// A miss has to name the step the request most nearly was. Every call to one
+// provider shares a method and a path, so "the first unserved step that could
+// have been this" is really just the oldest unclaimed step: the report then
+// diffs the request against something nobody was trying to send, and the
+// reader chases the wrong step. This is what made a campaign re-record a
+// cassette that was never the problem.
+func TestAMissNamesTheClosestStep(t *testing.T) {
+	const (
+		unrelated = `{"a":1,"b":2,"c":3,"d":4,"e":5}`
+		near      = `{"turn":"work","detail":"recorded"}`
+		live      = `{"turn":"work","detail":"live"}`
+	)
+	s := script(t, unrelated, near)
+	_, miss := s.Next(ask(live), nil, 8, false)
+	if miss == nil {
+		t.Fatal("the request aligned with something, so this proves nothing")
+	}
+	if miss.Entry == nil || miss.Entry.Seq != 2 {
+		t.Fatalf("miss names step %v, want step 2, the one it differs from least", miss.Entry)
+	}
+}
+
+// The relaxation needs a recorded call that is visibly bookkeeping. A cassette
+// whose steps are all one model has none, and a client that sends single-block
+// prompts and no tools must still get a loud miss rather than any other step's
+// answer. This is the case that made shape alone unusable as a default.
+func TestAOneModelCassetteOffersNothingToAbsorbWith(t *testing.T) {
+	const (
+		first  = `{"input":[{"text":"a"}],"model":"gpt-5","seen":"x"}`
+		second = `{"input":[{"text":"b"}],"model":"gpt-5","seen":"x"}`
+		live   = `{"input":[{"text":"c"}],"model":"gpt-5","seen":"x"}`
+	)
+	s := script(t, first, second)
+	if _, miss := s.Next(ask(live), nil, 8, true); miss == nil {
+		t.Fatal("an ordinary single-block request was answered from another step")
 	}
 }
