@@ -29,11 +29,6 @@
     {
       "content": [
         {
-          "signature": "",
-          "thinking": "Need to create file hello.txt with exactly \"hello world\" then reply \"done\".",
-          "type": "thinking"
-        },
-        {
           "id": "Write_0",
           "input": {
             "content": "hello world",
@@ -56,7 +51,7 @@
       "role": "user"
     },
     {
-      "content": "<total_tokens>14998243 tokens left</total_tokens>",
+      "content": "<total_tokens>14998260 tokens left</total_tokens>",
       "role": "system"
     }
   ],
@@ -68,7 +63,7 @@
   "stream": true,
   "system": [
     {
-      "text": "x-anthropic-billing-header: cc_version=2.1.239; cc_entrypoint=sdk-cli;",
+      "text": "x-anthropic-billing-header: cc_version=2.1.240; cc_entrypoint=sdk-cli;",
       "type": "text"
     },
     {

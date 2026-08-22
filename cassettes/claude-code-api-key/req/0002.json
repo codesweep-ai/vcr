@@ -33,9 +33,9 @@
           "type": "text"
         },
         {
-          "id": "toolu_019CMqyxxZyCA9qWb3wYgv3E",
+          "id": "toolu_01S2KD49ybY5jGsXEG6ViBfX",
           "input": {
-            "content": "hello world.",
+            "content": "hello world",
             "file_path": "<ROOT>/work/hello.txt"
           },
           "name": "Write",
@@ -48,14 +48,14 @@
       "content": [
         {
           "content": "File created successfully at: <ROOT>/work/hello.txt (file state is current in your context — no need to Read it back)",
-          "tool_use_id": "toolu_019CMqyxxZyCA9qWb3wYgv3E",
+          "tool_use_id": "toolu_01S2KD49ybY5jGsXEG6ViBfX",
           "type": "tool_result"
         }
       ],
       "role": "user"
     },
     {
-      "content": "<system-reminder>\n<total_tokens>14993630 tokens left</total_tokens>\n</system-reminder>",
+      "content": "<system-reminder>\n<total_tokens>14993631 tokens left</total_tokens>\n</system-reminder>",
       "role": "system"
     }
   ],
@@ -67,7 +67,7 @@
   "stream": true,
   "system": [
     {
-      "text": "x-anthropic-billing-header: cc_version=2.1.239; cc_entrypoint=sdk-cli;",
+      "text": "x-anthropic-billing-header: cc_version=2.1.240; cc_entrypoint=sdk-cli;",
       "type": "text"
     },
     {

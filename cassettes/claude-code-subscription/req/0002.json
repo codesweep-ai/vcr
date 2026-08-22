@@ -33,7 +33,7 @@
           "type": "text"
         },
         {
-          "id": "toolu_01HkiXTte8MHc7mNMFqCj3Aj",
+          "id": "toolu_01WdJGr5JMMQMHBkPpXURj4y",
           "input": {
             "content": "hello world",
             "file_path": "<ROOT>/work/hello.txt"
@@ -48,7 +48,7 @@
       "content": [
         {
           "content": "File created successfully at: <ROOT>/work/hello.txt (file state is current in your context — no need to Read it back)",
-          "tool_use_id": "toolu_01HkiXTte8MHc7mNMFqCj3Aj",
+          "tool_use_id": "toolu_01WdJGr5JMMQMHBkPpXURj4y",
           "type": "tool_result"
         }
       ],
@@ -67,7 +67,7 @@
   "stream": true,
   "system": [
     {
-      "text": "x-anthropic-billing-header: cc_version=2.1.239; cc_entrypoint=sdk-cli;",
+      "text": "x-anthropic-billing-header: cc_version=2.1.240; cc_entrypoint=sdk-cli;",
       "type": "text"
     },
     {
