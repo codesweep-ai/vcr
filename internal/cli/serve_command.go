@@ -274,6 +274,13 @@ func summarize(out io.Writer, st proxy.Stats, offline bool) error {
 	if st.Drifted > 0 {
 		fmt.Fprintf(tw, "drifted observations\t%d\n", st.Drifted)
 	}
+	// The one place replay serves a response the request did not align with,
+	// so it is reported wherever a reader judges a run: a count that only
+	// reached the log would make the tolerance effectively silent, which is the
+	// thing that made defaulting it on defensible in the first place.
+	if st.Auxiliary > 0 {
+		fmt.Fprintf(tw, "bookkeeping calls answered\t%d\n", st.Auxiliary)
+	}
 	// Only when the session was used as a proxy, which most are not. A tunnel is
 	// the one path through cs-vcr that records nothing, so these are the only
 	// place that traffic is visible after the fact.
