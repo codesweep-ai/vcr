@@ -259,6 +259,7 @@ the network be the boundary.
 - [INSTALL.md](INSTALL.md) · getting the binary
 - [MANUAL.md](MANUAL.md) · every command, option, file and diagnostic
 - [SPEC.md](SPEC.md) · what cs-vcr guarantees, the cassette format, and how it is built
+- [CONTRIBUTING.md](CONTRIBUTING.md) · working on the tool
 
 ## Contributing
 
