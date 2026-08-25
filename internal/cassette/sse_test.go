@@ -123,7 +123,7 @@ func TestCoalescePassesThroughUnparseableEvents(t *testing.T) {
 // A stream cut off mid-tool-call still yields what it had, because a truncated
 // stream is a real thing to reproduce — it is how a cancelled request looks.
 func TestCoalesceFlushesATruncatedToolCall(t *testing.T) {
-	cut := strings.Split(fragmentedToolCall, "event: content_block_stop")[0]
+	cut, _, _ := strings.Cut(fragmentedToolCall, "event: content_block_stop")
 	got := string(CoalesceToolInput([]byte(cut)))
 	if !strings.Contains(got, "/home/ada/proj/R") {
 		t.Errorf("a truncated tool call lost its fragments:\n%s", got)
