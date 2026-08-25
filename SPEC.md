@@ -252,6 +252,14 @@ numbered by order of first appearance. *An orchestrator holds its own dispatch i
 minted for a member. Collapsing both into one placeholder restores them to the same value, and the
 replayed orchestrator then polls a session it never prompted.*
 
+**R17a.** A `capture` match a request never made **MUST** be blanked in the response anyway,
+numbered after the placeholders that request produced, and **MUST NOT** be restored. *A model names
+values the request did not: one a tool result put in front of it, or one it invented. The pattern is
+what declares a value run-specific. Storing it as it stands writes the recording host's identity
+into the cassette, and the agent replaying then acts on a name that exists nowhere here. Nothing
+restores it, because it named nothing in the run that is replaying. Replay blanks it too, so a
+cassette recorded before this rule stops serving one.*
+
 *Why capture rather than replace: the agent acts on some of these values. Blanking a scratchpad path
 one way would make the request match, then hand the replayed agent the recording run's path, which
 does not exist on this machine.*

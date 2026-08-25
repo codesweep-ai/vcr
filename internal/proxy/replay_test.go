@@ -1216,6 +1216,123 @@ func TestSeveralDistinctValuesOfOnePatternRoundTripSeparately(t *testing.T) {
 	}
 }
 
+// A value the model names that the request never did. It matches a capture
+// pattern, so it is run-specific, but the response is blanked with the
+// request's captures alone and there is nothing to match it against — so it is
+// stored verbatim, and replay hands the recording host's identity to an agent
+// that then acts on it.
+//
+// Measured on cs-campaign's opencode-fireworks cassette: the orchestrator's
+// summary named `dev-97a3d923`, a sandbox that existed only on the recording
+// host, beside a correctly blanked `<DEV:1>` in the same sentence. The agent
+// wrote that summary to a file, read it back on the next turn, and the request
+// then carried one identifier from this run and one from the recording.
+func TestAnIdentifierOnlyTheResponseNamesIsBlanked(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "invented")
+	req := func(mine string) string {
+		return `{"messages":[{"role":"user","content":"my dispatch is ` + mine + `"}]}`
+	}
+	// The model reports the id it was given and one it was not.
+	resp := func(mine string) string {
+		return `{"content":[{"type":"text","text":"holding ` + mine +
+			`, worker claims dispatch-9999999999"}]}`
+	}
+	capture := []config.Capture{{Pattern: `dispatch-[0-9]{10,}`, As: "<DISPATCH>"}}
+
+	rec, _ := cassetteServer(t, dir, online, func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, resp("dispatch-1111111111"))
+	})
+	rec.cfg.Normalize.Capture = capture
+	if err := rec.cfg.Normalize.Compile(); err != nil {
+		t.Fatal(err)
+	}
+	post(t, rec, "/v1/messages", nil, req("dispatch-1111111111"))
+
+	entries, err := sessionStore(t, rec).Cassette().Entries()
+	if err != nil {
+		t.Fatal(err)
+	}
+	stored, err := os.ReadFile(sessionStore(t, rec).Cassette().ResponsePath(entries[0].Seq, entries[0].Streaming))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(stored), "dispatch-9999999999") {
+		t.Errorf("the cassette kept an identifier only the response named:\n%s", stored)
+	}
+
+	rep, logs := cassetteServer(t, dir, offline, func(w http.ResponseWriter, r *http.Request) {
+		t.Error("replay contacted the provider")
+	})
+	rep.cfg.Normalize.Capture = capture
+	if err := rep.cfg.Normalize.Compile(); err != nil {
+		t.Fatal(err)
+	}
+	got := post(t, rep, "/v1/messages", nil, req("dispatch-2222222222"))
+	if got.Code != http.StatusOK {
+		t.Fatalf("status = %d, want a hit\nlogs: %s", got.Code, logs)
+	}
+	if strings.Contains(got.Body.String(), "dispatch-9999999999") {
+		t.Errorf("the replayed agent was handed the recording run's identifier:\n%s", got.Body)
+	}
+}
+
+// The cassettes already committed when the blanking above landed still hold
+// the recording host's identifiers, and re-recording one costs a real provider
+// call. Replay takes them out on the way to the client instead, so a recording
+// made before the fix stops handing out a name that exists nowhere on this
+// host.
+func TestAnOldRecordingDoesNotServeItsHostsIdentifier(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "old")
+	req := func(mine string) string {
+		return `{"messages":[{"role":"user","content":"my dispatch is ` + mine + `"}]}`
+	}
+	capture := []config.Capture{{Pattern: `dispatch-[0-9]{10,}`, As: "<DISPATCH>"}}
+
+	rec, _ := cassetteServer(t, dir, online, func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, `{"content":[{"type":"text","text":"holding dispatch-1111111111"}]}`)
+	})
+	rec.cfg.Normalize.Capture = capture
+	if err := rec.cfg.Normalize.Compile(); err != nil {
+		t.Fatal(err)
+	}
+	post(t, rec, "/v1/messages", nil, req("dispatch-1111111111"))
+
+	// Put the cassette back into the shape a build without the response-side
+	// blanking wrote: the id the request carried is a placeholder, and one the
+	// request never named is verbatim.
+	entries, err := sessionStore(t, rec).Cassette().Entries()
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := sessionStore(t, rec).Cassette().ResponsePath(entries[0].Seq, entries[0].Streaming)
+	if err := os.WriteFile(path,
+		[]byte(`{"content":[{"type":"text","text":"holding <DISPATCH:1>, worker claims dispatch-9999999999"}]}`),
+		0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	rep, logs := cassetteServer(t, dir, offline, func(w http.ResponseWriter, r *http.Request) {
+		t.Error("replay contacted the provider")
+	})
+	rep.cfg.Normalize.Capture = capture
+	if err := rep.cfg.Normalize.Compile(); err != nil {
+		t.Fatal(err)
+	}
+	got := post(t, rep, "/v1/messages", nil, req("dispatch-2222222222"))
+	if got.Code != http.StatusOK {
+		t.Fatalf("status = %d, want a hit\nlogs: %s", got.Code, logs)
+	}
+	body := got.Body.String()
+	if strings.Contains(body, "dispatch-9999999999") {
+		t.Errorf("an old recording served its own host's identifier:\n%s", body)
+	}
+	// This run's own id still has to come back as itself, or the fix has taken
+	// the useful half with the harmful one.
+	if !strings.Contains(body, "holding dispatch-2222222222") {
+		t.Errorf("this run's id was not restored:\n%s", body)
+	}
+}
+
 // A recording has to survive the agent updating itself. Codex opens every
 // session with `GET /v1/models?client_version=<its own build>`, so without the
 // query strip list the first request after an upgrade misses — and a miss on

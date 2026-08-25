@@ -271,10 +271,13 @@ type compiledCapture struct {
 // session it never prompted — which is a stall, not a miss, and so does not even
 // show up as a cassette failure.
 //
-// So each distinct value gets its own placeholder, numbered by order of first
-// appearance: <DISPATCH:1>, <DISPATCH:2>. Order of first appearance is stable
-// between a recording and its replay because the conversation is the same.
-func (c compiledCapture) apply(b []byte) (map[string]string, []byte) {
+// So each distinct value gets its own placeholder, numbered from `from` by
+// order of first appearance: <DISPATCH:1>, <DISPATCH:2>. Order of first
+// appearance is stable between a recording and its replay because the
+// conversation is the same. A request numbers from 1; the response answering it
+// carries on from where the request stopped, so one number means one value
+// across the pair.
+func (c compiledCapture) apply(b []byte, from int) (map[string]string, []byte) {
 	locs := c.re.FindAllSubmatchIndex(b, -1)
 	if len(locs) == 0 {
 		return nil, b
@@ -298,7 +301,7 @@ func (c compiledCapture) apply(b []byte) (map[string]string, []byte) {
 		val := string(b[start:end])
 		ph, ok := seen[val]
 		if !ok {
-			ph = c.placeholder(len(seen) + 1)
+			ph = c.placeholder(from + len(seen))
 			seen[val] = ph
 			got[ph] = val
 		}
@@ -308,6 +311,18 @@ func (c compiledCapture) apply(b []byte) (map[string]string, []byte) {
 	}
 	out = append(out, b[last:]...)
 	return got, out
+}
+
+// next is the lowest number this capture has not already handed out. It is what
+// lets a response carry on the request's numbering rather than restart it.
+func (c compiledCapture) next(captured map[string]string) int {
+	n := 1
+	for {
+		if _, used := captured[c.placeholder(n)]; !used {
+			return n
+		}
+		n++
+	}
 }
 
 // placeholder numbers one capture, keeping the angle brackets outside so the
@@ -391,7 +406,7 @@ func (n *Normalize) Apply(b []byte) ([]byte, map[string]string) {
 	b = n.ApplyRoot(b)
 	var got map[string]string
 	for _, c := range n.captures {
-		vals, blanked := c.apply(b)
+		vals, blanked := c.apply(b, 1)
 		b = blanked
 		for ph, v := range vals {
 			if got == nil {
@@ -431,6 +446,20 @@ func (n *Normalize) ApplyResponse(b []byte, captured map[string]string) []byte {
 	for _, ph := range phs {
 		b = bytes.ReplaceAll(b, []byte(captured[ph]), []byte(ph))
 	}
+	// Then whatever is left. A model names values the request never did: one a
+	// tool result put in front of it, or one it invented outright. The pattern
+	// says those are run-specific, so recording them verbatim writes the
+	// recording host's identity into the cassette, and replay hands it to an
+	// agent that acts on it and carries it into its next request.
+	//
+	// They are numbered after the request's, so a placeholder still means one
+	// value across the pair. Nothing restores them on the way out, because a
+	// value the request never mentioned names nothing in the run that replays
+	// it — the placeholder itself is what the client echoes back, and it
+	// normalizes to itself.
+	for _, c := range n.captures {
+		_, b = c.apply(b, c.next(captured))
+	}
 	return b
 }
 
@@ -438,6 +467,17 @@ func (n *Normalize) ApplyResponse(b []byte, captured map[string]string) []byte {
 // client acts on paths and identifiers that exist here rather than on the
 // recording machine's.
 func (n *Normalize) RestoreResponse(b []byte, got map[string]string) []byte {
+	// Before anything is put back, take out what should never have been stored.
+	// A cassette recorded before response-only values were blanked still holds
+	// the recording host's identifiers, and serving one hands a client a name
+	// that exists nowhere here. The body is still fully normalized at this
+	// point, so a match is a leftover by definition.
+	//
+	// Nothing restores them, for the same reason recording assigns them no
+	// value: they named nothing in the run that is replaying.
+	for _, c := range n.captures {
+		_, b = c.apply(b, c.next(got))
+	}
 	b = n.RestoreRoot(b)
 	return Captured(got).Restore(b)
 }
