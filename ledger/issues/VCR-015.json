@@ -1,0 +1,27 @@
+{
+  "id": "VCR-015",
+  "title": "A value only the response names is recorded verbatim, so replay hands out the recording host's identity",
+  "type": "defect",
+  "severity": "high",
+  "status": "closed",
+  "foundBy": "session agent, tracing a cs-campaign smoke failure to the cassette that caused it",
+  "opened": "2026-08-25",
+  "resolved": "2026-08-25",
+  "stint": "2026-08-25 cs-campaign replay miss investigation",
+  "evidence": {
+    "commits": [
+      "2334f3d"
+    ],
+    "integrated": [],
+    "verified": "`go test ./internal/proxy/ -count=1`: TestAnIdentifierOnlyTheResponseNamesIsBlanked and TestAnOldRecordingDoesNotServeItsHostsIdentifier PASS, and each fails with its half of the change reverted. `make check` exits 0. `make test-smoke` replays all eight fixtures green in 17.6s with no scenario skipped. Against the cs-campaign response that caused this, replaying the committed cassette and replaying a re-recording of it serve identical bytes, 3024 characters, both naming <DEV:2> where the recorded next request expects it."
+  },
+  "resolution": null,
+  "details": "R16 says every capture match is blanked. A response is blanked only with the values the request it answers captured, so a match the request never made survives into the cassette as it was.\n\nA model names such a value whenever it repeats something a tool result put in front of it, or invents one outright. The pattern is what declares the value run-specific, and no rule reads it once it is in a response alone.\n\nMeasured on cs-campaign's opencode-fireworks cassette. `csrocfw-orchestrator/resp/0033.sse` holds `dev-97a3d923` and `csrocfw-97a3d923`, sandboxes that existed only on the recording host, next to a correctly blanked `<DEV:1>` in the same sentence. The other four scenarios carry no such value, which is why they replay reliably and this one does not.\n\nThe agent acts on what it is served. In that campaign it wrote the sentence to a summary file, read the file back on the next turn, and the request then carried one identifier from this run and one from the recording. Two distinct values where the recording had one shifts every later placeholder number, and the run misses on a request whose text is otherwise identical.\n\nReproduced by TestAnIdentifierOnlyTheResponseNamesIsBlanked: recording a response that names an id the request did not stores it verbatim, and replay serves it to the client.",
+  "notes": [
+    {
+      "date": "2026-08-25",
+      "text": "The value was not the recording host's own sandbox. dev misreported its branch, and the orchestrator wrote down both the claim and the correction, so the id was one the model invented rather than one it was given."
+    }
+  ],
+  "links": []
+}
