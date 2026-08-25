@@ -3,67 +3,67 @@
   "fixtures": {
     "claude-code-api-key": {
       "agent": "claude",
-      "agent_version": "2.1.240",
+      "agent_version": "2.1.245",
       "auth": "an Anthropic API key",
       "model": "claude-sonnet-5",
       "steps": 2,
-      "recorded": "2026-08-22"
+      "recorded": "2026-08-25"
     },
     "claude-code-fireworks": {
       "agent": "claude",
-      "agent_version": "2.1.240",
+      "agent_version": "2.1.245",
       "auth": "a Fireworks API key",
       "model": "accounts/fireworks/models/kimi-k3",
       "steps": 2,
-      "recorded": "2026-08-22"
+      "recorded": "2026-08-25"
     },
     "claude-code-subscription": {
       "agent": "claude",
-      "agent_version": "2.1.240",
+      "agent_version": "2.1.245",
       "auth": "a Claude Pro/Max subscription",
       "model": "claude-sonnet-5",
       "steps": 2,
-      "recorded": "2026-08-22"
+      "recorded": "2026-08-25"
     },
     "codex-api-key": {
       "agent": "codex",
-      "agent_version": "0.148.0",
+      "agent_version": "0.149.1",
       "auth": "an OpenAI API key",
       "model": "gpt-5.6-sol",
-      "steps": 3,
-      "recorded": "2026-08-22"
+      "steps": 2,
+      "recorded": "2026-08-25"
     },
     "codex-chatgpt": {
       "agent": "codex",
-      "agent_version": "0.148.0",
+      "agent_version": "0.149.1",
       "auth": "a ChatGPT subscription",
       "model": "gpt-5.6-sol",
-      "steps": 4,
-      "recorded": "2026-08-22"
+      "steps": 5,
+      "recorded": "2026-08-25"
     },
     "opencode-anthropic": {
       "agent": "opencode",
-      "agent_version": "1.18.11",
+      "agent_version": "1.18.22",
       "auth": "an Anthropic API key",
       "model": "anthropic/claude-sonnet-5",
       "steps": 3,
-      "recorded": "2026-08-22"
+      "recorded": "2026-08-25"
     },
     "opencode-fireworks": {
       "agent": "opencode",
-      "agent_version": "1.18.11",
+      "agent_version": "1.18.22",
       "auth": "a Fireworks API key",
       "model": "fireworks-ai/accounts/fireworks/models/kimi-k3",
       "steps": 3,
-      "recorded": "2026-08-22"
+      "recorded": "2026-08-25"
     },
     "opencode-openai": {
       "agent": "opencode",
-      "agent_version": "1.18.11",
+      "agent_version": "1.18.22",
       "auth": "an OpenAI API key",
       "model": "openai/gpt-5.6",
       "steps": 3,
-      "recorded": "2026-08-22"
+      "recorded": "2026-08-25"
     }
   }
 }

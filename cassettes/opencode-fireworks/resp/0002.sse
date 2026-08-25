@@ -1,12 +1,10 @@
-data: {"id":"chatcmpl-e551e7e074b4486da98a360be44f5e0d","object":"chat.completion.chunk","created":1787434438,"model":"accounts/fireworks/models/kimi-k3","choices":[{"index":0,"delta":{"role":"assistant"},"finish_reason":null,"raw_output":null}],"usage":null}
+data: {"id":"chatcmpl-971caa237c544f14bc5f82545f722b29","object":"chat.completion.chunk","created":1787677914,"model":"accounts/fireworks/models/kimi-k3","choices":[{"index":0,"delta":{"role":"assistant"},"finish_reason":null,"raw_output":null}],"usage":null}
 
-data: {"choices":[{"delta":{"reasoning_content":"The user wants me to create a file named hello.txt containing exactly \"hello world\" and then reply with the single word \"done\". Let me use the write tool to create the file in the working directory."},"finish_reason":null,"index":0,"raw_output":null}],"created":1787434438,"id":"chatcmpl-e551e7e074b4486da98a360be44f5e0d","model":"accounts/fireworks/models/kimi-k3","object":"chat.completion.chunk","usage":null}
+data: {"choices":[{"delta":{"tool_calls":[{"function":{"arguments":"{\"filePath\": \"<ROOT>/work/hello.txt\", \"content\": \"hello world\"}","name":"write"},"id":"write_0","index":0,"type":"function"}]},"finish_reason":null,"index":0,"raw_output":null}],"created":1787677914,"id":"chatcmpl-971caa237c544f14bc5f82545f722b29","model":"accounts/fireworks/models/kimi-k3","object":"chat.completion.chunk","usage":null}
 
-data: {"choices":[{"delta":{"tool_calls":[{"function":{"arguments":"{\"filePath\": \"<ROOT>/work/hello.txt\", \"content\": \"hello world\"}","name":"write"},"id":"write_0","index":0,"type":"function"}]},"finish_reason":null,"index":0,"raw_output":null}],"created":1787434438,"id":"chatcmpl-e551e7e074b4486da98a360be44f5e0d","model":"accounts/fireworks/models/kimi-k3","object":"chat.completion.chunk","usage":null}
+data: {"id":"chatcmpl-971caa237c544f14bc5f82545f722b29","object":"chat.completion.chunk","created":1787677914,"model":"accounts/fireworks/models/kimi-k3","choices":[{"index":0,"delta":{},"finish_reason":"tool_calls","raw_output":null}],"usage":null}
 
-data: {"id":"chatcmpl-e551e7e074b4486da98a360be44f5e0d","object":"chat.completion.chunk","created":1787434438,"model":"accounts/fireworks/models/kimi-k3","choices":[{"index":0,"delta":{},"finish_reason":"tool_calls","raw_output":null}],"usage":null}
-
-data: {"id":"chatcmpl-e551e7e074b4486da98a360be44f5e0d","object":"chat.completion.chunk","created":1787434438,"model":"accounts/fireworks/models/kimi-k3","choices":[],"usage":{"prompt_tokens":6824,"total_tokens":6951,"completion_tokens":127,"prompt_tokens_details":{"cached_tokens":0},"completion_tokens_details":{"reasoning_tokens":42},"output_tokens_details":{"reasoning_tokens":42}}}
+data: {"id":"chatcmpl-971caa237c544f14bc5f82545f722b29","object":"chat.completion.chunk","created":1787677914,"model":"accounts/fireworks/models/kimi-k3","choices":[],"usage":{"prompt_tokens":6824,"total_tokens":6909,"completion_tokens":85,"prompt_tokens_details":{"cached_tokens":0},"completion_tokens_details":{"reasoning_tokens":0},"output_tokens_details":{"reasoning_tokens":0}}}
 
 data: [DONE]
 
