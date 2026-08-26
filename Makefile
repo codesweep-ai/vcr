@@ -37,7 +37,7 @@ COVER_ABS  := $(abspath $(COVERDIR))
 COVERPKG    = $(shell go list ./... | grep -v '/test/' | paste -sd, -)
 COVERFLAGS  = -covermode=atomic -coverpkg=$(COVERPKG)
 
-.PHONY: help build build-go build-cover install uninstall test test-race fixtures fixtures-strict test-integration test-smoke coverage coverage-check coverage-baseline agent-versions vet fmt fmt-check check lint deadcode prose refs oss surface cs-lint-installed ledger snapshot release release-check clean
+.PHONY: help build build-go build-cover install uninstall test test-race fixtures fixtures-strict test-integration test-smoke coverage coverage-check ci coverage-baseline agent-versions vet fmt fmt-check check lint deadcode prose refs oss surface cs-lint-installed ledger snapshot release release-check clean
 
 .DEFAULT_GOAL := help
 
@@ -226,6 +226,30 @@ ledger:
 
 ## check: the full local gate — fmt, vet, the linters, and the suites
 check: fmt-check vet lint deadcode test test-race coverage-check prose refs oss surface
+
+## ci: every gate the CI workflow runs, on this machine
+##
+## One Linux leg of .github/workflows/ci.yml, in the order CI runs it, so a
+## red build is something you can see before you push rather than after.
+##
+## The live tier runs without CS_VCR_AGENTS_STRICT, so an agent this host does
+## not carry skips with its reason instead of failing. CI sets it, because a
+## runner installs all three at the pinned versions.
+ci:
+	@$(MAKE) --no-print-directory check
+	@$(MAKE) --no-print-directory build
+	@$(MAKE) --no-print-directory release-check
+	@$(MAKE) --no-print-directory ledger
+	@$(MAKE) --no-print-directory build-cover
+	GOCOVERDIR=$(COVER_ABS)/cli ./bin/cs-vcr cassette verify
+	GOCOVERDIR=$(COVER_ABS)/cli ./bin/cs-vcr cassette scrub
+	@$(MAKE) --no-print-directory test-integration
+	@# The cassette gates run against a coverage build, which prints a warning
+	@# on every invocation when GOCOVERDIR is unset. CI throws its runner away
+	@# and a laptop does not, so put the ordinary binary back.
+	@$(MAKE) --no-print-directory build
+	@printf '\nci: every gate ran. Not reproduced here: build-test on macOS, and\n'
+	@printf 'the coverage job, which merges tiers from separate runners.\n'
 
 ## lint: the Go rules from .golangci.yml (see that file for what is on and why)
 lint:
