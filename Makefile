@@ -4,7 +4,7 @@
 # is absent. See .goreleaser.yaml.
 
 GORELEASER ?= goreleaser
-CS_LINT    ?= cs-lint
+CS_LINT    ?= go tool cs-lint
 BIN        := bin/cs-vcr
 PKG        := ./cmd/cs-vcr
 PREFIX     ?= $(HOME)/.local
@@ -37,7 +37,7 @@ COVER_ABS  := $(abspath $(COVERDIR))
 COVERPKG    = $(shell go list ./... | grep -v '/test/' | paste -sd, -)
 COVERFLAGS  = -covermode=atomic -coverpkg=$(COVERPKG)
 
-.PHONY: help build build-go build-cover install uninstall test test-race fixtures fixtures-strict test-integration test-smoke coverage coverage-check ci coverage-baseline agent-versions vet fmt fmt-check check lint deadcode prose refs oss surface cs-lint-installed ledger snapshot release release-check clean
+.PHONY: help build build-go build-cover install uninstall test test-race fixtures fixtures-strict test-integration test-smoke coverage coverage-check ci coverage-baseline agent-versions vet fmt fmt-check check lint deadcode prose refs oss surface ledger snapshot release release-check clean
 
 .DEFAULT_GOAL := help
 
@@ -231,39 +231,32 @@ fmt-check:
 		exit 1; \
 	fi
 ## prose: check how this repository's documents are written
-prose: cs-lint-installed
+prose:
 	$(CS_LINT) prose
 
 ## refs: check that everything the documents point at is there
-refs: cs-lint-installed
+refs:
 	$(CS_LINT) refs
 
 ## oss: the rules this repo has to satisfy as a published project
-oss: cs-lint-installed
+oss:
 	$(CS_LINT) oss
 
 ## surface: check the docs against the binary, the code and the build
-surface: build cs-lint-installed
+surface: build
 	$(CS_LINT) surface
 
-# The four targets above are one shared tool: github.com/codesweep-ai/lint.
-# prose and refs ask for no binary and run first; surface reads the one
-# build makes.
+# The four targets above are one shared tool: github.com/codesweep-ai/lint,
+# pinned in go.mod and run with `go tool`, so the gates use the version this
+# repo records rather than whatever a machine happens to have installed. `make
+# repin` moves that pin. prose and refs ask for no binary and run first;
+# surface reads the one build makes.
 # Its knobs for this repo live in .cs-lint.yaml, and `cs-lint <linter> --explain`
 # says what each rule wants.
-cs-lint-installed:
-	@command -v $(CS_LINT) >/dev/null 2>&1 || { \
-		echo "cs-lint is not installed: go install github.com/codesweep-ai/lint/cmd/cs-lint@latest" >&2; \
-		exit 2; \
-	}
 
 ## ledger: validate the issue records and prove ledger.html is current
 ledger:
-	@command -v cs-ledger >/dev/null 2>&1 || { \
-		echo "cs-ledger is not installed: go install github.com/codesweep-ai/ledger/cmd/cs-ledger@latest" >&2; \
-		exit 2; \
-	}
-	cs-ledger check ledger
+	go tool cs-ledger check ledger
 
 ## check: the full local gate — fmt, vet, the linters, and the suites
 check: fmt-check vet lint deadcode test test-race coverage-check prose refs oss surface
