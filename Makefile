@@ -37,7 +37,7 @@ COVER_ABS  := $(abspath $(COVERDIR))
 COVERPKG    = $(shell go list ./... | grep -v '/test/' | paste -sd, -)
 COVERFLAGS  = -covermode=atomic -coverpkg=$(COVERPKG)
 
-.PHONY: help build build-go build-cover install uninstall test test-race fixtures fixtures-strict test-integration test-smoke coverage coverage-check coverage-baseline agent-versions vet fmt fmt-check check lint deadcode docs oss walkthrough cs-lint-installed ledger snapshot release release-check clean
+.PHONY: help build build-go build-cover install uninstall test test-race fixtures fixtures-strict test-integration test-smoke coverage coverage-check coverage-baseline agent-versions vet fmt fmt-check check lint deadcode docs oss surface cs-lint-installed ledger snapshot release release-check clean
 
 .DEFAULT_GOAL := help
 
@@ -189,19 +189,21 @@ fmt-check:
 		echo "$$unformatted"; \
 		exit 1; \
 	fi
-## docs: check the prose against the writing rules in CONTRIBUTING.md
+## docs: the prose rules, and the references the documents make
 docs: cs-lint-installed
-	$(CS_LINT) docs
+	$(CS_LINT) prose
+	$(CS_LINT) refs
 
 ## oss: the rules this repo has to satisfy as a published project
 oss: cs-lint-installed
 	$(CS_LINT) oss
 
-## walkthrough: check the docs against the binary, the code and the build
-walkthrough: build cs-lint-installed
-	$(CS_LINT) walkthrough
+## surface: check the docs against the binary, the code and the build
+surface: build cs-lint-installed
+	$(CS_LINT) surface
 
 # The three targets above are one shared tool: github.com/codesweep-ai/lint.
+# docs asks for no binary and runs first; surface reads the one build makes.
 # Its knobs for this repo live in .cs-lint.yaml, and `cs-lint <linter> --explain`
 # says what each rule wants.
 cs-lint-installed:
@@ -219,7 +221,7 @@ ledger:
 	cs-ledger check ledger
 
 ## check: the full local gate — fmt, vet, the linters, and the suites
-check: fmt-check vet lint deadcode test test-race coverage-check docs oss walkthrough
+check: fmt-check vet lint deadcode test test-race coverage-check docs oss surface
 
 ## lint: the Go rules from .golangci.yml (see that file for what is on and why)
 lint:

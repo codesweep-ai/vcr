@@ -8,38 +8,70 @@
 # every reported problem is a real one: a check that cries wolf is worse than
 # no check.
 
+# The documentation block: the set of documents the checks read, then one
+# section per documentation linter.
 docs:
-  # The domain terms a reader of this project cannot infer. Each must be
-  # introduced where a document first uses it: glossed on the spot, defined in a
-  # glossary table, or linked to the page that defines it.
-  glossary:
-    - cassette
-    - step
-    - surface
-    - alignment
-    - volatile
-    - canonical
-    - normalize
-    - drift
-    - provenance
-    - ruleset
+  prose:
+    # The domain terms a reader of this project cannot infer. Each must be
+    # introduced where a document first uses it: glossed on the spot, defined in a
+    # glossary table, or linked to the page that defines it.
+    glossary:
+      - cassette
+      - step
+      - surface
+      - alignment
+      - volatile
+      - canonical
+      - normalize
+      - drift
+      - provenance
+      - ruleset
 
-  # The project's own command name, which starts sentences in lower case.
-  # Without it the splitter reads "Nothing prompts. cs-vcr exits 1." as one
-  # six-word sentence and reports a length that is not real.
-  lowercaseStarters:
-    - cs-vcr
+    # The project's own command name, which starts sentences in lower case.
+    # Without it the splitter reads "Nothing prompts. cs-vcr exits 1." as one
+    # six-word sentence and reports a length that is not real.
+    lowercaseStarters:
+      - cs-vcr
 
-  projectVerbs: []
+    projectVerbs: []
 
-  # The things this repository counts for itself. Prose that states one of these
-  # numbers is right the day it is written and wrong by the next re-recording,
-  # and nothing fails when it drifts. Let the gate report the number.
-  countable:
-    - cassettes?
-    - fixtures?
-    - recorded steps?
-    - surfaces?
+    # The things this repository counts for itself. Prose that states one of these
+    # numbers is right the day it is written and wrong by the next re-recording,
+    # and nothing fails when it drifts. Let the gate report the number.
+    countable:
+      - cassettes?
+      - fixtures?
+      - recorded steps?
+      - surfaces?
+
+  refs:
+    # goreleaser is optional here: `make build` falls back to `go build` without
+    # it, and INSTALL.md says so.
+    prereqOK: ["goreleaser"]
+
+  surface:
+    tool: cs-vcr
+    toolPath: bin/cs-vcr
+
+    # cs-vcr also reads three unprefixed variables, VCR_LISTEN, VCR_ADMIN and
+    # VCR_ROOT, and MANUAL.md's Environment section carries all three.
+    envPrefix: CS_VCR_
+
+    # Read-only, offline, and safe to run in a checkout on every gate. A verb that
+    # writes belongs nowhere near this list: a checker that writes can mask the
+    # staleness another gate exists to catch.
+    safeVerbs:
+      - version
+      - config
+      - config claude
+      - config codex
+      - config opencode
+      - cassette ls
+      - cassette verify
+
+    sampleSkip:
+      "cs-vcr config": "the sample is the defaults on a host with no config file, and this checkout's home may carry one"
+      "cs-vcr cassette ls": "the sample is a reader's own `build` cassette, not the fixtures this repository commits"
 
 oss:
   project: cs-vcr
@@ -66,31 +98,3 @@ oss:
 
   requiredTargets: ["build", "test", "check", "lint", "docs", "oss", "clean"]
   expectedTargets: ["help", "install", "uninstall", "fmt", "fmt-check", "vet", "deadcode"]
-
-walkthrough:
-  tool: cs-vcr
-  toolPath: bin/cs-vcr
-
-  # cs-vcr also reads three unprefixed variables, VCR_LISTEN, VCR_ADMIN and
-  # VCR_ROOT, and MANUAL.md's Environment section carries all three.
-  envPrefix: CS_VCR_
-
-  # Read-only, offline, and safe to run in a checkout on every gate. A verb that
-  # writes belongs nowhere near this list: a checker that writes can mask the
-  # staleness another gate exists to catch.
-  safeVerbs:
-    - version
-    - config
-    - config claude
-    - config codex
-    - config opencode
-    - cassette ls
-    - cassette verify
-
-  sampleSkip:
-    "cs-vcr config": "the sample is the defaults on a host with no config file, and this checkout's home may carry one"
-    "cs-vcr cassette ls": "the sample is a reader's own `build` cassette, not the fixtures this repository commits"
-
-  # goreleaser is optional here: `make build` falls back to `go build` without
-  # it, and INSTALL.md says so.
-  prereqOK: ["goreleaser"]
