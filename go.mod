@@ -8,8 +8,8 @@ require (
 )
 
 require (
-	github.com/codesweep-ai/ledger v0.0.0-20260826052602-c645f1744ac6 // indirect
-	github.com/codesweep-ai/lint v0.0.0-20260826044750-ad09a633ab9d // indirect
+	github.com/codesweep-ai/ledger v0.0.0-20260826154712-f3d4cf8989eb // indirect
+	github.com/codesweep-ai/lint v0.0.0-20260826152054-3acef36b8e16 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/spf13/pflag v1.0.9 // indirect
 )
