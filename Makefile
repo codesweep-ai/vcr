@@ -243,6 +243,9 @@ ci:
 	@$(MAKE) --no-print-directory build-cover
 	GOCOVERDIR=$(COVER_ABS)/cli ./bin/cs-vcr cassette verify
 	GOCOVERDIR=$(COVER_ABS)/cli ./bin/cs-vcr cassette scrub
+	@# CI installs the pinned agents from this list before the live tier. A
+	@# laptop already has its own, so printing it is how you see a mismatch.
+	@$(MAKE) --no-print-directory agent-versions
 	@$(MAKE) --no-print-directory test-integration
 	@# The cassette gates run against a coverage build, which prints a warning
 	@# on every invocation when GOCOVERDIR is unset. CI throws its runner away

@@ -98,5 +98,6 @@ oss:
   # name that is somebody's.
   homeAllow: ["user", "you", "name", "runner", "ada", "grace"]
 
-  requiredTargets: ["build", "test", "check", "lint", "prose", "refs", "oss", "clean"]
-  expectedTargets: ["help", "install", "uninstall", "fmt", "fmt-check", "vet", "deadcode", "ci"]
+  # Only what the built-in list does not already carry. deadcode is a Go tool,
+  # so it is this project's to name rather than every project's.
+  expectedTargets: ["install", "uninstall", "fmt", "fmt-check", "vet", "deadcode"]
