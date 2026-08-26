@@ -26,13 +26,17 @@ By opening a pull request you agree that your contribution ships under the
 
 ## Before you push
 
+One command:
+
 ```bash
-make check        # gofmt, vet, unit tests, the race detector and every linter
-make test-smoke   # three real agents replaying every committed cassette, about 20s
+make ci
 ```
 
-`make check` shells out to three tools that do not come with Go, and the ledger below needs a
-fourth. Install all four once, pinning `golangci-lint` to the version CI runs:
+That is every gate the CI workflow has, on this machine and in the order the workflow takes them,
+so a green run here is a green run there. `make check` is the faster subset to keep beside you
+while you work, and `make ci` is the one that has to pass.
+
+It shells out to tools the Go distribution does not carry. Install them once:
 
 ```bash
 go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.13.1
@@ -41,13 +45,18 @@ go install github.com/codesweep-ai/lint/cmd/cs-lint@latest
 go install github.com/codesweep-ai/ledger/cmd/cs-ledger@latest
 ```
 
-`cs-lint` is not pinned. CI installs it from source the same way you do, so a check it gains reaches
-you on the day it lands.
+`golangci-lint` is pinned to the version CI runs, so a release that gains checks reaches you when
+you move the pin rather than on an unrelated pull request. `cs-lint` is not pinned: CI installs it
+from source the same way you do, so a check it gains reaches you on the day it lands.
 
-This repo keeps a **ledger** of open issues in `ledger/`. Read
+One tier sits outside the gate. `make test-smoke` drives three real agents replaying every
+committed cassette, in about twenty seconds and for no money. Run it when you touch the proxy or a
+cassette.
+
+This repository keeps a **ledger** of open issues in `ledger/`. Read
 [`ledger/AGENTS.md`](ledger/AGENTS.md) before you start work, and follow it as you go. A commit
-that touches `ledger/` needs `cs-ledger render && cs-ledger check` to pass first, and `make ledger`
-runs the check half.
+that touches `ledger/` needs `cs-ledger render && cs-ledger check` to pass first, and
+`make ledger` runs the check half.
 
 ## Design rules
 
