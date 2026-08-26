@@ -9,7 +9,7 @@ BIN        := bin/cs-vcr
 PKG        := ./cmd/cs-vcr
 PREFIX     ?= $(HOME)/.local
 VERSION    := $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
-LDFLAGS    := -s -w -X github.com/codesweep-ai/vcr/internal/cli.Version=$(VERSION)
+LDFLAGS    := -s -w
 # Tracked files where git knows them, every .go file where it does not — a
 # fresh clone before its first commit has nothing tracked, and an empty list
 # makes `gofmt -l` read stdin and hang rather than check anything.
@@ -77,10 +77,12 @@ build-go:
 ## the Go toolchain, and whether a workspace is overriding the go.mod pins. Each
 ## line is read by asking that binary its own version. It deliberately depends on
 ## nothing and runs from source: reporting a version must not trigger a build.
+## -buildvcs=true because `go run` leaves out the VCS stamp by default, and that
+## stamp is the version now that nothing injects one with -X.
 .PHONY: versions
 versions:
-	@if out="$$(go run -ldflags '$(LDFLAGS)' $(PKG) version 2>&1)"; then \
-		printf '%-12s %-38s %s\n' '$(notdir $(BIN))' "$$(printf '%s\n' "$$out" | awk 'NR==1{print $$2}')" 'this repo'; \
+	@if out="$$(go run -buildvcs=true -ldflags '$(LDFLAGS)' $(PKG) version 2>&1)"; then \
+		printf '%-12s %-42s %s\n' '$(notdir $(BIN))' "$$(printf '%s\n' "$$out" | awk 'NR==1{print $$2}')" 'this repo'; \
 	else \
 		printf '%-12s %s\n' '$(notdir $(BIN))' "FAILED — $$(printf '%s\n' "$$out" | head -1)"; \
 	fi
