@@ -37,7 +37,7 @@ go install github.com/codesweep-ai/vcr/cmd/cs-vcr@latest
 
 ### Or build from source
 
-Needs **Go 1.26+**. `goreleaser` is optional and only stamps the version:
+Needs **Go 1.27+**. `goreleaser` is optional and only stamps the version:
 
 ```bash
 git clone https://github.com/codesweep-ai/vcr && cd vcr
