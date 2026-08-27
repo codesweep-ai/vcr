@@ -3,18 +3,25 @@
   "title": "The provider is guessed from the request shape, so a config key may only be called anthropic or openai",
   "type": "improvement",
   "severity": "med",
-  "status": "in-progress",
+  "status": "closed",
   "opened": "2026-08-27",
-  "resolved": null,
+  "resolved": "2026-08-27",
   "stint": "2026-08-27 provider-in-the-URL",
   "foundBy": "user report (host): \"Determining the target provider from the request shape (e.g. /messages -> anthropic) is very fragile. Can we instead adopt a URL convention like /c/<provider-name>/<cassette-name>\"",
   "evidence": {
-    "commits": [],
+    "commits": [
+      "d6b5cdf"
+    ],
     "integrated": [],
-    "verified": null
+    "verified": "make check with an empty CS_VCR_HOME: prose, refs, oss and surface all report 0 errors, and every package passes. make test-smoke: TestReplayFixtures PASS, all 8 scenarios, 18.9s. That smoke run is the load-bearing one. It replays every committed cassette through the three real agents under the new prefix, with nothing re-recorded, which shows the extra segment is stripped before a request is keyed."
   },
-  "resolution": null,
+  "resolution": "A base URL now carries /c/<provider>/<cassette>. The provider is a free key into `providers`, `default_provider` and `cassette_provider` are gone, and `classify` is gone with them. The surface is still read from the path, and replay still reads no provider configuration.",
   "details": "`classify` maps a surface to a hardcoded provider name. `/messages` becomes `anthropic`, and `/responses` and `/chat/completions` become `openai`. A provider entry is reachable by path only if it is called one of those two names. Every other name needs a workaround, and this repository's own scenario matrix carries both of them.\n\n`opencode-fireworks` pins its cassette. `test/agents/scenario.go` says why: \"Fireworks is not a provider cs-vcr routes to by path, every OpenAI-shaped request looks the same\". `claude-code-fireworks` avoids the pin by naming a Fireworks endpoint `anthropic`, so its config key states a vendor its `base_url` contradicts.\n\nThe two workarounds rest on a third mechanism. `default_provider` absorbs whatever neither the path nor the Anthropic-specific headers identified. Absorbing is what rule R1a refuses for the cassette, on the grounds that \"a default to absorb it into would make a mistyped base URL look like it worked\". A request that lands on the wrong provider is forwarded there with the client's credential attached, and recorded as though it were the answer.\n\nThe request already carries one name the operator chose, which is the cassette prefix. Carrying the provider beside it as `/c/<provider>/<cassette>` states what the client is pointed at. That retires `default_provider`, `cassette_provider` and `classify` together. The surface is unaffected. It is read from the path because that is what keys the body, and replay reads it while reading no provider configuration at all.",
-  "notes": [],
+  "notes": [
+    {
+      "date": "2026-08-27",
+      "text": "Two follow-ups this left alone. The claude-code-fireworks scenario can now name its provider entry `fireworks` instead of `anthropic`, which needs a re-record because the entry name is recorded as cassette metadata. And a config file carrying default_provider or cassette_provider now fails at startup under rule R43, which is the migration this change asks of anyone upgrading."
+    }
+  ],
   "links": []
 }
