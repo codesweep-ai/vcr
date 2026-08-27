@@ -267,8 +267,8 @@ func TestTwoMembersWithIdenticalRequestsDoNotShareEntries(t *testing.T) {
 		calls++
 		fmt.Fprintf(w, `{"reply":"response %d"}`, calls)
 	})
-	first := post(t, rec, "/c/orchestrator/v1/messages", nil, sameBody)
-	second := post(t, rec, "/c/worker/v1/messages", nil, sameBody)
+	first := post(t, rec, "/c/anthropic/orchestrator/v1/messages", nil, sameBody)
+	second := post(t, rec, "/c/anthropic/worker/v1/messages", nil, sameBody)
 
 	if calls != 2 {
 		t.Fatalf("provider called %d times for two members, want 2 — one was served the other's recording", calls)
@@ -282,8 +282,8 @@ func TestTwoMembersWithIdenticalRequestsDoNotShareEntries(t *testing.T) {
 		t.Error("replay contacted the provider")
 	})
 	for _, c := range []struct{ prefix, want string }{
-		{"/c/orchestrator", first.Body.String()},
-		{"/c/worker", second.Body.String()},
+		{"/c/anthropic/orchestrator", first.Body.String()},
+		{"/c/anthropic/worker", second.Body.String()},
 	} {
 		got := post(t, rep, c.prefix+"/v1/messages", nil, sameBody)
 		if got.Code != http.StatusOK {
@@ -401,14 +401,15 @@ func TestRetryAfterATransientFailureReachesTheProvider(t *testing.T) {
 	}
 }
 
-// A cassette that pins its provider settles every request on its prefix.
+// The prefix settles every request on it, including the ones with nothing else
+// to go on.
 //
 // The prefix is a base URL the client was configured with, and a client
 // configures one base URL per provider, so this is the fact the deployment
 // already knows. Asserted with the request that has nothing else to go on:
 // Claude Code's startup probe carries the prefix but no identifying header, and
 // inferring from the rest of it sent an Anthropic-only user to api.openai.com.
-func TestAPinnedProviderDecidesEveryPathOnItsPrefix(t *testing.T) {
+func TestThePrefixDecidesEveryPathOnIt(t *testing.T) {
 	var got []string
 	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = io.WriteString(w, `{}`)
@@ -419,22 +420,20 @@ func TestAPinnedProviderDecidesEveryPathOnItsPrefix(t *testing.T) {
 	cfg.Providers["anthropic"] = &config.Provider{BaseURL: up.URL}
 	// Reaching this one fails the test: nothing on the prefix may go here.
 	cfg.Providers["openai"] = &config.Provider{BaseURL: "http://127.0.0.1:1"}
-	cfg.CassetteProvider = map[string]string{"feature": "anthropic"}
-	cfg.DefaultProvider = "openai" // even so, the pin wins
 	if err := cfg.Resolve(); err != nil {
 		t.Fatal(err)
 	}
 	s := New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), online)
 
 	// The probe, exactly as captured: prefix present, nothing else to go on.
-	for _, path := range []string{"/c/feature/api/hello", "/c/feature/v1/messages"} {
+	for _, path := range []string{"/c/anthropic/feature/api/hello", "/c/anthropic/feature/v1/messages"} {
 		r := httptest.NewRequest(http.MethodHead, onCassette(path), http.NoBody)
 		r.Header.Set("user-agent", "Bun/1.4.0")
 		w := httptest.NewRecorder()
 		s.ServeHTTP(w, r)
 		got = append(got, path)
-		if w.Code == http.StatusBadGateway {
-			t.Errorf("%s reached the wrong provider: %d %s", path, w.Code, w.Body)
+		if w.Code != http.StatusOK {
+			t.Errorf("%s did not reach the provider its prefix names: %d %s", path, w.Code, w.Body)
 		}
 	}
 	if len(got) != 2 {
@@ -442,13 +441,13 @@ func TestAPinnedProviderDecidesEveryPathOnItsPrefix(t *testing.T) {
 	}
 }
 
-// A pinned provider that is not configured is a typo, and it is refused at
-// startup rather than surfacing as a 502 on the first recorded request.
-func TestAPinCannotNameAProviderThatDoesNotExist(t *testing.T) {
+// A provider key that could not appear in a base URL is refused at startup
+// rather than sitting in the map as an entry nothing can ask for.
+func TestAProviderKeyMustBeNameableInABaseURL(t *testing.T) {
 	cfg := config.Default()
-	cfg.CassetteProvider = map[string]string{"feature": "anthropick"}
+	cfg.Providers["not a name"] = &config.Provider{BaseURL: "https://example.test"}
 	if err := cfg.Resolve(); err == nil {
-		t.Fatal("a pin naming an unconfigured provider was accepted")
+		t.Fatal("a provider key that cannot be named in a base URL was accepted")
 	}
 }
 
@@ -488,7 +487,7 @@ func TestConcurrentFirstRequestsOpenOneStore(t *testing.T) {
 		go func(i int) {
 			defer wg.Done()
 			body := fmt.Sprintf(`{"model":"m","messages":[{"role":"user","content":"turn %d"}]}`, i)
-			r := httptest.NewRequest(http.MethodPost, "/c/shared/v1/messages", strings.NewReader(body))
+			r := httptest.NewRequest(http.MethodPost, "/c/anthropic/shared/v1/messages", strings.NewReader(body))
 			s.ServeHTTP(httptest.NewRecorder(), r)
 		}(i)
 	}

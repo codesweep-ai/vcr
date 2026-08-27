@@ -192,7 +192,7 @@ func newManualCmd() *cobra.Command {
 // nothing else states in one place lives: whether the client wants a /v1 after
 // the cassette name.
 func newConfigCmd(app *App) *cobra.Command {
-	var cassette, url string
+	var cassette, provider, url string
 	var envOnly bool
 	cmd := &cobra.Command{
 		Use:   "config [AGENT]",
@@ -202,9 +202,9 @@ environment and the flags.
 
 With an agent — ` + strings.Join(agentNames(), ", ") + ` — print how to point that client at this
 cs-vcr and at one cassette: a command to run, the environment to set instead,
-and the file to pin it in. The cassette is named by a ` + config.CassettePrefix + `<name> prefix on the
-base URL, and where that goes relative to the /v1 a client appends differs by
-client, which is what this prints.
+and the file to pin it in. The provider and the cassette are named by a
+` + config.CassettePrefix + `<provider>/<cassette> prefix on the base URL, and where that goes relative
+to the /v1 a client appends differs by client, which is what this prints.
 
 Environment lines are bare VAR=VALUE, so they can be read by a shell, a dotenv
 file or a CI environment block:
@@ -229,14 +229,21 @@ file or a CI environment block:
 			if err := config.CheckCassetteName(cassette); err != nil {
 				return err
 			}
+			if provider != "" {
+				if err := config.CheckProviderName(provider); err != nil {
+					return err
+				}
+			}
 			at := url
 			if at == "" {
 				at = proxyURL(app.Cfg.Listen)
 			}
-			return printAgentConfig(cmd.OutOrStdout(), a, at, cassette, envOnly)
+			return printAgentConfig(cmd.OutOrStdout(), a, at, cassette, provider, envOnly)
 		},
 	}
 	cmd.Flags().StringVar(&cassette, "cassette", "", "cassette the printed base URL names (required)")
+	cmd.Flags().StringVar(&provider, "provider", "",
+		"provider entry the printed base URL names (default: the one this client conventionally reaches)")
 	cmd.Flags().StringVar(&url, "url", "", "where the agent reaches cs-vcr (default: derived from listen)")
 	cmd.Flags().BoolVar(&envOnly, "env-only", false, "print only the VAR=VALUE lines, for sourcing or piping")
 	return cmd

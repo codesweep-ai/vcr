@@ -178,9 +178,7 @@ func runServe(ctx context.Context, app *App, out io.Writer, offline bool, dumpMi
 	if !offline {
 		// Only a session that forwards has providers. Counting them under
 		// `replay` would describe configuration this session never read.
-		attrs = append(attrs,
-			slog.Int("providers", len(cfg.Providers)),
-			slog.Int("pinned providers", len(cfg.CassetteProvider)))
+		attrs = append(attrs, slog.Int("providers", len(cfg.Providers)))
 	}
 	app.Log.Info("serving", attrs...)
 	if offline {
@@ -328,20 +326,13 @@ func printConfig(out io.Writer, app *App) error {
 	fmt.Fprintf(tw, "listen\t%s\n", cfg.Listen)
 	fmt.Fprintf(tw, "admin\t%s\n", cfg.Admin)
 	fmt.Fprintf(tw, "cassettes\t%s\n", cfg.Cassettes)
-	fmt.Fprintf(tw, "default provider\t%s\n", orDash(cfg.DefaultProvider))
 	fmt.Fprintf(tw, "normalize ruleset\tv%d (%d strip, %d query, %d replace)\n",
 		cfg.Normalize.Version, len(cfg.Normalize.Strip), len(cfg.Normalize.Query), len(cfg.Normalize.Replace))
 	fmt.Fprintf(tw, "normalize root\t%s\n", orDash(cfg.Normalize.Root))
-	fmt.Fprintf(tw, "cassette prefix\t%s<name>\n", config.CassettePrefix)
+	fmt.Fprintf(tw, "base URL prefix\t%s<provider>/<cassette>\n", config.CassettePrefix)
 	fmt.Fprintln(tw, "\nPROVIDER\tBASE URL")
 	for _, name := range slices.Sorted(maps.Keys(cfg.Providers)) {
 		fmt.Fprintf(tw, "%s\t%s\n", name, cfg.Providers[name].BaseURL)
-	}
-	if len(cfg.CassetteProvider) > 0 {
-		fmt.Fprintln(tw, "\nCASSETTE\tPINNED PROVIDER")
-		for _, name := range slices.Sorted(maps.Keys(cfg.CassetteProvider)) {
-			fmt.Fprintf(tw, "%s\t%s\n", name, cfg.CassetteProvider[name])
-		}
 	}
 	return tw.Flush()
 }

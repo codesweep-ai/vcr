@@ -26,31 +26,27 @@ func (s Surface) Recordable() bool { return s != SurfaceUnknown }
 
 // Route is which upstream a request is going to, and which shape it is.
 type Route struct {
-	Provider string // key into Config.Providers
+	Provider string // key into Config.Providers, as the base URL named it
 	Surface  Surface
 }
 
 // routeFor is which shape a request is and, for a session that forwards, which
 // upstream it goes to.
 //
-// A replay session asks only the shape. It reads no provider configuration at
-// all — not the pins, not the default — which is what lets a recorded session
-// replay with none configured: the step it serves was chosen by the cassette
-// and the request, and there is no upstream in the picture to name.
-func (s *Server) routeFor(r *http.Request, cassette string) Route {
+// The provider is the one the base URL named, for every path on the prefix. A
+// client is configured with one base URL per provider, so the URL has already
+// answered the question — including for the bodiless startup probes, which
+// carry the prefix and nothing a guess could have read.
+//
+// A replay session asks only the shape, and the provider segment goes unread.
+// It reads no provider configuration at all, which is what lets a recorded
+// session replay with none configured: the step it serves was chosen by the
+// cassette and the request, and there is no upstream in the picture to name.
+func (s *Server) routeFor(r *http.Request, provider string) Route {
 	if !s.ReachesUpstream() {
 		return Route{Surface: surfaceOf(r)}
 	}
-	route := classify(r, s.cfg.DefaultProvider)
-	// A cassette that pins its provider has already answered the question, for
-	// every path on it: the prefix is a base URL, and a client configures one
-	// base URL per provider. Nothing about the request itself can override
-	// that, which matters because inference gets a bodiless probe wrong and
-	// sends it to the other provider.
-	if p := s.cfg.ProviderFor(cassette); p != "" {
-		route.Provider = p
-	}
-	return route
+	return Route{Provider: provider, Surface: surfaceOf(r)}
 }
 
 // surfaceOf is the API shape a request belongs to, which is a property of its
@@ -68,51 +64,6 @@ func surfaceOf(r *http.Request) Surface {
 		return SurfaceOpenAIChat
 	}
 	return SurfaceUnknown
-}
-
-// classify routes a request by path, falling back to which auth header is
-// present when the path is one cs-vcr does not model.
-//
-// Path is the stronger signal and is tried first: `/v1/messages` is the
-// Anthropic surface whether the caller is Claude Code or OpenCode pointed at
-// Anthropic, which is exactly the case not to assume away.
-//
-// The glance at the auth header reads only WHICH header is present, never its
-// value. It is routing, not credential handling: cs-vcr does not validate,
-// store, redact or replace anything a client sends.
-func classify(r *http.Request, defaultProvider string) Route {
-	switch surface := surfaceOf(r); surface {
-	case SurfaceAnthropicMessages:
-		return Route{Provider: "anthropic", Surface: surface}
-	case SurfaceOpenAIResponses, SurfaceOpenAIChat:
-		// OpenAI-compatible, which is also what OpenCode Zen and every local
-		// model server speak. The provider is whichever upstream is configured
-		// for the OpenAI shape, not necessarily OpenAI itself.
-		return Route{Provider: "openai", Surface: surface}
-	}
-	// Unrecognized path: it goes where the configuration says, and nowhere
-	// else. There is no header that reliably identifies a provider — what
-	// identified this request was the base URL the client was pointed at, and
-	// origin mode threw that away by serving every provider on one listener.
-	//
-	// Guessing does not work here. Reading a bearer token as an OpenAI client
-	// is wrong for Claude Code with a Pro/Max subscription, which sends
-	// `Authorization: Bearer` too, and its `HEAD /api/hello` startup probe
-	// sends no identifying header at all — not anthropic-version, not
-	// x-api-key, and `User-Agent: Bun/1.4.0` from the runtime's own fetch. A
-	// guess that sends one client's traffic to another provider is not worth
-	// the convenience of not writing a config line.
-	//
-	// One check survives, because it cannot misroute anything: anthropic-version
-	// is Anthropic's own API-versioning header, so a request carrying it is
-	// Anthropic's by definition. It can only keep a mixed deployment — an
-	// Anthropic client and an OpenAI one through the same listener — from
-	// sending the wrong request to the default. There is no OpenAI header with
-	// the same property, which is why the reverse is not attempted.
-	if r.Header.Get("anthropic-version") != "" || r.Header.Get("x-api-key") != "" {
-		return Route{Provider: "anthropic", Surface: SurfaceUnknown}
-	}
-	return Route{Provider: defaultProvider, Surface: SurfaceUnknown}
 }
 
 // apiPath is the path a surface is recognized by: the request path without the

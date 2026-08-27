@@ -262,18 +262,53 @@ func TestConfigRejectsACassetteNameThatIsNotOne(t *testing.T) {
 	}
 }
 
-// What a user checks after a base URL did not behave as expected: where the
-// prefix goes, and which cassettes have a provider pinned.
-func TestConfigPrintsThePrefixAndThePins(t *testing.T) {
-	cfg := "cassette_provider:\n  codex-run: openai\n"
+// What a user checks after a base URL did not behave as expected: the shape of
+// the prefix, and the provider entries a base URL can name.
+func TestConfigPrintsThePrefixAndTheProviders(t *testing.T) {
+	cfg := "providers:\n  fireworks: {base_url: https://api.fireworks.ai/inference}\n"
 	out, err := runWithConfig(t, cfg, nil, "config")
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"/c/<name>", "codex-run", "openai"} {
+	for _, want := range []string{"/c/<provider>/<cassette>", "fireworks", "api.fireworks.ai"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("config output missing %q:\n%s", want, out)
 		}
+	}
+}
+
+// A provider key is the deployment's to choose, so the printed base URL has to
+// be able to name one this client has no convention for. Fireworks is the case:
+// it speaks the OpenAI shape, and OpenCode reaches a provider with no base-URL
+// variable of its own through OPENCODE_BASE_URL.
+func TestConfigPrintsAChosenProvider(t *testing.T) {
+	out, err := runWithConfig(t, "", nil, "config", "opencode",
+		"--cassette", "build", "--provider", "fireworks", "--env-only")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "OPENCODE_BASE_URL=http://127.0.0.1:8080/c/fireworks/build/v1"
+	if !strings.Contains(out, want) {
+		t.Errorf("output does not carry %q:\n%s", want, out)
+	}
+
+	// The same flag on a client that has its own variable keeps the variable
+	// and moves only the segment.
+	out, err = runWithConfig(t, "", nil, "config", "claude",
+		"--cassette", "build", "--provider", "fireworks", "--env-only")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want = "ANTHROPIC_BASE_URL=http://127.0.0.1:8080/c/fireworks/build"
+	if !strings.Contains(out, want) {
+		t.Errorf("output does not carry %q:\n%s", want, out)
+	}
+
+	// A name no prefix could carry is refused here rather than printed into a
+	// base URL that would be refused on the first request.
+	if _, err := runWithConfig(t, "", nil, "config", "claude",
+		"--cassette", "build", "--provider", "../escape"); err == nil {
+		t.Error("a provider name that cannot appear in a base URL was printed")
 	}
 }
 
@@ -303,10 +338,11 @@ func TestReplayAndRecordAreSeparateCommands(t *testing.T) {
 func TestConfigPrintsHowToPointEachAgentAtACassette(t *testing.T) {
 	cases := []struct{ agent, wantBase string }{
 		// Claude Code appends /v1 itself, so the base URL stops at the name.
-		{"claude", "http://127.0.0.1:8080/c/build"},
-		// Codex and OpenCode are given a base URL that already carries it.
-		{"codex", "http://127.0.0.1:8080/c/build/v1"},
-		{"opencode", "http://127.0.0.1:8080/c/build/v1"},
+		{"claude", "http://127.0.0.1:8080/c/anthropic/build"},
+		// Codex and OpenCode are given a base URL that already carries it, and
+		// each names the provider its client conventionally reaches.
+		{"codex", "http://127.0.0.1:8080/c/openai/build/v1"},
+		{"opencode", "http://127.0.0.1:8080/c/anthropic/build/v1"},
 	}
 	for _, tc := range cases {
 		out, err := runWithConfig(t, "", nil, "config", tc.agent, "--cassette", "build")
@@ -338,7 +374,7 @@ func TestConfigPrintsHowToPointEachAgentAtACassette(t *testing.T) {
 	// reaches for on its own. A sourced environment missing either is one that
 	// records a session no other machine replays.
 	for _, want := range []string{
-		"ANTHROPIC_BASE_URL=http://127.0.0.1:8080/c/build",
+		"ANTHROPIC_BASE_URL=http://127.0.0.1:8080/c/anthropic/build",
 		"HTTP_PROXY=http://127.0.0.1:8080",
 		"HTTPS_PROXY=http://127.0.0.1:8080",
 		"NO_PROXY=127.0.0.1,localhost",

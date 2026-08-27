@@ -89,11 +89,11 @@ decides whether the session can spend money.
 
 ```
    agent
-     │  POST /c/refactor-auth/v1/messages   authorization: Bearer …
+     │  POST /c/anthropic/refactor-auth/v1/messages   authorization: Bearer …
      ▼
   ┌──────────────────────────────────────────────────────────────┐
-  │ identify        /c/<name> -> cassette, prefix stripped       │
-  │ classify        path, then the cassette's pinned provider    │
+  │ identify        /c/<provider>/<cassette>, prefix stripped    │
+  │ classify        surface, read off the path                   │
   │ normalize       canonical form of method, target and body    │
   │                                                              │
   │ replay          next step of the script, verified by         │
@@ -106,21 +106,22 @@ decides whether the session can spend money.
    provider
 ```
 
-**R1.** The cassette **MUST** be established first, and the prefix **MUST** be stripped before
-anything else reads the path. *Otherwise every request classifies as an unrecognized surface, and
+**R1.** The provider and the cassette **MUST** be established first, and the prefix **MUST** be
+stripped before anything else reads the path. *Otherwise every request classifies as an unrecognized surface, and
 the provider receives cs-vcr's own addressing.*
 
-**R1a.** A `/c/<name>` prefix **MUST** name the cassette directly, with nothing declaring it. A
-request carrying no prefix **MUST** be refused. *A scenario that has to be declared in a second file
+**R1a.** A `/c/<provider>/<cassette>` prefix **MUST** name both directly, with nothing declaring
+either. A request carrying no prefix, or one that names fewer than both, **MUST** be refused. *A scenario that has to be declared in a second file
 before it can run is a scenario that stops a build until two files agree about it. A default to
 absorb an unprefixed request into would undo that: a base URL missing its prefix would look like it
 worked while its traffic landed in another scenario's recording. The prefix reaches everything a
 client sends, because it is part of the base URL every request is built from. Measured on Claude
 Code's `HEAD /api/hello` preconnect, which sets no headers at all and still carries it.*
 
-**R1b.** A cassette name **MUST** be one path segment of letters, digits, dot, dash or underscore,
-beginning with a letter or digit. A name that is not **MUST** be refused. *The name arrives in a URL
-and becomes a directory, so `/c/../../etc` would otherwise read outside the store.*
+**R1b.** A name in the prefix **MUST** be one path segment of letters, digits, dot, dash or
+underscore, beginning with a letter or digit. A name that is not **MUST** be refused. *A cassette
+name arrives in a URL and becomes a directory, so `/c/anthropic/../../etc` would otherwise read
+outside the store. The provider sits on a segment of its own and is held to the same shape.*
 
 **R1c.** A cassette named by a prefix **MUST** be opened when its first request arrives. `record`
 **MUST** create one that is absent; `replay` **MUST** refuse it. *Replay creating one answers every
@@ -266,16 +267,19 @@ does not exist on this machine.*
 
 ## 6. Routing
 
-A request is routed by path first, then by the pin its cassette carries. Routing names an upstream,
-so it is a question only a session that forwards asks. Replay reads the surface off the path, which
-is all it reports by, and stops there (R4a).
+A request goes to the provider its base URL names. Routing names an upstream, so it is a question
+only a session that forwards asks. Replay reads the surface off the path, which is all it reports
+by, and stops there (R4a).
 
-| Path | Surface | Provider |
-|---|---|---|
-| `/v1/messages` or `/messages` | `anthropic.messages` | anthropic |
-| `/v1/responses` or `/responses` | `openai.responses` | openai |
-| `/v1/chat/completions` or `/chat/completions` | `openai.chat` | openai |
-| anything else | `unknown` | see below |
+The surface is the other half, and it is read from the path alone. It is what canonicalizes and keys
+a body, so replay needs it and no configuration answers it.
+
+| Path | Surface |
+|---|---|
+| `/v1/messages` or `/messages` | `anthropic.messages` |
+| `/v1/responses` or `/responses` | `openai.responses` |
+| `/v1/chat/completions` or `/chat/completions` | `openai.chat` |
+| anything else | `unknown` |
 
 **R18.** A surface **MUST** be recognized with or without the `/v1` prefix, and no other version
 prefix **MUST** be treated as `/v1`. *The version sits in the base URL a client is pointed at. Codex
@@ -284,15 +288,15 @@ signed in with ChatGPT talks to a backend whose endpoint is `/responses`, with n
 **R19.** A path cs-vcr does not model **MUST** still be proxied, recorded and replayed. *A request
 that is proxied but not recorded is one replay can never serve.*
 
-**R20.** When a cassette is pinned to a `provider`, every request on its prefix **MUST** go there,
-whatever the path.
+**R20.** Every request on a prefix **MUST** go to the provider that prefix names, whatever its path
+and whatever it carries. A provider the configuration does not hold **MUST** be refused, and the
+request **MUST NOT** be forwarded anywhere.
 
-**R21.** Otherwise an unrecognized path **MUST** be routed by the Anthropic-specific request headers
-when present, and by `default_provider` when not.
-
-*Guessing from the rest of the request does not work, and the failure is quiet. A Pro/Max
-subscription login sends `Authorization: Bearer` exactly like an OpenAI client, and Claude Code's
-`HEAD /api/hello` startup probe carries no identifying header at all.*
+*A client is configured with one base URL per provider, so the URL is where a deployment has already
+said which upstream this is. Nothing in the request says it: a Pro/Max subscription login sends
+`Authorization: Bearer` exactly like an OpenAI client, and Claude Code's `HEAD /api/hello` startup
+probe carries no identifying header at all. Naming the provider in the URL leaves its key free: a
+deployment may name an entry for the model it serves rather than for the shape it speaks.*
 
 ### 6.1 Tunnelling
 
@@ -382,14 +386,14 @@ Every error cs-vcr generates is a JSON object with `error.type`, `error.message`
 
 | `error.type` | Status | Condition |
 |---|---|---|
-| `no_cassette` | 404 | The base URL does not end in `/c/<name>`, so the request names no cassette. |
-| `bad_cassette_name` | 400 | The prefix names something that is not a cassette name. |
+| `no_cassette` | 404 | The base URL carries no `/c/<provider>/<cassette>` prefix, so the request names neither. |
+| `bad_prefix` | 400 | The prefix does not name a provider and a cassette. |
 | `unreadable_body` | 400 | The request body could not be read. |
 | `unknown_cassette` | 404 | Replay was asked for a cassette the store does not hold. |
 | `cassette_unusable` | 400 | The cassette a request named will not open, usually a version that moved. |
 | `cassette_miss` | 400 | Replay has no step for this request. |
 | `cassette_corrupt` | 400 | The index references a response file that is absent. |
-| `no_provider` | 502 | No upstream is configured for the routed provider. |
+| `unknown_provider` | 400 | The prefix names a provider this session does not have. |
 | `bad_base_url` | 502 | A provider's `base_url` will not parse. |
 | `upstream_error` | 502 | The upstream request failed. |
 
@@ -567,10 +571,6 @@ auxiliary_turns: true
 providers:
   anthropic: {base_url: https://api.anthropic.com}
   openai: {base_url: https://api.openai.com}
-default_provider: anthropic
-
-cassette_provider:
-  refactor-auth: anthropic
 
 normalize:
   version: 11
@@ -599,14 +599,8 @@ rather than a file, so it is not this case.*
 **R44a.** A provider's `base_url` **MUST** be a URL with a scheme and a host, checked at startup with
 the parser the request path uses. *Otherwise what passes validation is not what forwards.*
 
-**R45.** A `cassette_provider` key **MUST** be a valid cassette name. *It names a cassette, and a
-key no prefix can ever produce is a pin that silently never applies.*
-
-**R46.** Every provider a request could be routed to **MUST** name a configured provider, checked at
-startup. That is `default_provider` and each `cassette_provider` value. *A typo
-otherwise surfaces as a 502 partway through a recording session, and for `default_provider` that is
-the first request: the startup probes a client opens with are exactly the paths cs-vcr does not
-model.*
+**R45.** A provider key **MUST** be a valid name under R1b, checked at startup. *A base URL is how a
+request reaches a provider, so a key no prefix can ever carry is an entry nothing can ask for.*
 
 **R47.** The configuration **MUST NOT** contain a credential.
 

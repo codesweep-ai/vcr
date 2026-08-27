@@ -9,7 +9,7 @@
 ```
 cs-vcr record   [--cassettes DIR] [--listen ADDR] [--admin ADDR]
 cs-vcr replay   [--cassettes DIR] [--listen ADDR] [--admin ADDR] [--dump-misses DIR]
-                (a request names its own cassette with /c/<name> on the base URL)
+                (a request names its own provider and cassette with /c/<provider>/<cassette>)
 cs-vcr cassette ls [NAME] [--json]
 cs-vcr cassette show NAME STEP
 cs-vcr cassette verify [NAME...]
@@ -31,8 +31,9 @@ cs-vcr is an HTTP proxy that you put between an agent and its provider. It recor
 later so the run makes no provider calls. Point the agent at it with a base URL, and nothing else
 about the agent changes: it keeps its own login, which cs-vcr forwards untouched.
 
-The base URL says which cassette, by ending in `/c/<name>`. Nothing declares that name, so a second
-cassette is a second base URL and no restart. Each client appends a different amount of the API path,
+The base URL says where a request goes and which cassette it belongs to, by carrying
+`/c/<provider>/<cassette>`. Nothing declares either name, so a second cassette is a second base URL
+and no restart. Each client appends a different amount of the API path,
 so the prefix sits in a different place for each. Run `cs-vcr config <agent>` and it prints the URL
 for that one.
 
@@ -129,7 +130,7 @@ credential in the output, because cs-vcr holds none.
 
 With an agent, prints how to point that client at this cs-vcr and at one cassette. It prints a
 command to run, the environment to set instead, and the file to pin it in. The agents it knows are
-`claude`, `codex` and `opencode`. Where the `/c/<name>` prefix goes relative to the `/v1` a client
+`claude`, `codex` and `opencode`. Where the `/c/<provider>/<cassette>` prefix goes relative to the `/v1` a client
 appends differs by client, and this is what says which.
 
 The output carries the proxy settings beside the base URL. They cover the calls the base URL does
@@ -170,6 +171,7 @@ cs-vcr has the reference, with no checkout to read and no page to fetch.
 | Option | Applies to | Meaning |
 |---|---|---|
 | `--cassette NAME` | config AGENT | The cassette the printed base URL names. Required. |
+| `--provider NAME` | config AGENT | The provider entry the printed base URL names. Default: the one this client conventionally reaches. |
 | `--cassettes DIR` | record, replay | The directory holding cassettes. Default `./cassettes`. |
 | `--listen ADDR` | record, replay | Proxied port. Default `127.0.0.1:8080`. |
 | `--admin ADDR` | record, replay | Admin port, serving `/healthz`. Default `127.0.0.1:8081`. |
@@ -186,16 +188,16 @@ cs-vcr has the reference, with no checkout to read and no page to fetch.
 
 ## Pointing an agent at it
 
-Only the base URL changes, and it ends in `/c/<name>` to say which cassette the run belongs to.
-Nothing declares that name: `record` creates the cassette on the first request that asks for it, and
-`replay` serves it. How much of the API path a client appends differs, so the prefix sits in a
-different place for each. Run `cs-vcr config <agent> --cassette <name>` and it prints the exact line
-for that client.
+Only the base URL changes, and it carries `/c/<provider>/<cassette>`: the provider entry the traffic
+goes to, and the cassette the run belongs to. Nothing declares either: `record` creates the cassette
+on the first request that asks for it, and `replay` serves it. How much of the API path a client
+appends differs, so the prefix sits in a different place for each. Run
+`cs-vcr config <agent> --cassette <name>` and it prints the exact line for that client.
 
 **Claude Code** appends the version itself, so the URL stops at the cassette name:
 
 ```bash
-ANTHROPIC_BASE_URL=http://127.0.0.1:8080/c/build claude -p "add a /version endpoint"
+ANTHROPIC_BASE_URL=http://127.0.0.1:8080/c/anthropic/build claude -p "add a /version endpoint"
 ```
 
 **Codex, signed in with ChatGPT**, in `~/.codex/config.toml`:
@@ -205,7 +207,7 @@ model_provider = "cs-vcr"
 
 [model_providers.cs-vcr]
 name = "cs-vcr"
-base_url = "http://127.0.0.1:8080/c/build"
+base_url = "http://127.0.0.1:8080/c/openai/build"
 wire_api = "responses"
 requires_openai_auth = true
 ```
@@ -215,22 +217,21 @@ and `~/.config/cs-vcr/config.yaml`:
 ```yaml
 providers:
   openai: {base_url: https://chatgpt.com/backend-api/codex}
-default_provider: openai
 ```
 
 **Codex, signed in with an API key**: the same, with two changes in `config.toml`, and no cs-vcr
 config at all:
 
 ```toml
-base_url = "http://127.0.0.1:8080/c/build/v1"
+base_url = "http://127.0.0.1:8080/c/openai/build/v1"
 env_key = "OPENAI_API_KEY"
 ```
 
 **OpenCode** is given a base URL that already ends in the version:
 
 ```bash
-ANTHROPIC_BASE_URL=http://127.0.0.1:8080/c/build/v1 opencode run --model anthropic/claude-sonnet-5 "…"
-OPENAI_BASE_URL=http://127.0.0.1:8080/c/build/v1 opencode run --model openai/gpt-5 "…"
+ANTHROPIC_BASE_URL=http://127.0.0.1:8080/c/anthropic/build/v1 opencode run --model anthropic/claude-sonnet-5 "…"
+OPENAI_BASE_URL=http://127.0.0.1:8080/c/openai/build/v1 opencode run --model openai/gpt-5 "…"
 ```
 
 To pin OpenCode per project instead, put the same URL under `provider.<name>.options.baseURL` in
@@ -241,25 +242,26 @@ share one cs-vcr the same way:
 
 ```bash
 # Claude Code
-ANTHROPIC_BASE_URL=http://127.0.0.1:8080/c/$TEST claude -p "…"
+ANTHROPIC_BASE_URL=http://127.0.0.1:8080/c/anthropic/$TEST claude -p "…"
 
 # Codex, without touching config.toml
 codex exec -c 'model_provider="cs-vcr"' \
-  -c 'model_providers.cs-vcr={name="cs-vcr", base_url="http://127.0.0.1:8080/c/'$TEST'/v1", env_key="OPENAI_API_KEY", wire_api="responses"}' \
+  -c 'model_providers.cs-vcr={name="cs-vcr", base_url="http://127.0.0.1:8080/c/openai/'$TEST'/v1", env_key="OPENAI_API_KEY", wire_api="responses"}' \
   "…"
 
 # OpenCode
-ANTHROPIC_BASE_URL=http://127.0.0.1:8080/c/$TEST/v1 opencode run --model anthropic/claude-sonnet-5 "…"
+ANTHROPIC_BASE_URL=http://127.0.0.1:8080/c/anthropic/$TEST/v1 opencode run --model anthropic/claude-sonnet-5 "…"
 ```
 
-A cassette name is one path segment of letters, digits, dot, dash or underscore.
+Each name is one path segment of letters, digits, dot, dash or underscore.
 
-**Pinning a provider.** Some traffic does not route by path. An OpenAI-shaped request to a provider
-that is not OpenAI is one, so name the provider for that cassette:
+**The provider is a key you choose.** It names an entry under `providers`, and cs-vcr reads no
+meaning into it. An entry called `fireworks` may serve the Anthropic Messages API. Name it for
+whatever makes the base URL read well:
 
 ```yaml
-cassette_provider:
-  opencode-fireworks: fireworks
+providers:
+  fireworks: {base_url: https://api.fireworks.ai/inference}
 ```
 
 ## Files
@@ -309,13 +311,18 @@ name against `cs-vcr cassette ls`.
 
 **`no_cassette`**
 
-The base URL did not end in `/c/<name>`, so the request said nothing about which cassette it belongs
-to. cs-vcr refuses it rather than picking one.
+The base URL carried no `/c/<provider>/<cassette>` prefix, so the request said nothing about where it
+was going or which cassette it belongs to. cs-vcr refuses it rather than picking either.
 
-**`bad_cassette_name`**
+**`bad_prefix`**
 
-The `/c/` prefix was followed by something that is not a cassette name, or by nothing at all. A base
-URL ending in `/c/` is the usual cause.
+The `/c/` prefix does not name a provider and a cassette. A base URL ending in `/c/`, or one naming
+a single segment, is the usual cause.
+
+**`unknown_provider`**
+
+The prefix named a provider this session does not have. The message lists the ones it does; add the
+entry under `providers`, or fix the segment.
 
 **`cassette_unusable`**
 
@@ -414,7 +421,7 @@ So cs-vcr answers `CONNECT` on the same port it serves. Point `HTTP_PROXY` at it
 reaching-out arrives here too:
 
 ```
-export ANTHROPIC_BASE_URL=http://127.0.0.1:8080/c/my-cassette
+export ANTHROPIC_BASE_URL=http://127.0.0.1:8080/c/anthropic/my-cassette
 export HTTP_PROXY=http://127.0.0.1:8080
 export HTTPS_PROXY=http://127.0.0.1:8080
 export NO_PROXY=127.0.0.1,localhost
@@ -462,11 +469,11 @@ EOF
 chmod +x build.sh
 
 cs-vcr record &
-ANTHROPIC_BASE_URL=http://127.0.0.1:8080/c/build ./build.sh
+ANTHROPIC_BASE_URL=http://127.0.0.1:8080/c/anthropic/build ./build.sh
 kill -INT %1
 
 cs-vcr replay &
-ANTHROPIC_BASE_URL=http://127.0.0.1:8080/c/build ./build.sh
+ANTHROPIC_BASE_URL=http://127.0.0.1:8080/c/anthropic/build ./build.sh
 kill -INT %1
 ```
 

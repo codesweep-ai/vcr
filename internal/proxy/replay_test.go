@@ -1563,7 +1563,6 @@ func TestReplayNeedsNoProviderConfigured(t *testing.T) {
 	// A configuration that names no upstream whatsoever.
 	cfg := config.Default()
 	cfg.Providers = map[string]*config.Provider{}
-	cfg.DefaultProvider = ""
 	if err := cfg.Resolve(); err != nil {
 		t.Fatal(err)
 	}

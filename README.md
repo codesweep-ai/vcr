@@ -21,7 +21,7 @@ link against or patch, and it often runs in another VM.
 ```
 ┌────────────────┐        ┌──────────────────────────┐        ┌──────────────┐
 │  agent         │  HTTP  │  cs-vcr                  │  HTTPS │  provider    │
-│                ├───────►│  cassette by /c/<name>   ├───────►│  (Anthropic, │
+│                ├───────►│  /c/<provider>/<name>    ├───────►│  (Anthropic, │
 │  keeps its own │        │  match · record · replay │        │   OpenAI,    │
 │  login, sends  │◄───────┤  cassette store          │◄───────┤   Zen, …)    │
 │  it unchanged  │        └──────────────────────────┘        └──────────────┘
@@ -43,7 +43,7 @@ flag:
 
 ```bash
 cs-vcr record                                                  # terminal 1
-ANTHROPIC_BASE_URL=http://127.0.0.1:8080/c/build ./build.sh    # terminal 2
+ANTHROPIC_BASE_URL=http://127.0.0.1:8080/c/anthropic/build ./build.sh    # terminal 2
 ```
 
 Your agent keeps its own login, and nothing else about the build changes. Commit
@@ -51,7 +51,7 @@ Your agent keeps its own login, and nothing else about the build changes. Commit
 
 ```bash
 cs-vcr replay &
-ANTHROPIC_BASE_URL=http://127.0.0.1:8080/c/build ./build.sh
+ANTHROPIC_BASE_URL=http://127.0.0.1:8080/c/anthropic/build ./build.sh
 kill -INT %1                                              # prints the summary on the way out
 ```
 
@@ -85,7 +85,7 @@ The cassette `build` needs no setup. `record` creates it on the first request th
 build a cassette per test, or serve several agents at once, with no restart between them:
 
 ```bash
-ANTHROPIC_BASE_URL=http://127.0.0.1:8080/c/refactor-auth claude -p "…"
+ANTHROPIC_BASE_URL=http://127.0.0.1:8080/c/anthropic/refactor-auth claude -p "…"
 ```
 
 ## Two commands
@@ -147,7 +147,7 @@ $ cs-vcr config codex --cassette refactor-auth
 HTTP_PROXY=http://127.0.0.1:8080 HTTPS_PROXY=http://127.0.0.1:8080 ALL_PROXY=http://127.0.0.1:8080 \
   NO_PROXY=127.0.0.1,localhost no_proxy=127.0.0.1,localhost \
   codex exec -c 'model_provider="cs-vcr"' \
-  -c 'model_providers.cs-vcr={name="cs-vcr", base_url="http://127.0.0.1:8080/c/refactor-auth/v1", env_key="OPENAI_API_KEY", wire_api="responses"}' \
+  -c 'model_providers.cs-vcr={name="cs-vcr", base_url="http://127.0.0.1:8080/c/openai/refactor-auth/v1", env_key="OPENAI_API_KEY", wire_api="responses"}' \
 …
 ```
 
@@ -170,7 +170,7 @@ with keeps working:
 
 ```bash
 cs-vcr record                                                                         # terminal 1
-ANTHROPIC_BASE_URL=http://127.0.0.1:8080/c/build claude -p "add a /version endpoint"   # terminal 2
+ANTHROPIC_BASE_URL=http://127.0.0.1:8080/c/anthropic/build claude -p "add a /version endpoint"   # terminal 2
 ```
 
 Ctrl-C the recorder for its summary, then run the same two lines with `cs-vcr replay` in place of
@@ -187,7 +187,7 @@ model_provider = "cs-vcr"
 
 [model_providers.cs-vcr]
 name = "cs-vcr"
-base_url = "http://127.0.0.1:8080/c/codex-build"
+base_url = "http://127.0.0.1:8080/c/openai/codex-build"
 wire_api = "responses"
 requires_openai_auth = true
 ```
@@ -199,7 +199,6 @@ Send cs-vcr's OpenAI traffic to `chatgpt.com`, the host that login works against
 # `cs-vcr config` prints the path it loaded.
 providers:
   openai: {base_url: https://chatgpt.com/backend-api/codex}
-default_provider: openai          # Codex opens with GET /models, which names no provider
 ```
 
 ```bash
@@ -210,7 +209,7 @@ codex exec "add a /version endpoint"      # terminal 2
 Signed in with an API key instead, change two lines in `config.toml`:
 
 ```toml
-base_url = "http://127.0.0.1:8080/c/codex-build/v1"    # an API key session ends in /v1
+base_url = "http://127.0.0.1:8080/c/openai/codex-build/v1"    # an API key session ends in /v1
 env_key = "OPENAI_API_KEY"                             # in place of requires_openai_auth
 ```
 
@@ -226,11 +225,12 @@ cs-vcr record
 
 # Terminal 2: an Anthropic model, then an OpenAI-shaped one. One session per
 # cassette, so the two runs name two of them.
-ANTHROPIC_BASE_URL=http://127.0.0.1:8080/c/oc-anthropic/v1 opencode run --model anthropic/claude-sonnet-5 "add a /version endpoint"
-OPENAI_BASE_URL=http://127.0.0.1:8080/c/oc-openai/v1 opencode run --model openai/gpt-5 "add a /version endpoint"
+ANTHROPIC_BASE_URL=http://127.0.0.1:8080/c/anthropic/oc-anthropic/v1 opencode run --model anthropic/claude-sonnet-5 "add a /version endpoint"
+OPENAI_BASE_URL=http://127.0.0.1:8080/c/openai/oc-openai/v1 opencode run --model openai/gpt-5 "add a /version endpoint"
 ```
 
-Set the variable for the provider the model belongs to. To pin the URL per project instead, run
+Set the variable for the provider the model belongs to, and name that provider in the URL. To pin
+the URL per project instead, run
 `cs-vcr config opencode --cassette <name>` for an `opencode.json` block to paste.
 
 ## Running it

@@ -65,6 +65,10 @@ func serveInBackground(t *testing.T, args ...string) string {
 // of every request, because that is the only way a request names one.
 const testCassette = "session"
 
+// testProvider is the entry every test path routes to, and the first segment of
+// every prefix a test sends.
+const testProvider = "anthropic"
+
 // session is a serve command under test, for the cases that end it themselves
 // and read what it left behind.
 type session struct {
@@ -155,9 +159,6 @@ const unreachableProviders = `providers:
 // commands, which is the whole of the claim.
 const unusableProviders = `providers:
   anthropic: {base_url: "nonsense"}
-default_provider: nowhere
-cassette_provider:
-  session: nowhere
 `
 
 // Goal 1 asks a recorded session to replay with no provider configured. A
@@ -190,7 +191,7 @@ func TestRecordRefusesAProviderItCannotUse(t *testing.T) {
 }
 
 func postMessages(t *testing.T, addr, body string) (int, string) {
-	return postPath(t, addr, "/c/"+testCassette+"/v1/messages", body)
+	return postPath(t, addr, "/c/"+testProvider+"/"+testCassette+"/v1/messages", body)
 }
 
 // postPath is postMessages to a chosen path, for the cases where the path is
@@ -302,7 +303,7 @@ func TestCassettePrefixesSeparateAgents(t *testing.T) {
 		[]string{testCassette, "orchestrator", "worker"}, "replay").addr
 
 	// Each prefix is accepted and reported as a miss against its own cassette.
-	for _, prefix := range []string{"/c/orchestrator", "/c/worker"} {
+	for _, prefix := range []string{"/c/anthropic/orchestrator", "/c/anthropic/worker"} {
 		req, err := http.NewRequest(http.MethodPost, "http://"+addr+prefix+"/v1/messages",
 			strings.NewReader(`{"model":"m","messages":[]}`))
 		if err != nil {
@@ -327,7 +328,7 @@ func TestCassettePrefixesSeparateAgents(t *testing.T) {
 
 	// A prefix naming a cassette the store does not hold is refused, and named,
 	// rather than being created and then missing on every request.
-	req, err := http.NewRequest(http.MethodPost, "http://"+addr+"/c/never-recorded/v1/messages",
+	req, err := http.NewRequest(http.MethodPost, "http://"+addr+"/c/anthropic/never-recorded/v1/messages",
 		strings.NewReader(`{"model":"m","messages":[]}`))
 	if err != nil {
 		t.Fatal(err)
@@ -404,7 +405,7 @@ func TestStoppingWaitsForAResponseStillArriving(t *testing.T) {
 
 	got := make(chan string, 1)
 	go func() {
-		resp, err := http.Post("http://"+sess.addr+"/c/"+testCassette+"/v1/messages", "application/json",
+		resp, err := http.Post("http://"+sess.addr+"/c/"+testProvider+"/"+testCassette+"/v1/messages", "application/json",
 			strings.NewReader(`{"model":"m","messages":[{"role":"user","content":"hi"}]}`))
 		if err != nil {
 			got <- "request failed: " + err.Error()
@@ -472,7 +473,7 @@ func TestARecordingTheSessionWalkedOutOnIsReported(t *testing.T) {
 
 	sess := serveSession(t, providers(up.URL), "record")
 	go func() {
-		resp, err := http.Post("http://"+sess.addr+"/c/"+testCassette+"/v1/messages", "application/json",
+		resp, err := http.Post("http://"+sess.addr+"/c/"+testProvider+"/"+testCassette+"/v1/messages", "application/json",
 			strings.NewReader(`{"model":"m","messages":[{"role":"user","content":"hi"}]}`))
 		if err == nil {
 			_, _ = io.Copy(io.Discard, resp.Body)
@@ -566,7 +567,7 @@ func TestRecordCreatesACassetteAPrefixNames(t *testing.T) {
 	defer up.Close()
 
 	sess := serveSessionOver(t, providers(up.URL), nil, "record")
-	if status, body := postPath(t, sess.addr, "/c/on-demand/v1/messages",
+	if status, body := postPath(t, sess.addr, "/c/anthropic/on-demand/v1/messages",
 		`{"model":"m","messages":[]}`); status != http.StatusOK {
 		t.Fatalf("status = %d (%s)", status, body)
 	}
@@ -593,7 +594,7 @@ func TestRecordCreatesACassetteAPrefixNames(t *testing.T) {
 // wrong.
 func TestReplayRefusesACassetteThatWasNeverRecorded(t *testing.T) {
 	addr := serveSession(t, unreachableProviders, "replay").addr
-	status, body := postPath(t, addr, "/c/never-recorded/v1/messages", `{"model":"m","messages":[]}`)
+	status, body := postPath(t, addr, "/c/anthropic/never-recorded/v1/messages", `{"model":"m","messages":[]}`)
 	if status != http.StatusNotFound {
 		t.Errorf("status = %d, want 404 — a 502 would mean it tried the provider", status)
 	}
@@ -619,7 +620,7 @@ func TestReplayNamesACassetteItCannotRead(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	status, body := postPath(t, sess.addr, "/c/stale/v1/messages", `{"model":"m","messages":[]}`)
+	status, body := postPath(t, sess.addr, "/c/anthropic/stale/v1/messages", `{"model":"m","messages":[]}`)
 	if status != http.StatusBadRequest {
 		t.Errorf("status = %d, want 400 — a stale cassette must refuse the request, not invite a retry", status)
 	}

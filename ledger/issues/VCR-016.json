@@ -1,0 +1,20 @@
+{
+  "id": "VCR-016",
+  "title": "The provider is guessed from the request shape, so a config key may only be called anthropic or openai",
+  "type": "improvement",
+  "severity": "med",
+  "status": "in-progress",
+  "opened": "2026-08-27",
+  "resolved": null,
+  "stint": "2026-08-27 provider-in-the-URL",
+  "foundBy": "user report (host): \"Determining the target provider from the request shape (e.g. /messages -> anthropic) is very fragile. Can we instead adopt a URL convention like /c/<provider-name>/<cassette-name>\"",
+  "evidence": {
+    "commits": [],
+    "integrated": [],
+    "verified": null
+  },
+  "resolution": null,
+  "details": "`classify` maps a surface to a hardcoded provider name. `/messages` becomes `anthropic`, and `/responses` and `/chat/completions` become `openai`. A provider entry is reachable by path only if it is called one of those two names. Every other name needs a workaround, and this repository's own scenario matrix carries both of them.\n\n`opencode-fireworks` pins its cassette. `test/agents/scenario.go` says why: \"Fireworks is not a provider cs-vcr routes to by path, every OpenAI-shaped request looks the same\". `claude-code-fireworks` avoids the pin by naming a Fireworks endpoint `anthropic`, so its config key states a vendor its `base_url` contradicts.\n\nThe two workarounds rest on a third mechanism. `default_provider` absorbs whatever neither the path nor the Anthropic-specific headers identified. Absorbing is what rule R1a refuses for the cassette, on the grounds that \"a default to absorb it into would make a mistyped base URL look like it worked\". A request that lands on the wrong provider is forwarded there with the client's credential attached, and recorded as though it were the answer.\n\nThe request already carries one name the operator chose, which is the cassette prefix. Carrying the provider beside it as `/c/<provider>/<cassette>` states what the client is pointed at. That retires `default_provider`, `cassette_provider` and `classify` together. The surface is unaffected. It is read from the path because that is what keys the body, and replay reads it while reading no provider configuration at all.",
+  "notes": [],
+  "links": []
+}

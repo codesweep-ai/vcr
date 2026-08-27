@@ -108,9 +108,10 @@ func startProxy(ctx context.Context, ws *workspace, cassettes, configPath string
 	if offline {
 		mode = "replay"
 	}
-	// The agent's base URL carries a /c/<scenario> prefix, which is the only way
-	// a request names a cassette: one that arrived without it would be refused,
-	// which is what makes this an assertion rather than a configuration.
+	// The agent's base URL carries a /c/<provider>/<scenario> prefix, which is
+	// the only way a request names its upstream and its cassette: one that
+	// arrived without it would be refused, which is what makes this an
+	// assertion rather than a configuration.
 	//
 	// An empty configPath means no --config at all, which is the replay half:
 	// it reads no provider configuration, so it has nothing to be given and
@@ -157,8 +158,9 @@ func (p *proxy) origin() string {
 	return "http://127.0.0.1:" + strconv.Itoa(p.port)
 }
 
-func (p *proxy) baseURL(cassette, suffix string) string {
-	return "http://127.0.0.1:" + strconv.Itoa(p.port) + config.CassettePrefix + cassette + suffix
+func (p *proxy) baseURL(provider, cassette, suffix string) string {
+	return "http://127.0.0.1:" + strconv.Itoa(p.port) +
+		config.CassettePrefix + provider + "/" + cassette + suffix
 }
 
 func (p *proxy) waitReady() error {

@@ -35,22 +35,28 @@ func TestLoadRejectsUnknownKeys(t *testing.T) {
 	}
 }
 
-// The prefix names the cassette with nothing declared anywhere, and the
-// remainder is what upstream sees. Splitting is on segment boundaries, so
-// /c/featurex is its own cassette rather than the cassette `feature`.
+// The prefix names the provider and the cassette with nothing declared
+// anywhere, and the remainder is what upstream sees. Splitting is on segment
+// boundaries, so /c/anthropicx is its own provider rather than `anthropic`.
 func TestRouteCassette(t *testing.T) {
-	cases := []struct{ path, name, rest string }{
-		{"/c/feature/v1/messages", "feature", "/v1/messages"},
-		{"/c/feat/v1/messages", "feat", "/v1/messages"},
-		{"/c/featurex/v1/messages", "featurex", "/v1/messages"},
-		// A bare prefix is a valid request for the provider's root.
-		{"/c/feature", "feature", "/"},
+	cases := []struct{ path, provider, name, rest string }{
+		{"/c/anthropic/feature/v1/messages", "anthropic", "feature", "/v1/messages"},
+		{"/c/openai/feat/v1/responses", "openai", "feat", "/v1/responses"},
+		{"/c/anthropicx/featurex/v1/messages", "anthropicx", "featurex", "/v1/messages"},
+		// A provider named for the model it serves rather than for the API
+		// shape it speaks: cs-vcr reads no meaning into the key.
+		{"/c/fireworks/feature/v1/messages", "fireworks", "feature", "/v1/messages"},
+		// Nothing after the cassette is a valid request for the provider's root.
+		{"/c/anthropic/feature", "anthropic", "feature", "/"},
 	}
 	for _, tc := range cases {
-		name, rest, err := RouteCassette(tc.path)
+		provider, name, rest, err := RouteCassette(tc.path)
 		if err != nil {
 			t.Errorf("RouteCassette(%q): %v", tc.path, err)
 			continue
+		}
+		if provider != tc.provider {
+			t.Errorf("RouteCassette(%q) provider = %q, want %q", tc.path, provider, tc.provider)
 		}
 		if name != tc.name {
 			t.Errorf("RouteCassette(%q) cassette = %q, want %q", tc.path, name, tc.name)
@@ -61,12 +67,29 @@ func TestRouteCassette(t *testing.T) {
 	}
 }
 
+// A prefix that names one segment where two are needed is the shape a base URL
+// written for an earlier release has. It is refused, and not as a URL that
+// carries no prefix at all: the reader has to be sent to the segment that is
+// missing rather than to the front of the string.
+func TestRouteCassetteRefusesAPrefixThatStopsEarly(t *testing.T) {
+	for _, path := range []string{"/c/build", "/c/build/"} {
+		_, _, _, err := RouteCassette(path)
+		if err == nil {
+			t.Errorf("RouteCassette(%q) accepted a prefix naming one segment", path)
+			continue
+		}
+		if errors.Is(err, ErrNoCassette) {
+			t.Errorf("RouteCassette(%q) reported it as carrying no prefix: %v", path, err)
+		}
+	}
+}
+
 // A base URL that never named a cassette is refused rather than absorbed into a
 // default. Absorbing it is how a mistyped base URL looks like it worked while
 // its traffic lands somewhere else.
 func TestRouteCassetteRefusesAPathThatNamesNone(t *testing.T) {
 	for _, path := range []string{"/v1/messages", "/api/hello", "/", "/cx/build/v1/messages"} {
-		_, _, err := RouteCassette(path)
+		_, _, _, err := RouteCassette(path)
 		if !errors.Is(err, ErrNoCassette) {
 			t.Errorf("RouteCassette(%q) err = %v, want ErrNoCassette", path, err)
 		}
@@ -82,16 +105,24 @@ func TestRouteCassetteRejectsWhatIsNotAName(t *testing.T) {
 		if err := CheckCassetteName(name); err == nil {
 			t.Errorf("CheckCassetteName(%q) accepted it", name)
 		}
-		got, _, err := RouteCassette("/c/" + name + "/v1/messages")
+		_, got, _, err := RouteCassette("/c/anthropic/" + name + "/v1/messages")
 		if err == nil {
-			t.Errorf("RouteCassette(/c/%s/…) accepted it as %q", name, got)
+			t.Errorf("RouteCassette(/c/anthropic/%s/…) accepted it as %q", name, got)
 		}
 		if errors.Is(err, ErrNoCassette) {
-			t.Errorf("RouteCassette(/c/%s/…) reported it as naming none, which sends the reader to the wrong half of the URL", name)
+			t.Errorf("RouteCassette(/c/anthropic/%s/…) reported it as naming none, which sends the reader to the wrong half of the URL", name)
+		}
+		// The provider sits on a segment of its own and is held to the same
+		// shape, so the traversal it could otherwise carry is refused there too.
+		if err := CheckProviderName(name); err == nil {
+			t.Errorf("CheckProviderName(%q) accepted it", name)
+		}
+		if _, _, _, err := RouteCassette("/c/" + name + "/build/v1/messages"); err == nil {
+			t.Errorf("RouteCassette(/c/%s/build/…) accepted it as a provider", name)
 		}
 	}
 	// A bare prefix is refused too: a base URL ending in /c/ is unfinished.
-	if _, _, err := RouteCassette("/c/"); err == nil {
+	if _, _, _, err := RouteCassette("/c/"); err == nil {
 		t.Error("a base URL ending in the bare prefix was accepted")
 	}
 	for _, name := range []string{"build", "claude-code-api-key", "run_2", "a.b", "A1"} {
@@ -101,32 +132,14 @@ func TestRouteCassetteRejectsWhatIsNotAName(t *testing.T) {
 	}
 }
 
-// A pinned provider is what a bodiless startup probe follows, so a typo in one
-// has to fail at startup rather than as a 502 partway through a recording.
-func TestCassetteProviderMustNameAProviderThatExists(t *testing.T) {
+// A provider key is what a base URL names, so a key that could not appear in
+// one is refused at startup rather than reaching the request path as a name
+// nothing can ask for.
+func TestResolveChecksProviderNames(t *testing.T) {
 	c := Default()
-	c.CassetteProvider = map[string]string{"build": "anthropick"}
+	c.Providers["not a name"] = &Provider{BaseURL: "https://example.test"}
 	if err := c.Resolve(); err == nil {
-		t.Fatal("a pin naming no configured provider was accepted")
-	}
-	c.CassetteProvider = map[string]string{"build": "anthropic"}
-	if err := c.Resolve(); err != nil {
-		t.Fatalf("a pin naming a configured provider was refused: %v", err)
-	}
-	if got := c.ProviderFor("build"); got != "anthropic" {
-		t.Errorf("ProviderFor(build) = %q, want anthropic", got)
-	}
-	if got := c.ProviderFor("other"); got != "" {
-		t.Errorf("ProviderFor(other) = %q, want no pin", got)
-	}
-}
-
-// The pin is keyed by cassette, so its key is checked the way a prefix is.
-func TestCassetteProviderChecksItsKey(t *testing.T) {
-	c := Default()
-	c.CassetteProvider = map[string]string{"../escape": "anthropic"}
-	if err := c.Resolve(); err == nil {
-		t.Fatal("a pin keyed by something that is not a cassette name was accepted")
+		t.Fatal("a provider key that cannot be named in a base URL was accepted")
 	}
 }
 
@@ -157,22 +170,6 @@ func TestResolveChecksEveryBaseURL(t *testing.T) {
 	}
 }
 
-// default_provider is where a request goes when its path says nothing, which
-// includes the startup probes a client opens a session with. A typo there is
-// therefore a 502 on the FIRST request, so it is caught at startup — the same
-// rule a cassette_provider pin already followed.
-func TestResolveChecksDefaultProvider(t *testing.T) {
-	c := Default()
-	c.DefaultProvider = "anthropick"
-	if err := c.Resolve(); err == nil {
-		t.Fatal("default_provider naming no configured provider was accepted")
-	}
-	c.DefaultProvider = "anthropic"
-	if err := c.Resolve(); err != nil {
-		t.Fatalf("default_provider naming a configured provider was refused: %v", err)
-	}
-}
-
 // A recorded session has to replay with no provider configured at all, so the
 // checks that keep a recording session from failing halfway through are not
 // replay's to pass. Shared, they refused to start a replay session over a
@@ -180,8 +177,6 @@ func TestResolveChecksDefaultProvider(t *testing.T) {
 func TestResolveOfflineChecksNoProvider(t *testing.T) {
 	c := Default()
 	c.Providers["anthropic"] = &Provider{BaseURL: "nonsense"}
-	c.DefaultProvider = "nowhere"
-	c.CassetteProvider = map[string]string{"build": "nowhere"}
 	if err := c.Resolve(); err == nil {
 		t.Fatal("a session that forwards accepted a provider it could not reach")
 	}

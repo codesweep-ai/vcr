@@ -29,12 +29,18 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// CassettePrefix marks a base URL that names the cassette its traffic belongs
-// to. `ANTHROPIC_BASE_URL=http://127.0.0.1:8080/c/refactor-auth` makes every
-// request on it a step of the cassette `refactor-auth`, and running a second
-// agent against a second cassette is a second base URL and nothing else.
+// CassettePrefix opens a base URL that names where a request is going and which
+// cassette it belongs to.
+// `ANTHROPIC_BASE_URL=http://127.0.0.1:8080/c/anthropic/refactor-auth` sends
+// every request on it to the `anthropic` provider as a step of the cassette
+// `refactor-auth`, and running a second agent against a second cassette is a
+// second base URL and nothing else.
 //
-// The prefix names the cassette directly. There is nothing to declare: a
+// Both segments are named rather than inferred. A client is configured with one
+// base URL per provider, so whoever writes that URL already knows which
+// upstream it is for; saying it there leaves the provider a free key into
+// `providers`, which a deployment may name for the model it serves rather than
+// for the API shape it speaks. Nothing has to be declared ahead of time: a
 // scenario exists as soon as an agent asks for it, which is what lets one
 // cs-vcr serve a whole suite of them.
 //
@@ -42,28 +48,36 @@ import (
 // but a base URL and touches no credential. An agent keeps whatever login it
 // already had, including a Claude Pro/Max subscription, which has no token
 // anyone else could mint or check. Measured, not assumed: Claude Code 2.1.232
-// with a prefixed base URL issues `POST /c/refactor-auth/v1/messages?beta=true`
+// with a prefixed base URL issues `POST /c/anthropic/refactor-auth/v1/messages?beta=true`
 // and carries the prefix on everything, including the bodiless startup probes
 // that set no headers a request could have been identified by instead.
 const CassettePrefix = "/c/"
 
-// cassetteName is what a cassette may be called. It is checked rather than
-// trusted because the name arrives in a URL and becomes a directory: without
-// this, `/c/../../etc` is a request that reads outside the cassette store.
+// segmentName is what a name in the prefix may look like. It is checked rather
+// than trusted because a cassette name arrives in a URL and becomes a
+// directory: without this, `/c/anthropic/../../etc` is a request that reads
+// outside the cassette store.
 //
 // One path segment, starting with an alphanumeric so that a name can never be
 // read as a flag or a dotfile.
-var cassetteName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
+var segmentName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
 
 // CheckCassetteName reports whether a name may be used as a cassette.
-func CheckCassetteName(name string) error {
+func CheckCassetteName(name string) error { return checkSegment("cassette", name) }
+
+// CheckProviderName reports whether a name may be used as a provider. It
+// arrives in the prefix on a segment of its own, so it is held to the shape a
+// cassette is.
+func CheckProviderName(name string) error { return checkSegment("provider", name) }
+
+func checkSegment(kind, name string) error {
 	switch {
 	case name == "":
-		return errors.New("a cassette name is required")
+		return fmt.Errorf("a %s name is required", kind)
 	case len(name) > 128:
-		return fmt.Errorf("cassette name is %d characters; the limit is 128", len(name))
-	case !cassetteName.MatchString(name):
-		return fmt.Errorf("cassette name %q must be one segment of letters, digits, dot, dash or underscore, starting with a letter or digit", name)
+		return fmt.Errorf("%s name is %d characters; the limit is 128", kind, len(name))
+	case !segmentName.MatchString(name):
+		return fmt.Errorf("%s name %q must be one segment of letters, digits, dot, dash or underscore, starting with a letter or digit", kind, name)
 	}
 	return nil
 }
@@ -78,38 +92,14 @@ type Config struct {
 	Listen string `yaml:"listen"`
 	Admin  string `yaml:"admin"`
 
-	// Providers keyed by name (anthropic, openai, ...). Every upstream
+	// Providers keyed by the name a base URL reaches them under. Every upstream
 	// base URL is configurable, so a corporate gateway, OpenCode Zen or a local
 	// model server substitutes without a code change.
+	//
+	// The key is the deployment's to choose. It is what the prefix names, and
+	// cs-vcr reads no meaning into it: a `fireworks` entry serving the Anthropic
+	// Messages API is a deployment cs-vcr has nothing to say about.
 	Providers map[string]*Provider `yaml:"providers"`
-
-	// DefaultProvider takes a request whose provider cannot be told from the
-	// request itself. Claude Code opens a session with `HEAD /api/hello`, and
-	// that probe carries no header at all — not anthropic-version, not
-	// x-api-key, not even the SDK's user agent, because it is a bare preconnect
-	// the runtime issues with a method and nothing else. Nothing in it
-	// identifies where it was going. What identified it was the base URL the
-	// client was pointed at, and origin mode has already thrown that away by
-	// serving every provider on one listener.
-	//
-	// So it is configuration rather than a guess: an unidentifiable request
-	// goes where this says, and a deployment that fronts a different provider
-	// says so once.
-	DefaultProvider string `yaml:"default_provider"`
-
-	// CassetteProvider pins the provider for one cassette, whatever the path
-	// says. It is keyed by cassette name because a cassette is reached through
-	// one prefix, a prefix is a base URL, and a client configures one base URL
-	// per provider — so naming the cassette has already named the provider.
-	//
-	// It exists for recording several agents at once. Codex opens with
-	// `GET /models`, which cs-vcr does not model and which carries nothing
-	// Anthropic-shaped, so without a pin it follows DefaultProvider into
-	// whichever provider the other agent is using.
-	//
-	// Empty leaves a request to be routed by its path, then by its headers,
-	// then by DefaultProvider.
-	CassetteProvider map[string]string `yaml:"cassette_provider"`
 
 	// Lookahead is how far past the expected step replay will look for an entry
 	// that matches, which is what lets a client pipeline: Codex issues two
@@ -553,9 +543,8 @@ func Default() *Config {
 			"anthropic": {BaseURL: "https://api.anthropic.com"},
 			"openai":    {BaseURL: "https://api.openai.com"},
 		},
-		DefaultProvider: "anthropic",
-		Lookahead:       8,
-		AuxiliaryTurns:  new(true),
+		Lookahead:      8,
+		AuxiliaryTurns: new(true),
 		Normalize: Normalize{
 			// The version is a counter, not a claim about how many rulesets exist:
 			// it is recorded in every cassette so that changing a rule refuses the
@@ -843,21 +832,17 @@ func (c *Config) ResolveOffline() error {
 }
 
 // resolveProviders checks every upstream a request could be routed to, because
-// the alternative is a 502 partway through a recording session — and for
-// default_provider that is the FIRST request, since the startup probes a client
-// opens with are exactly the paths cs-vcr does not model.
+// the alternative is a 502 partway through a recording session.
 func (c *Config) resolveProviders() error {
 	for name, p := range c.Providers {
+		if err := CheckProviderName(name); err != nil {
+			return err
+		}
 		if err := checkBaseURL(name, p.BaseURL); err != nil {
 			return err
 		}
 	}
-	if c.DefaultProvider != "" {
-		if _, ok := c.Providers[c.DefaultProvider]; !ok {
-			return fmt.Errorf("default_provider: no provider named %q is configured", c.DefaultProvider)
-		}
-	}
-	return c.resolvePins()
+	return nil
 }
 
 // checkBaseURL refuses an upstream that could not be dialled, using the same
@@ -876,68 +861,62 @@ func checkBaseURL(name, raw string) error {
 	return nil
 }
 
-// resolvePins checks the provider pins before the first request, so a typo
-// fails at startup rather than as a 502 partway through a recording session.
-func (c *Config) resolvePins() error {
-	for name, provider := range c.CassetteProvider {
-		if err := CheckCassetteName(name); err != nil {
-			return fmt.Errorf("cassette_provider: %w", err)
-		}
-		if _, ok := c.Providers[provider]; !ok {
-			return fmt.Errorf("cassette_provider %s: no provider named %q is configured", name, provider)
-		}
-	}
-	return nil
-}
-
-// ProviderFor is the provider pinned for a cassette, or "" where none is.
-func (c *Config) ProviderFor(cassette string) string {
-	if cassette == "" {
-		return ""
-	}
-	return c.CassetteProvider[cassette]
-}
-
 // ErrNoCassette is a request whose base URL does not say which cassette it
 // belongs to. It is reported rather than absorbed: a request that was going to
 // be recorded, and was not, is the failure this mechanism exists to prevent,
 // and a default to absorb it into would make a mistyped base URL look like it
 // worked.
 var ErrNoCassette = errors.New("the base URL must end in " + CassettePrefix +
-	"<name> to say which cassette this request belongs to")
+	"<provider>/<cassette> to say which upstream this request is for and which cassette it belongs to")
 
-// RouteCassette reads a request path and answers two things: the cassette the
-// request belongs in, and the path upstream should see.
+// RouteCassette reads a request path and answers three things: the provider the
+// request is for, the cassette it belongs in, and the path upstream should see.
 //
-// The name is checked rather than trusted, because it arrives in a URL and is
-// about to become a directory.
-func RouteCassette(path string) (name, rest string, err error) {
-	named, rest, prefixed := splitCassettePath(path)
+// Both names are checked rather than trusted. They arrive in a URL, and the
+// cassette is about to become a directory.
+func RouteCassette(path string) (provider, name, rest string, err error) {
+	provider, name, rest, prefixed := splitCassettePath(path)
 	if !prefixed {
-		return "", "", ErrNoCassette
+		return "", "", "", ErrNoCassette
 	}
-	if err := CheckCassetteName(named); err != nil {
-		return "", "", err
+	if name == "" {
+		// One segment where two are needed. Reported against the shape rather
+		// than as a missing cassette name, because this is what a base URL
+		// written for an earlier release looks like.
+		return "", "", "", fmt.Errorf("the base URL names %q and stops: %s<provider>/<cassette> names the upstream and then the cassette",
+			provider, CassettePrefix)
 	}
-	return named, rest, nil
+	if err := CheckProviderName(provider); err != nil {
+		return "", "", "", err
+	}
+	if err := CheckCassetteName(name); err != nil {
+		return "", "", "", err
+	}
+	return provider, name, rest, nil
 }
 
-// splitCassettePath takes the cassette name off a path, on a segment boundary
-// so that /c/featurex is not read as the cassette `feature`.
+// splitCassettePath takes the provider and cassette names off a path, on
+// segment boundaries so that /c/anthropicx is not read as the provider
+// `anthropic`.
 //
-// A bare prefix reports an empty name rather than no prefix at all, so a base
-// URL ending in /c/ is refused as the mistake it is instead of quietly becoming
-// the session's cassette.
-func splitCassettePath(path string) (name, rest string, prefixed bool) {
+// A prefix that stops after one segment reports an empty cassette name rather
+// than no prefix at all, so a base URL that names too little is refused as the
+// mistake it is instead of quietly becoming the session's cassette.
+func splitCassettePath(path string) (provider, name, rest string, prefixed bool) {
 	if !strings.HasPrefix(path, CassettePrefix) {
-		return "", path, false
+		return "", "", path, false
 	}
 	after := path[len(CassettePrefix):]
-	if slash := strings.IndexByte(after, '/'); slash >= 0 {
-		return after[:slash], after[slash:], true
+	slash := strings.IndexByte(after, '/')
+	if slash < 0 {
+		return after, "", "/", true
 	}
-	// Nothing after the name: a request for the provider's own root.
-	return after, "/", true
+	provider, after = after[:slash], after[slash+1:]
+	if slash = strings.IndexByte(after, '/'); slash >= 0 {
+		return provider, after[:slash], after[slash:], true
+	}
+	// Nothing after the cassette: a request for the provider's own root.
+	return provider, after, "/", true
 }
 
 // A *bool is how a yaml key tells "absent" from "false". A plain bool cannot,

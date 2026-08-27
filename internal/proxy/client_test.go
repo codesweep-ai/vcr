@@ -5,27 +5,29 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
-
-	"github.com/codesweep-ai/vcr/internal/config"
 )
 
-func forwardServer(t *testing.T, tune func(*config.Config), upstream http.HandlerFunc) (*Server, *logBuffer) {
+// forwardServer is a recording session over one upstream: the default provider
+// set, both entries pointing at it. A test that needs them to differ builds its
+// own with newTestServer.
+func forwardServer(t *testing.T, upstream http.HandlerFunc) (*Server, *logBuffer) {
 	t.Helper()
-	return newTestServer(t, online, tune, upstream)
+	return newTestServer(t, online, nil, upstream)
 }
 
 // Identity from the connection, not the credential, and nothing declares it.
 // Verified against the real client: Claude Code 2.1.232 with a base URL of
-// http://host:8080/c/feature issues POST /c/feature/v1/messages?beta=true.
+// http://host:8080/c/anthropic/feature issues
+// POST /c/anthropic/feature/v1/messages?beta=true.
 func TestPrefixNamesTheCassetteAndIsStrippedUpstream(t *testing.T) {
 	var gotPath string
-	s, _ := forwardServer(t, nil, func(w http.ResponseWriter, r *http.Request) {
+	s, _ := forwardServer(t, func(w http.ResponseWriter, r *http.Request) {
 		gotPath = r.URL.Path
 	})
 
 	for _, tc := range []struct{ path, cassette string }{
-		{"/c/feature/v1/messages", "feature"},
-		{"/c/ci-run-88/v1/messages", "ci-run-88"},
+		{"/c/anthropic/feature/v1/messages", "feature"},
+		{"/c/anthropic/ci-run-88/v1/messages", "ci-run-88"},
 	} {
 		gotPath = ""
 		w := post(t, s, tc.path, map[string]string{"authorization": "Bearer x"}, `{}`)
@@ -53,45 +55,52 @@ func TestPrefixNamesTheCassetteAndIsStrippedUpstream(t *testing.T) {
 // request and the filesystem.
 func TestATraversingCassetteNameIsRefusedAndDoesNotDial(t *testing.T) {
 	reached := false
-	s, logs := forwardServer(t, nil, func(w http.ResponseWriter, r *http.Request) { reached = true })
+	s, logs := forwardServer(t, func(w http.ResponseWriter, r *http.Request) { reached = true })
 
-	for _, path := range []string{"/c/../v1/messages", "/c/..%2F..%2Fetc/v1/messages", "/c//v1/messages"} {
+	for _, path := range []string{
+		"/c/anthropic/../v1/messages", "/c/anthropic/..%2F..%2Fetc/v1/messages", "/c/anthropic//v1/messages",
+		// The provider segment is the other door to the same place.
+		"/c/../feature/v1/messages", "/c//feature/v1/messages",
+	} {
 		w := post(t, s, path, map[string]string{}, `{}`)
 		if w.Code != http.StatusBadRequest {
 			t.Errorf("%s: status = %d, want 400 (body %s)", path, w.Code, w.Body)
 		}
-		if !strings.Contains(w.Body.String(), "bad_cassette_name") {
-			t.Errorf("%s: error type is not bad_cassette_name: %s", path, w.Body)
+		if !strings.Contains(w.Body.String(), "bad_prefix") {
+			t.Errorf("%s: error type is not bad_prefix: %s", path, w.Body)
 		}
 	}
 	if reached {
 		t.Error("a request naming an unusable cassette reached upstream")
 	}
-	if !strings.Contains(logs.String(), "does not name a usable cassette") {
+	if !strings.Contains(logs.String(), "does not name a usable provider and cassette") {
 		t.Errorf("not logged: %s", logs)
 	}
-	if n := s.Snapshot().UnknownCassette; n != 3 {
-		t.Errorf("UnknownCassette = %d, want 3", n)
+	if n := s.Snapshot().UnknownCassette; n != 5 {
+		t.Errorf("UnknownCassette = %d, want 5", n)
 	}
 }
 
-// A base URL that stops at the bare prefix is a composition mistake, and it is
-// refused rather than guessed at.
-func TestABarePrefixIsRefused(t *testing.T) {
-	s, _ := forwardServer(t, nil, nil)
-	if w := post(t, s, "/c/", map[string]string{}, `{}`); w.Code != http.StatusBadRequest {
-		t.Fatalf("status = %d, want 400 (body %s)", w.Code, w.Body)
+// A base URL that stops before it has named both segments is a composition
+// mistake, and it is refused rather than guessed at. The one-segment form is
+// what a base URL written for an earlier release looks like.
+func TestAnIncompletePrefixIsRefused(t *testing.T) {
+	s, _ := forwardServer(t, nil)
+	for _, path := range []string{"/c/", "/c/feature", "/c/feature/"} {
+		if w := post(t, s, path, map[string]string{}, `{}`); w.Code != http.StatusBadRequest {
+			t.Errorf("%s: status = %d, want 400 (body %s)", path, w.Code, w.Body)
+		}
 	}
 }
 
 // Splitting is on segment boundaries, so two cassettes whose names share a
 // prefix stay separate.
 func TestPrefixMatchingIsOnSegmentBoundaries(t *testing.T) {
-	s, _ := forwardServer(t, nil, func(w http.ResponseWriter, r *http.Request) {})
+	s, _ := forwardServer(t, func(w http.ResponseWriter, r *http.Request) {})
 
 	for _, tc := range []struct{ path, cassette string }{
-		{"/c/feat/v1/messages", "feat"},
-		{"/c/feature/v1/messages", "feature"},
+		{"/c/anthropic/feat/v1/messages", "feat"},
+		{"/c/anthropic/feature/v1/messages", "feature"},
 	} {
 		if w := post(t, s, tc.path, map[string]string{}, `{}`); w.Code != http.StatusOK {
 			t.Fatalf("%s: status = %d", tc.path, w.Code)
@@ -112,7 +121,7 @@ func TestPrefixMatchingIsOnSegmentBoundaries(t *testing.T) {
 // depends on it fails.
 func TestAPathThatNamesNoCassetteIsRefusedAndDoesNotDial(t *testing.T) {
 	reached := false
-	s, logs := forwardServer(t, nil, func(w http.ResponseWriter, r *http.Request) { reached = true })
+	s, logs := forwardServer(t, func(w http.ResponseWriter, r *http.Request) { reached = true })
 
 	for _, path := range []string{"/v1/messages", "/api/hello", "/cx/build/v1/messages"} {
 		r := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{}`))
@@ -133,7 +142,7 @@ func TestAPathThatNamesNoCassetteIsRefusedAndDoesNotDial(t *testing.T) {
 	if reached {
 		t.Error("a request naming no cassette reached upstream")
 	}
-	if !strings.Contains(logs.String(), "does not name a usable cassette") {
+	if !strings.Contains(logs.String(), "does not name a usable provider and cassette") {
 		t.Errorf("not logged: %s", logs)
 	}
 	if n := s.Snapshot().UnknownCassette; n != 3 {
@@ -141,17 +150,15 @@ func TestAPathThatNamesNoCassetteIsRefusedAndDoesNotDial(t *testing.T) {
 	}
 }
 
-// A pinned provider takes every request on its cassette, whatever the path.
-// This is what a bodiless probe follows: nothing in `GET /models` says which
-// provider it was going to.
-func TestAPinnedProviderTakesEveryPathOnItsCassette(t *testing.T) {
+// The prefix takes every request on it, whatever the path. This is what a
+// bodiless probe follows: nothing in `GET /models` says which provider it was
+// going to.
+func TestThePrefixTakesEveryPathOnTheCassette(t *testing.T) {
 	var seen []string
-	s, _ := forwardServer(t, func(c *config.Config) {
-		c.DefaultProvider = "anthropic"
-		c.CassetteProvider = map[string]string{"codex-run": "openai"}
-	}, func(w http.ResponseWriter, r *http.Request) { seen = append(seen, r.URL.Path) })
+	s, _ := forwardServer(t,
+		func(w http.ResponseWriter, r *http.Request) { seen = append(seen, r.URL.Path) })
 
-	for _, path := range []string{"/c/codex-run/models", "/c/codex-run/v1/responses"} {
+	for _, path := range []string{"/c/openai/codex-run/models", "/c/openai/codex-run/v1/responses"} {
 		if w := post(t, s, path, map[string]string{}, `{}`); w.Code != http.StatusOK {
 			t.Fatalf("%s: status = %d (body %s)", path, w.Code, w.Body)
 		}

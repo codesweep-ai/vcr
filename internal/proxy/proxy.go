@@ -255,20 +255,20 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// for a caller with no token to be identified by, and rides on every
 	// request a client makes — including the bodiless startup probes, which
 	// carry no header that could have said it instead.
-	name, rest, err := config.RouteCassette(r.URL.Path)
+	provider, name, rest, err := config.RouteCassette(r.URL.Path)
 	if err != nil {
 		s.count(func(st *Stats) { st.Requests++; st.UnknownCassette++; st.Rejected++ })
-		s.log.Warn("rejected: the base URL does not name a usable cassette",
+		s.log.Warn("rejected: the base URL does not name a usable provider and cassette",
 			slog.String("path", r.URL.Path), slog.String("remote", r.RemoteAddr),
 			slog.Any("err", err))
 		// Two different mistakes. No prefix at all is a base URL that was never
-		// finished, and a prefix that is not a name is one that was finished
-		// wrongly; a reader fixing either needs to be told which.
+		// finished, and a prefix that does not name both segments is one that
+		// was finished wrongly; a reader fixing either needs to be told which.
 		if errors.Is(err, config.ErrNoCassette) {
 			writeError(w, http.StatusNotFound, "no_cassette", err.Error())
 			return
 		}
-		writeError(w, http.StatusBadRequest, "bad_cassette_name", err.Error())
+		writeError(w, http.StatusBadRequest, "bad_prefix", err.Error())
 		return
 	}
 	// Upstream must see the provider's own path, not cs-vcr's addressing, and
@@ -276,7 +276,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// request would classify as an unrecognized surface.
 	stripCassettePrefix(r, rest)
 
-	route := s.routeFor(r, name)
+	route := s.routeFor(r, provider)
 	s.count(func(st *Stats) {
 		st.Requests++
 		st.BySurface[string(route.Surface)]++
@@ -378,8 +378,12 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// name one.
 	prov, err := s.provider(route.Provider)
 	if err != nil {
-		s.log.Error("no upstream configured", slog.String("provider", route.Provider))
-		writeError(w, http.StatusBadGateway, "no_provider", err.Error())
+		s.log.Error("the base URL named a provider this session does not have",
+			slog.String("provider", route.Provider), slog.String("cassette", name))
+		s.count(func(st *Stats) { st.Rejected++ })
+		// 400 rather than 502, for the reason reportMiss sets out below: a
+		// Stainless SDK retries a 5xx, and no retry adds a provider entry.
+		writeError(w, http.StatusBadRequest, "unknown_provider", err.Error())
 		return
 	}
 
@@ -636,9 +640,22 @@ func explain(miss *cassette.Miss, target string) string {
 func (s *Server) provider(name string) (*config.Provider, error) {
 	p, ok := s.cfg.Providers[name]
 	if !ok {
-		return nil, fmt.Errorf("no upstream configured for provider %q", name)
+		return nil, fmt.Errorf("no provider named %q is configured, and %s%s/ on the base URL asked for it (configured: %s)",
+			name, config.CassettePrefix, name, strings.Join(s.providerNames(), ", "))
 	}
 	return p, nil
+}
+
+// providerNames is what this session can route to, sorted, for the reply to a
+// request that named something else. A reader who mistyped a base URL is one
+// list away from the spelling that works.
+func (s *Server) providerNames() []string {
+	out := make([]string, 0, len(s.cfg.Providers))
+	for name := range s.cfg.Providers {
+		out = append(out, name)
+	}
+	sort.Strings(out)
+	return out
 }
 
 // recordCtx is what forward needs to know to record what passes through it.

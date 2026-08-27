@@ -77,11 +77,16 @@ func newTestServer(t *testing.T, offline bool, tune func(*config.Config), upstre
 // ARE about naming write their own paths, and onCassette leaves those alone.
 const testCassette = "session"
 
+// testProvider is the entry every test path routes to. Both providers in the
+// default configuration point at the same upstream, so the segment is about
+// what the URL says rather than about where the bytes go.
+const testProvider = "anthropic"
+
 func onCassette(path string) string {
 	if strings.HasPrefix(path, config.CassettePrefix) {
 		return path
 	}
-	return config.CassettePrefix + testCassette + path
+	return config.CassettePrefix + testProvider + "/" + testCassette + path
 }
 
 func post(t *testing.T, s *Server, path string, hdr map[string]string, body string) *httptest.ResponseRecorder {
@@ -241,45 +246,88 @@ func TestRoutingBySurface(t *testing.T) {
 		for k, v := range c.hdr {
 			r.Header.Set(k, v)
 		}
-		if got := classify(r, "anthropic").Surface; got != c.surface {
-			t.Errorf("classify(%s) = %s, want %s", c.path, got, c.surface)
+		if got := surfaceOf(r); got != c.surface {
+			t.Errorf("surfaceOf(%s) = %s, want %s", c.path, got, c.surface)
 		}
 	}
 }
 
-// An unrecognized path goes where the configuration says. No header identifies
-// a provider well enough to guess from: a Pro/Max subscription login sends
-// `Authorization: Bearer` exactly like an OpenAI client, so reading that as
-// OpenAI sends an Anthropic client's startup probe to api.openai.com.
+// The provider is the one the base URL named, for every path on the prefix and
+// whatever the request carries.
 //
-// The one exception cannot misroute anything: anthropic-version is Anthropic's
-// own API-versioning header, so a request carrying it is Anthropic's by
-// definition, and honouring it only helps a listener serving both.
-func TestUnknownPathGoesToTheConfiguredProvider(t *testing.T) {
+// Two halves, and each has to hold on its own. A path cs-vcr does not model has
+// no shape to route by: Claude Code's startup probe arrives as the runtime's
+// own fetch with nothing Anthropic about it. And a header cannot stand in for
+// one, because a Pro/Max subscription login sends `Authorization: Bearer`
+// exactly like an OpenAI client. The prefix answers both, because a client is
+// configured with one base URL per provider.
+func TestTheBaseURLNamesTheProvider(t *testing.T) {
+	reached := make(chan string, 8)
+	upstream := func(name string) *httptest.Server {
+		up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			reached <- name
+			_, _ = io.WriteString(w, `{}`)
+		}))
+		t.Cleanup(up.Close)
+		return up
+	}
+	anthropic, openai := upstream("anthropic"), upstream("openai")
+	s, _ := newTestServer(t, online, func(c *config.Config) {
+		c.Providers["anthropic"] = &config.Provider{BaseURL: anthropic.URL}
+		c.Providers["openai"] = &config.Provider{BaseURL: openai.URL}
+	}, func(w http.ResponseWriter, _ *http.Request) {})
+
 	cases := []struct {
-		hdr      map[string]string
-		dflt     string
-		provider string
+		path, want string
+		hdr        map[string]string
 	}{
-		// Definitional, so honoured whatever the default is.
-		{map[string]string{"authorization": "Bearer oat", "anthropic-version": "2023-06-01"}, "openai", "anthropic"},
-		{map[string]string{"x-api-key": "sk-ant"}, "openai", "anthropic"},
-		// A bearer token says nothing: it is what BOTH clients send.
-		{map[string]string{"authorization": "Bearer sk-oai"}, "anthropic", "anthropic"},
-		{map[string]string{"authorization": "Bearer sk-oai"}, "openai", "openai"},
-		// Claude Code's startup probe, exactly as it arrives: the runtime's own
-		// fetch, with nothing Anthropic about it. Guessing sends it to OpenAI;
-		// the configured provider is the only thing that can be right.
-		{map[string]string{"user-agent": "Bun/1.4.0", "accept": "*/*"}, "anthropic", "anthropic"},
+		// A modelled path, on each prefix.
+		{"/c/anthropic/session/v1/messages", "anthropic", nil},
+		{"/c/openai/session/v1/responses", "openai", nil},
+		// A path with no shape to route by, on each prefix. This is the probe.
+		{"/c/anthropic/session/api/hello", "anthropic", map[string]string{"user-agent": "Bun/1.4.0"}},
+		{"/c/openai/session/models", "openai", map[string]string{"user-agent": "Bun/1.4.0"}},
+		// Headers that used to decide it, sent against the other prefix: the
+		// URL wins, so a client cannot steer its own traffic to a second
+		// upstream by what it sends.
+		{"/c/openai/session/api/hello", "openai", map[string]string{"anthropic-version": "2023-06-01"}},
+		{"/c/openai/session/v1/messages", "openai", map[string]string{"x-api-key": "sk-ant"}},
+		{"/c/anthropic/session/v1/responses", "anthropic", map[string]string{"authorization": "Bearer sk-oai"}},
 	}
 	for _, c := range cases {
-		r := httptest.NewRequest(http.MethodGet, onCassette("/api/hello"), http.NoBody)
-		for k, v := range c.hdr {
-			r.Header.Set(k, v)
+		if w := post(t, s, c.path, c.hdr, `{}`); w.Code != http.StatusOK {
+			t.Fatalf("%s: status = %d (%s)", c.path, w.Code, w.Body)
 		}
-		if got := classify(r, c.dflt).Provider; got != c.provider {
-			t.Errorf("classify(/api/hello) with %v, default %s = %s, want %s", c.hdr, c.dflt, got, c.provider)
+		if got := <-reached; got != c.want {
+			t.Errorf("%s reached %s, want %s", c.path, got, c.want)
 		}
+	}
+}
+
+// A provider the base URL names and this session does not have is a base URL
+// typed wrongly, so it is refused with the spelling that would work — and with
+// a status no SDK retries, because no retry adds a provider entry.
+func TestAProviderTheConfigurationLacksIsRefused(t *testing.T) {
+	reached := false
+	s, logs := forwardServer(t, func(w http.ResponseWriter, _ *http.Request) { reached = true })
+
+	w := post(t, s, "/c/anthropick/session/v1/messages", nil, `{}`)
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want 400 (%s)", w.Code, w.Body)
+	}
+	if !strings.Contains(w.Body.String(), "unknown_provider") {
+		t.Errorf("error type is not unknown_provider: %s", w.Body)
+	}
+	// The reply names what this session does have, because the reader of it is
+	// the person who wrote the base URL.
+	if !strings.Contains(w.Body.String(), "anthropic") {
+		t.Errorf("the error does not name a configured provider: %s", w.Body)
+	}
+	if reached {
+		t.Error("a request naming an unconfigured provider reached upstream")
+	}
+	if !strings.Contains(logs.String(), "named a provider this session does not have") {
+		t.Errorf("not logged: %s", logs)
 	}
 }
 

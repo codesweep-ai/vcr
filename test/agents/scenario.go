@@ -44,6 +44,11 @@ type scenario struct {
 	// model is pinned. An agent that picks its own default sends a different
 	// request the day that default moves.
 	model string
+	// provider is the cs-vcr provider entry this scenario's base URL names. It
+	// is a key into vcrConfig's `providers`, and a deployment names it for
+	// whatever it likes: `claude-code-fireworks` reaches Fireworks through an
+	// entry called `anthropic`, because that is the API shape it speaks.
+	provider string
 	// vcrConfig is this scenario's cs-vcr configuration: where the provider it
 	// talks to actually lives. It is the RECORDING half's, and only its: every
 	// key in it is a provider setting, and replay reads none of them.
@@ -195,7 +200,8 @@ func claudeCode(name, auth, key, model, upstream string) scenario {
 		login: login, keyFrom: key, keyAs: keyAs, upstream: upstream,
 		// Claude Code appends the whole API path to what it is given.
 		urlSuffix: "",
-		vcrConfig: "providers:\n  anthropic: {base_url: " + upstream + "}\ndefault_provider: anthropic\n",
+		provider:  "anthropic",
+		vcrConfig: "providers:\n  anthropic: {base_url: " + upstream + "}\n",
 		needs:     needs,
 		prepare: func(sc scenario, ws *workspace, c credential, m mode, _ string) error {
 			// The account state Claude Code would otherwise build on its first
@@ -312,7 +318,8 @@ func codexChatGPT() scenario {
 		// A ChatGPT login is accepted by the ChatGPT backend, whose endpoint is
 		// /responses with no version prefix — so the base URL carries none.
 		urlSuffix: "",
-		vcrConfig: "providers:\n  openai: {base_url: https://chatgpt.com/backend-api/codex}\ndefault_provider: openai\n",
+		provider:  "openai",
+		vcrConfig: "providers:\n  openai: {base_url: https://chatgpt.com/backend-api/codex}\n",
 		needs: func(getenv func(string) string) (credential, error) {
 			p := codexAuthPath(getenv)
 			if _, err := os.Stat(p); err != nil {
@@ -341,7 +348,8 @@ func codexAPIKey() scenario {
 		// With a key the traffic goes to the versioned API, so the base URL ends
 		// in /v1 and cs-vcr's openai provider stays where it points by default.
 		urlSuffix: "/v1",
-		vcrConfig: "providers:\n  openai: {base_url: https://api.openai.com}\ndefault_provider: openai\n",
+		provider:  "openai",
+		vcrConfig: "providers:\n  openai: {base_url: https://api.openai.com}\n",
 		needs:     keyCredential("OPENAI_API_KEY", "OPENAI_API_KEY"),
 		prepare: func(_ scenario, ws *workspace, _ credential, _ mode, base string) error {
 			return ws.write(".codex/config.toml",
@@ -421,14 +429,10 @@ func fakeCodexLogin() string {
 // openCode is one OpenCode provider. It is the only client here that reaches
 // three of them, so the provider is a parameter rather than a scenario each.
 func openCode(name, auth, model, provider, upstream, key string) scenario {
-	// Fireworks is not a provider cs-vcr routes to by path — every OpenAI-shaped
-	// request looks the same — so this cassette pins it instead, and every path
-	// on the cassette goes there whatever the path says.
+	// One entry, named the way the base URL names it. A provider cs-vcr has no
+	// shape of its own for — Fireworks speaks the OpenAI one — needs nothing
+	// more than that: the prefix says where every path on the cassette goes.
 	config := fmt.Sprintf("providers:\n  %s: {base_url: %s}\n", provider, upstream)
-	config += "default_provider: " + provider + "\n"
-	if provider != "anthropic" && provider != "openai" {
-		config += fmt.Sprintf("cassette_provider:\n  %s: %s\n", name, provider)
-	}
 	return scenario{
 		name: name, bin: "opencode", auth: auth, model: model, upstream: upstream,
 		// Each of these providers reads the key from the variable it is named
@@ -436,6 +440,7 @@ func openCode(name, auth, model, provider, upstream, key string) scenario {
 		keyFrom: key, keyAs: key,
 		// OpenCode ends the base URL it is given with the API version.
 		urlSuffix: "/v1",
+		provider:  provider,
 		vcrConfig: config,
 		needs:     keyCredential(key, key),
 		prepare: func(_ scenario, ws *workspace, _ credential, _ mode, base string) error {
