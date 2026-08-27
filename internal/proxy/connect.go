@@ -42,9 +42,10 @@ import (
 // deliberately absent — Codex reaches it, but an agent's tools reach it far
 // more, and nothing it returns has been seen to change a prompt.
 var defaultBlockedHosts = []string{
-	"api.anthropic.com", // Claude Code's OAuth session check
-	"chatgpt.com",       // Codex's subscription transport
-	"ab.chatgpt.com",    // Codex's experiment assignment
+	"api.anthropic.com",  // Claude Code's OAuth session check
+	"chatgpt.com",        // Codex's subscription transport
+	"ab.chatgpt.com",     // Codex's experiment assignment
+	"models.opencode.ai", // OpenCode's model catalog
 }
 
 // tunnelRefusal reports why a host may not be tunnelled, or "" to allow it.
