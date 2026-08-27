@@ -33,15 +33,10 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      # The three tools `make check` shells out to. golangci-lint is pinned
-      # because it gains checks between releases: unpinned, somebody else's
-      # release becomes a red build on a pull request that touched nothing.
-      - name: linters
-        run: |
-          set -euo pipefail
-          go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.13.1
-          go install golang.org/x/tools/cmd/deadcode@latest
-          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+      # No linter install step: golangci-lint, deadcode and actionlint are pinned
+      # as Go tools, so the gates build them from the module cache at the
+      # versions this repository records. An unpinned linter would turn somebody
+      # else's release into a red build on a pull request that touched nothing.
 
       # fmt, vet, the Go linters and the unit tests: the same target a
       # contributor runs before pushing (CONTRIBUTING.md).
@@ -71,6 +66,22 @@ jobs:
         with:
           version: "~> v2"
           args: check
+
+  # An invalid workflow file fails the run with zero jobs and no annotation in
+  # the API, which is the least legible failure the forge produces. actionlint
+  # is pinned as a Go tool in go.mod, so a clean `make actionlint` on a laptop
+  # means a clean one here. Extra runner labels it does not know about live in
+  # .github/actionlint.yaml.
+  actionlint:
+    name: workflows
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - run: make actionlint
 
   # The prose rules from CONTRIBUTING.md, checked by cs-lint. Its own job
   # because it needs no matrix and builds nothing of this repository, so it
