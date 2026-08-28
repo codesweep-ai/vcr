@@ -3,17 +3,19 @@
   "title": "A partial normalize block silently drops the rules cs-vcr ships",
   "type": "defect",
   "severity": "high",
-  "status": "open",
+  "status": "closed",
   "foundBy": "session agent, wiring cs-vcr into the cs-sandbox agent test tiers",
   "opened": "2026-08-28",
-  "resolved": null,
-  "stint": null,
+  "resolved": "2026-08-28",
+  "stint": "2026-08-28 cs-sandbox agent replay tiers",
   "evidence": {
-    "commits": [],
+    "commits": [
+      "dd707d5"
+    ],
     "integrated": [],
-    "verified": null
+    "verified": "go test ./internal/config/ -run 'Extend|Replacing' -count=1: PASS, 3 tests. And measured on the built binary: a file declaring `normalize.extend.replace` with one rule takes `cs-vcr config` to `v12 (7 strip, 1 query, 11 replace)`, where the same rule under `normalize.replace` takes it to 1 and prints `replaces the shipped replace (use normalize.extend to add instead)`. make test-smoke: 8 of 8 committed fixtures replay, so no cassette key moved."
   },
-  "resolution": null,
+  "resolution": "`normalize.extend` appends to the shipped rules for each field, after them. The names directly under `normalize` still replace, because a deployment may mean that, and a session now reports which fields it replaced at startup and in `cs-vcr config`. `calibrate` proposes the `extend` form, and the manual's rule-writing advice uses it.",
   "details": "`Load` decodes a config file into `Default()`, and a YAML sequence replaces the slice it decodes into rather than appending to it. So `normalize.volatile: [my.path]` leaves the ruleset with one volatile path instead of five.\n\nMeasured on the pinned build. A file declaring a single `replace` rule took `cs-vcr config` from `v12 (7 strip, 1 query, 10 replace)` to `v12 (7 strip, 1 query, 1 replace)`.\n\nIt matters because the manual tells people to do exactly this. \"Making a real agent run replayable\" says to declare a path under `normalize.volatile`, and `calibrate` prints a `normalize.volatile` block to paste. Following either instruction drops the four shipped volatile rules, which are what let a multi-turn session replay at all: every tool result becomes part of the key, and the first request carrying anything the world answered misses.\n\nThe damage is silent twice over. Nothing reports that a shipped rule was dropped, and the cassette still records `normalize_version: 12`, so `cassette verify` passes on a cassette keyed under rules no other deployment applies.\n\nA caller who wants to add one rule has to restate every shipped rule for that field, by copying them out of `internal/config/config.go`. Two projects already do: cs-campaign restates two captures, and the cs-sandbox agent tiers restate the same two.",
   "notes": [],
   "links": []

@@ -3,17 +3,19 @@
   "title": "The pod manifest shows a base URL that the build would refuse",
   "type": "defect",
   "severity": "low",
-  "status": "open",
+  "status": "closed",
   "foundBy": "session agent, reading deploy/vcr.yaml",
   "opened": "2026-08-28",
-  "resolved": null,
-  "stint": null,
+  "resolved": "2026-08-28",
+  "stint": "2026-08-28 cs-sandbox agent replay tiers",
   "evidence": {
-    "commits": [],
+    "commits": [
+      "dd707d5"
+    ],
     "integrated": [],
-    "verified": null
+    "verified": "grep for a one-segment /c/ form across the tracked yaml and markdown: no hits left. make refs: 0 errors."
   },
-  "resolution": null,
+  "resolution": "The comment shows `/c/anthropic/build` and says both segments are required, naming `bad_prefix` as what a one-segment URL gets.",
   "details": "`deploy/vcr.yaml` tells the reader to end a base URL in `/c/<name>`, and shows `ANTHROPIC_BASE_URL=http://127.0.0.1:8080/c/build`.\n\nThe prefix has carried two segments since the provider became part of it. A URL with one segment is refused as `bad_prefix`, so a reader who copies the line gets a pod that serves nothing and an error naming a rule the file never mentioned.\n\nIt is the only place the old one-segment form survives.",
   "notes": [],
   "links": [

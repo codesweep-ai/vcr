@@ -3,17 +3,19 @@
   "title": "record tunnels a client to a provider that replay refuses",
   "type": "defect",
   "severity": "med",
-  "status": "open",
+  "status": "closed",
   "foundBy": "session agent, reading tunnelRefusal while wiring the cs-sandbox agent tiers",
   "opened": "2026-08-28",
-  "resolved": null,
-  "stint": null,
+  "resolved": "2026-08-28",
+  "stint": "2026-08-28 cs-sandbox agent replay tiers",
   "evidence": {
-    "commits": [],
+    "commits": [
+      "dd707d5"
+    ],
     "integrated": [],
-    "verified": null
+    "verified": "go test ./internal/proxy/ -run Connect -count=1: PASS, including TestConnectRefusesProvidersInBothModes, which asserts api.openai.com is refused while recording as well as while replaying."
   },
-  "resolution": null,
+  "resolution": "`tunnelRefusal` refuses the configured providers in both modes. Replay needed it to keep its own promise; recording needs it because a tunnel is piped rather than stored, so a model call arriving as CONNECT reaches the provider without being recorded. SPEC R32 covers both, and the manual names the four phone-home hosts it had been reporting as three.",
   "details": "`tunnelRefusal` refuses the configured providers only when the session is offline, so `replay` refuses `api.openai.com` and `api.fireworks.ai` while `record` carries a client straight to them.\n\nThat breaks the property every cassette rests on: the two halves have to ask the same question. A side call refused during replay and answered during recording changes the prompt that follows it, and the miss surfaces far from the cause.\n\nIt is also a hole in recording on its own terms. A CONNECT to a provider is a model call that went around the base URL, so it reaches the provider without passing through the recorder. The cassette does not contain it, and the replay cannot serve it. Refusing it while recording is what makes the recording complete.\n\nThe manual has the same gap, from the other side. \"The calls a base URL does not govern\" says the tunnel refuses three hosts and names them. The build refuses four: `models.opencode.ai` joined the list and the prose did not. Neither the prose nor the list mentions that replay refuses the providers as well.",
   "notes": [],
   "links": []
