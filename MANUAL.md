@@ -257,13 +257,21 @@ ANTHROPIC_BASE_URL=http://127.0.0.1:8080/c/anthropic/$TEST/v1 opencode run --mod
 
 Each name is one path segment of letters, digits, dot, dash or underscore.
 
+**cs-vcr ships three providers**, so a run against one of them needs no configuration file:
+
+| Provider | Endpoint |
+|---|---|
+| `anthropic` | `https://api.anthropic.com` |
+| `openai` | `https://api.openai.com` |
+| `fireworks` | `https://api.fireworks.ai/inference` |
+
 **The provider is a key you choose.** It names an entry under `providers`, and cs-vcr reads no
-meaning into it. An entry called `fireworks` may serve the Anthropic Messages API. Name it for
-whatever makes the base URL read well:
+meaning into it. An entry called `fireworks` may serve the Anthropic Messages API. Add one for
+anything the three above do not cover, and name it for whatever makes the base URL read well:
 
 ```yaml
 providers:
-  fireworks: {base_url: https://api.fireworks.ai/inference}
+  gateway: {base_url: https://llm.example.internal}
 ```
 
 ## Files

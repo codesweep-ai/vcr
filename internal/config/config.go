@@ -532,9 +532,13 @@ const (
 	rootBarePlaceholder = "<ROOT-BARE>"
 )
 
-// Default is the configuration before any file, environment or flag is
-// applied. The provider set is populated because a proxy that knows no
-// providers is useless, and these are the ones that must be routed.
+// Default is the configuration before any file, environment or flag is applied.
+//
+// The provider set is populated because a proxy that knows no providers is
+// useless. These three are the ones this project records against, each at the
+// endpoint that serves its own API, so a deployment reaching one of them needs
+// no configuration file. A file adds an entry for anything else: a gateway, a
+// local model server, or a second endpoint of a provider already here.
 func Default() *Config {
 	return &Config{
 		Cassettes: "cassettes",
@@ -543,6 +547,7 @@ func Default() *Config {
 		Providers: map[string]*Provider{
 			"anthropic": {BaseURL: "https://api.anthropic.com"},
 			"openai":    {BaseURL: "https://api.openai.com"},
+			"fireworks": {BaseURL: "https://api.fireworks.ai/inference"},
 		},
 		Lookahead:      8,
 		AuxiliaryTurns: new(true),

@@ -245,10 +245,11 @@ func writeCassette(t *testing.T, dir, request string) {
 	}
 }
 
-// The name becomes a directory, so it is checked wherever it is written — in
-// the file as well as on a base URL.
+// The name becomes a directory, so it is checked wherever it is written — on
+// the flag that prints a base URL as well as on the base URL itself.
 func TestConfigRejectsACassetteNameThatIsNotOne(t *testing.T) {
-	if _, err := runWithConfig(t, "cassette: ../escape\n", nil, "config"); err == nil {
+	if _, err := runWithConfig(t, "", nil, "config", "claude",
+		"--cassette", "../escape", "--provider", "anthropic"); err == nil {
 		t.Fatal("a traversing cassette name was accepted")
 	}
 }
@@ -256,12 +257,14 @@ func TestConfigRejectsACassetteNameThatIsNotOne(t *testing.T) {
 // What a user checks after a base URL did not behave as expected: the shape of
 // the prefix, and the provider entries a base URL can name.
 func TestConfigPrintsThePrefixAndTheProviders(t *testing.T) {
-	cfg := "providers:\n  fireworks: {base_url: https://api.fireworks.ai/inference}\n"
+	cfg := "providers:\n  gateway: {base_url: https://gateway.example.test}\n"
 	out, err := runWithConfig(t, cfg, nil, "config")
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"/c/<provider>/<cassette>", "fireworks", "api.fireworks.ai"} {
+	// The three that ship, and the one this file added.
+	for _, want := range []string{"/c/<provider>/<cassette>",
+		"anthropic", "openai", "fireworks", "gateway", "gateway.example.test"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("config output missing %q:\n%s", want, out)
 		}

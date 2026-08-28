@@ -306,8 +306,9 @@ func prefixCassetteServer(t *testing.T, root string, offline bool, upstream http
 	t.Cleanup(up.Close)
 
 	cfg := config.Default()
-	cfg.Providers["anthropic"] = &config.Provider{BaseURL: up.URL}
-	cfg.Providers["openai"] = &config.Provider{BaseURL: up.URL}
+	for name := range cfg.Providers {
+		cfg.Providers[name] = &config.Provider{BaseURL: up.URL}
+	}
 	if err := cfg.Resolve(); err != nil {
 		t.Fatal(err)
 	}
@@ -416,9 +417,11 @@ func TestThePrefixDecidesEveryPathOnIt(t *testing.T) {
 	t.Cleanup(up.Close)
 
 	cfg := config.Default()
+	// Reaching anything but the prefix's own provider fails the test.
+	for name := range cfg.Providers {
+		cfg.Providers[name] = &config.Provider{BaseURL: "http://127.0.0.1:1"}
+	}
 	cfg.Providers["anthropic"] = &config.Provider{BaseURL: up.URL}
-	// Reaching this one fails the test: nothing on the prefix may go here.
-	cfg.Providers["openai"] = &config.Provider{BaseURL: "http://127.0.0.1:1"}
 	if err := cfg.Resolve(); err != nil {
 		t.Fatal(err)
 	}
@@ -456,8 +459,9 @@ func TestConcurrentFirstRequestsOpenOneStore(t *testing.T) {
 	t.Cleanup(up.Close)
 
 	cfg := config.Default()
-	cfg.Providers["anthropic"] = &config.Provider{BaseURL: up.URL}
-	cfg.Providers["openai"] = &config.Provider{BaseURL: up.URL}
+	for name := range cfg.Providers {
+		cfg.Providers[name] = &config.Provider{BaseURL: up.URL}
+	}
 	if err := cfg.Resolve(); err != nil {
 		t.Fatal(err)
 	}

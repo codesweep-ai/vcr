@@ -562,6 +562,10 @@ that is missing.
 Every setting is optional, and so is the file: cs-vcr runs with none at all. Flags beat the
 environment, which beats the file.
 
+The `providers` above are the ones cs-vcr ships, each at the endpoint that serves its own API, so a
+deployment reaching one of them writes no file. An entry is added for anything else: a gateway, a
+local model server, or a second endpoint of a provider already there.
+
 ```yaml
 listen: 127.0.0.1:8080
 admin: 127.0.0.1:8081
@@ -572,6 +576,7 @@ auxiliary_turns: true
 providers:
   anthropic: {base_url: https://api.anthropic.com}
   openai: {base_url: https://api.openai.com}
+  fireworks: {base_url: https://api.fireworks.ai/inference}
 
 normalize:
   version: 11

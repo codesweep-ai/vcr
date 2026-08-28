@@ -58,8 +58,9 @@ func newTestServer(t *testing.T, offline bool, tune func(*config.Config), upstre
 	t.Cleanup(up.Close)
 
 	cfg := config.Default()
-	cfg.Providers["anthropic"] = &config.Provider{BaseURL: up.URL}
-	cfg.Providers["openai"] = &config.Provider{BaseURL: up.URL}
+	for name := range cfg.Providers {
+		cfg.Providers[name] = &config.Provider{BaseURL: up.URL}
+	}
 	if tune != nil {
 		tune(cfg)
 	}
