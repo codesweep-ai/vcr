@@ -21,6 +21,10 @@
     {
       "date": "2026-08-27",
       "text": "Two follow-ups this left alone. The claude-code-fireworks scenario can now name its provider entry `fireworks` instead of `anthropic`, which needs a re-record because the entry name is recorded as cassette metadata. And a config file carrying default_provider or cassette_provider now fails at startup under rule R43, which is the migration this change asks of anyone upgrading."
+    },
+    {
+      "date": "2026-08-27",
+      "text": "Followed up in review. The claude-code-fireworks scenario now names its provider entry `fireworks`, so the entry no longer states a vendor its base_url contradicts. The cassettes still carry `anthropic` as recorded metadata until they are recorded again. The printer's provider is an argument rather than a per-client default, and the prefix is one word in the code as well: Prefix, RoutePrefix, ErrNoPrefix, and the no_prefix and bad_prefix replies."
     }
   ],
   "links": []

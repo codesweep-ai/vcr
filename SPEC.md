@@ -107,12 +107,13 @@ decides whether the session can spend money.
 ```
 
 **R1.** The provider and the cassette **MUST** be established first, and the prefix **MUST** be
-stripped before anything else reads the path. *Otherwise every request classifies as an unrecognized surface, and
-the provider receives cs-vcr's own addressing.*
+stripped before anything else reads the path. *Otherwise every request classifies as an unrecognized
+surface, and the provider receives cs-vcr's own addressing.*
 
 **R1a.** A `/c/<provider>/<cassette>` prefix **MUST** name both directly, with nothing declaring
-either. A request carrying no prefix, or one that names fewer than both, **MUST** be refused. *A scenario that has to be declared in a second file
-before it can run is a scenario that stops a build until two files agree about it. A default to
+either. A request carrying no prefix, or one that names fewer than both, **MUST** be refused. *A
+scenario that has to be declared in a second file before it can run is a scenario that stops a build
+until two files agree about it. A default to
 absorb an unprefixed request into would undo that: a base URL missing its prefix would look like it
 worked while its traffic landed in another scenario's recording. The prefix reaches everything a
 client sends, because it is part of the base URL every request is built from. Measured on Claude
@@ -386,7 +387,7 @@ Every error cs-vcr generates is a JSON object with `error.type`, `error.message`
 
 | `error.type` | Status | Condition |
 |---|---|---|
-| `no_cassette` | 404 | The base URL carries no `/c/<provider>/<cassette>` prefix, so the request names neither. |
+| `no_prefix` | 404 | The base URL carries no `/c/<provider>/<cassette>` prefix, so the request names neither. |
 | `bad_prefix` | 400 | The prefix does not name a provider and a cassette. |
 | `unreadable_body` | 400 | The request body could not be read. |
 | `unknown_cassette` | 404 | Replay was asked for a cassette the store does not hold. |

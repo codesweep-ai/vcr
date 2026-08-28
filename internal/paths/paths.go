@@ -20,7 +20,7 @@ import (
 
 const app = "cs-vcr"
 
-// Config is the config file: providers, provider pins, the normalization ruleset.
+// Config is the config file: providers and the normalization ruleset.
 //
 // named reports whether someone pointed at that file outright, which is what
 // makes a missing one an error rather than the ordinary case. CS_VCR_CONFIG is

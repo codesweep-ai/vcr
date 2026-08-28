@@ -140,8 +140,8 @@ Each client appends a different amount of the API path, so the cassette prefix s
 place for each. Ask cs-vcr where it goes, and copy the line it prints:
 
 ```console
-$ cs-vcr config codex --cassette refactor-auth
-# Codex → cassette "refactor-auth" on http://127.0.0.1:8080
+$ cs-vcr config codex --cassette refactor-auth --provider openai
+# Codex → cassette "refactor-auth" on the openai provider, at http://127.0.0.1:8080
 
 # Run it:
 HTTP_PROXY=http://127.0.0.1:8080 HTTPS_PROXY=http://127.0.0.1:8080 ALL_PROXY=http://127.0.0.1:8080 \
@@ -160,7 +160,7 @@ The blocks below leave them out to keep the settings under discussion visible. E
 they apply to all three:
 
 ```bash
-set -a; . <(cs-vcr config claude --cassette build --env-only); set +a
+set -a; . <(cs-vcr config claude --cassette build --provider anthropic --env-only); set +a
 ```
 
 ### 1. Claude Code
@@ -231,7 +231,8 @@ OPENAI_BASE_URL=http://127.0.0.1:8080/c/openai/oc-openai/v1 opencode run --model
 
 Set the variable for the provider the model belongs to, and name that provider in the URL. To pin
 the URL per project instead, run
-`cs-vcr config opencode --cassette <name>` for an `opencode.json` block to paste.
+`cs-vcr config opencode --cassette <name> --provider <name>` for an `opencode.json` block to
+paste.
 
 ## Running it
 

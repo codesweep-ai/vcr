@@ -96,8 +96,9 @@ type Server struct {
 // CI log shows and what decides the exit code.
 type Stats struct {
 	Requests int `json:"requests"`
-	// UnknownCassette counts requests whose base URL named a cassette cs-vcr
-	// could not use: a name that is not a name, or one the store does not hold.
+	// UnknownCassette counts requests whose base URL did not reach a cassette
+	// cs-vcr could use: a prefix that names neither or names one wrongly, or a
+	// cassette the store does not hold.
 	// Worth its own counter because it looks like silence rather than like an
 	// error — the agent was configured, it sent what it was told to, and
 	// nothing was recorded.
@@ -250,12 +251,13 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.serveConnect(w, r)
 		return
 	}
-	// WHICH CASSETTE first, and from the connection: a /c/<name> prefix on the
-	// base URL names it. That costs a client nothing but its base URL, works
-	// for a caller with no token to be identified by, and rides on every
-	// request a client makes — including the bodiless startup probes, which
-	// carry no header that could have said it instead.
-	provider, name, rest, err := config.RouteCassette(r.URL.Path)
+	// WHERE IT IS GOING and WHICH CASSETTE first, and from the connection: a
+	// /c/<provider>/<cassette> prefix on the base URL names both. That costs a
+	// client nothing but its base URL, works for a caller with no token to be
+	// identified by, and rides on every request a client makes — including the
+	// bodiless startup probes, which carry no header that could have said it
+	// instead.
+	provider, name, rest, err := config.RoutePrefix(r.URL.Path)
 	if err != nil {
 		s.count(func(st *Stats) { st.Requests++; st.UnknownCassette++; st.Rejected++ })
 		s.log.Warn("rejected: the base URL does not name a usable provider and cassette",
@@ -264,8 +266,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// Two different mistakes. No prefix at all is a base URL that was never
 		// finished, and a prefix that does not name both segments is one that
 		// was finished wrongly; a reader fixing either needs to be told which.
-		if errors.Is(err, config.ErrNoCassette) {
-			writeError(w, http.StatusNotFound, "no_cassette", err.Error())
+		if errors.Is(err, config.ErrNoPrefix) {
+			writeError(w, http.StatusNotFound, "no_prefix", err.Error())
 			return
 		}
 		writeError(w, http.StatusBadRequest, "bad_prefix", err.Error())
@@ -274,7 +276,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Upstream must see the provider's own path, not cs-vcr's addressing, and
 	// the strip has to happen before anything else reads the path or every
 	// request would classify as an unrecognized surface.
-	stripCassettePrefix(r, rest)
+	stripPrefix(r, rest)
 
 	route := s.routeFor(r, provider)
 	s.count(func(st *Stats) {
@@ -310,7 +312,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if errors.Is(err, ErrNoSuchCassette) {
 			writeError(w, http.StatusNotFound, "unknown_cassette",
 				fmt.Sprintf("no cassette named %q is in the store, and %s%s on the base URL asked for it",
-					name, config.CassettePrefix, name))
+					name, config.Prefix, name))
 			return
 		}
 		// 400 for the reason reportMiss sets out below: a Stainless SDK retries
@@ -641,7 +643,7 @@ func (s *Server) provider(name string) (*config.Provider, error) {
 	p, ok := s.cfg.Providers[name]
 	if !ok {
 		return nil, fmt.Errorf("no provider named %q is configured, and %s%s/ on the base URL asked for it (configured: %s)",
-			name, config.CassettePrefix, name, strings.Join(s.providerNames(), ", "))
+			name, config.Prefix, name, strings.Join(s.providerNames(), ", "))
 	}
 	return p, nil
 }
@@ -907,13 +909,13 @@ func requestTarget(r *http.Request) string {
 	return r.URL.Path + "?" + r.URL.RawQuery
 }
 
-// stripCassettePrefix rewrites the request path to what upstream should see,
+// stripPrefix rewrites the request path to what upstream should see,
 // after the prefix has named the cassette.
 //
 // RawPath matters: it is set only when the escaped form differs from Path, and
 // leaving a stale one behind would send upstream a path that disagrees with
 // the one just matched.
-func stripCassettePrefix(r *http.Request, rest string) {
+func stripPrefix(r *http.Request, rest string) {
 	if r.URL.Path == rest {
 		return
 	}

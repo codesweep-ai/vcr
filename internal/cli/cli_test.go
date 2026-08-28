@@ -245,15 +245,6 @@ func writeCassette(t *testing.T, dir, request string) {
 	}
 }
 
-// A pinned provider naming one that is not configured is a typo, and it fails
-// here rather than as a 502 on the first request of a recording session.
-func TestConfigRejectsAPinToAnUnknownProvider(t *testing.T) {
-	cfg := "cassette_provider:\n  build: anthropick\n"
-	if _, err := runWithConfig(t, cfg, nil, "config"); err == nil {
-		t.Fatal("a pin naming an unconfigured provider was accepted")
-	}
-}
-
 // The name becomes a directory, so it is checked wherever it is written — in
 // the file as well as on a base URL.
 func TestConfigRejectsACassetteNameThatIsNotOne(t *testing.T) {
@@ -277,38 +268,44 @@ func TestConfigPrintsThePrefixAndTheProviders(t *testing.T) {
 	}
 }
 
-// A provider key is the deployment's to choose, so the printed base URL has to
-// be able to name one this client has no convention for. Fireworks is the case:
-// it speaks the OpenAI shape, and OpenCode reaches a provider with no base-URL
-// variable of its own through OPENCODE_BASE_URL.
-func TestConfigPrintsAChosenProvider(t *testing.T) {
-	out, err := runWithConfig(t, "", nil, "config", "opencode",
+// The provider key belongs to the deployment, so the printed base URL names
+// whatever it was given. Fireworks is the case that shows it: it speaks the
+// Anthropic Messages API, so the entry serving it may be called anything.
+func TestConfigPrintsTheProviderItWasGiven(t *testing.T) {
+	out, err := runWithConfig(t, "", nil, "config", "claude",
 		"--cassette", "build", "--provider", "fireworks", "--env-only")
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "OPENCODE_BASE_URL=http://127.0.0.1:8080/c/fireworks/build/v1"
+	want := "ANTHROPIC_BASE_URL=http://127.0.0.1:8080/c/fireworks/build"
 	if !strings.Contains(out, want) {
 		t.Errorf("output does not carry %q:\n%s", want, out)
 	}
 
-	// The same flag on a client that has its own variable keeps the variable
-	// and moves only the segment.
-	out, err = runWithConfig(t, "", nil, "config", "claude",
-		"--cassette", "build", "--provider", "fireworks", "--env-only")
+	// OpenCode reads a base URL per provider and has one for some of them, so
+	// a provider it has no variable for is pointed by the file instead.
+	out, err = runWithConfig(t, "", nil, "config", "opencode",
+		"--cassette", "build", "--provider", "fireworks")
 	if err != nil {
 		t.Fatal(err)
 	}
-	want = "ANTHROPIC_BASE_URL=http://127.0.0.1:8080/c/fireworks/build"
-	if !strings.Contains(out, want) {
-		t.Errorf("output does not carry %q:\n%s", want, out)
+	if !strings.Contains(out, `"fireworks": {"options": {"baseURL": "http://127.0.0.1:8080/c/fireworks/build/v1"}}`) {
+		t.Errorf("the opencode.json block does not carry the provider:\n%s", out)
+	}
+	if strings.Contains(out, "BASE_URL=") {
+		t.Errorf("a base-URL variable was printed for a provider OpenCode has none for:\n%s", out)
 	}
 
-	// A name no prefix could carry is refused here rather than printed into a
-	// base URL that would be refused on the first request.
-	if _, err := runWithConfig(t, "", nil, "config", "claude",
-		"--cassette", "build", "--provider", "../escape"); err == nil {
-		t.Error("a provider name that cannot appear in a base URL was printed")
+	// Both names are required, and a name no prefix could carry is refused
+	// here rather than printed into a base URL the first request would refuse.
+	for _, args := range [][]string{
+		{"config", "claude", "--cassette", "build"},
+		{"config", "claude", "--provider", "anthropic"},
+		{"config", "claude", "--cassette", "build", "--provider", "../escape"},
+	} {
+		if _, err := runWithConfig(t, "", nil, args...); err == nil {
+			t.Errorf("%v was accepted", args)
+		}
 	}
 }
 
@@ -336,16 +333,16 @@ func TestReplayAndRecordAreSeparateCommands(t *testing.T) {
 // mistake this design invites. Asserted per client, because a single rule that
 // looked right for one of them is exactly the bug.
 func TestConfigPrintsHowToPointEachAgentAtACassette(t *testing.T) {
-	cases := []struct{ agent, wantBase string }{
+	cases := []struct{ agent, provider, wantBase string }{
 		// Claude Code appends /v1 itself, so the base URL stops at the name.
-		{"claude", "http://127.0.0.1:8080/c/anthropic/build"},
-		// Codex and OpenCode are given a base URL that already carries it, and
-		// each names the provider its client conventionally reaches.
-		{"codex", "http://127.0.0.1:8080/c/openai/build/v1"},
-		{"opencode", "http://127.0.0.1:8080/c/anthropic/build/v1"},
+		{"claude", "anthropic", "http://127.0.0.1:8080/c/anthropic/build"},
+		// Codex and OpenCode are given a base URL that already carries it.
+		{"codex", "openai", "http://127.0.0.1:8080/c/openai/build/v1"},
+		{"opencode", "anthropic", "http://127.0.0.1:8080/c/anthropic/build/v1"},
 	}
 	for _, tc := range cases {
-		out, err := runWithConfig(t, "", nil, "config", tc.agent, "--cassette", "build")
+		out, err := runWithConfig(t, "", nil, "config", tc.agent,
+			"--cassette", "build", "--provider", tc.provider)
 		if err != nil {
 			t.Fatalf("%s: %v", tc.agent, err)
 		}
@@ -359,7 +356,8 @@ func TestConfigPrintsHowToPointEachAgentAtACassette(t *testing.T) {
 	}
 	// And the environment-only form is bare VAR=VALUE, for sourcing: no export,
 	// no comment, no blank line, whatever number of settings it carries.
-	out, err := runWithConfig(t, "", nil, "config", "claude", "--cassette", "build", "--env-only")
+	out, err := runWithConfig(t, "", nil, "config", "claude",
+		"--cassette", "build", "--provider", "anthropic", "--env-only")
 	if err != nil {
 		t.Fatal(err)
 	}

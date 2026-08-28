@@ -298,7 +298,7 @@ func TestHealthzIsNotOnTheProxiedPort(t *testing.T) {
 // through a single cs-vcr, told apart by a prefix on the base URL. Nothing
 // declares either cassette — the prefix names it, and the session opens it on
 // the first request that asks for it.
-func TestCassettePrefixesSeparateAgents(t *testing.T) {
+func TestPrefixesSeparateAgents(t *testing.T) {
 	addr := serveSessionOver(t, unreachableProviders,
 		[]string{testCassette, "orchestrator", "worker"}, "replay").addr
 

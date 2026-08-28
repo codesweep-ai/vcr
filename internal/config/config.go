@@ -29,8 +29,9 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// CassettePrefix opens a base URL that names where a request is going and which
-// cassette it belongs to.
+// Prefix is the marker that opens a base URL naming where a request is going
+// and which cassette it belongs to. The whole of it is
+// `/c/<provider>/<cassette>`.
 // `ANTHROPIC_BASE_URL=http://127.0.0.1:8080/c/anthropic/refactor-auth` sends
 // every request on it to the `anthropic` provider as a step of the cassette
 // `refactor-auth`, and running a second agent against a second cassette is a
@@ -51,7 +52,7 @@ import (
 // with a prefixed base URL issues `POST /c/anthropic/refactor-auth/v1/messages?beta=true`
 // and carries the prefix on everything, including the bodiless startup probes
 // that set no headers a request could have been identified by instead.
-const CassettePrefix = "/c/"
+const Prefix = "/c/"
 
 // segmentName is what a name in the prefix may look like. It is checked rather
 // than trusted because a cassette name arrives in a URL and becomes a
@@ -861,30 +862,30 @@ func checkBaseURL(name, raw string) error {
 	return nil
 }
 
-// ErrNoCassette is a request whose base URL does not say which cassette it
-// belongs to. It is reported rather than absorbed: a request that was going to
-// be recorded, and was not, is the failure this mechanism exists to prevent,
-// and a default to absorb it into would make a mistyped base URL look like it
-// worked.
-var ErrNoCassette = errors.New("the base URL must end in " + CassettePrefix +
+// ErrNoPrefix is a request whose base URL says neither where it is going nor
+// which cassette it belongs to. It is reported rather than absorbed: a request
+// that was going to be recorded, and was not, is the failure this mechanism
+// exists to prevent, and a default to absorb it into would make a mistyped base
+// URL look like it worked.
+var ErrNoPrefix = errors.New("the base URL must carry " + Prefix +
 	"<provider>/<cassette> to say which upstream this request is for and which cassette it belongs to")
 
-// RouteCassette reads a request path and answers three things: the provider the
+// RoutePrefix reads a request path and answers three things: the provider the
 // request is for, the cassette it belongs in, and the path upstream should see.
 //
 // Both names are checked rather than trusted. They arrive in a URL, and the
 // cassette is about to become a directory.
-func RouteCassette(path string) (provider, name, rest string, err error) {
-	provider, name, rest, prefixed := splitCassettePath(path)
+func RoutePrefix(path string) (provider, name, rest string, err error) {
+	provider, name, rest, prefixed := splitPrefix(path)
 	if !prefixed {
-		return "", "", "", ErrNoCassette
+		return "", "", "", ErrNoPrefix
 	}
 	if name == "" {
 		// One segment where two are needed. Reported against the shape rather
-		// than as a missing cassette name, because this is what a base URL
-		// written for an earlier release looks like.
+		// than as a missing cassette name, so the reader is sent to the segment
+		// that is absent rather than to the one they wrote.
 		return "", "", "", fmt.Errorf("the base URL names %q and stops: %s<provider>/<cassette> names the upstream and then the cassette",
-			provider, CassettePrefix)
+			provider, Prefix)
 	}
 	if err := CheckProviderName(provider); err != nil {
 		return "", "", "", err
@@ -895,18 +896,17 @@ func RouteCassette(path string) (provider, name, rest string, err error) {
 	return provider, name, rest, nil
 }
 
-// splitCassettePath takes the provider and cassette names off a path, on
-// segment boundaries so that /c/anthropicx is not read as the provider
-// `anthropic`.
+// splitPrefix takes the provider and cassette names off a path, on segment
+// boundaries so that /c/anthropicx is not read as the provider `anthropic`.
 //
 // A prefix that stops after one segment reports an empty cassette name rather
 // than no prefix at all, so a base URL that names too little is refused as the
 // mistake it is instead of quietly becoming the session's cassette.
-func splitCassettePath(path string) (provider, name, rest string, prefixed bool) {
-	if !strings.HasPrefix(path, CassettePrefix) {
+func splitPrefix(path string) (provider, name, rest string, prefixed bool) {
+	if !strings.HasPrefix(path, Prefix) {
 		return "", "", path, false
 	}
-	after := path[len(CassettePrefix):]
+	after := path[len(Prefix):]
 	slash := strings.IndexByte(after, '/')
 	if slash < 0 {
 		return after, "", "/", true

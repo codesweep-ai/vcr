@@ -105,17 +105,18 @@ type credential struct {
 func scenarios() []scenario {
 	return []scenario{
 		claudeCode("claude-code-subscription", "a Claude Pro/Max subscription", "",
-			"claude-sonnet-5", "https://api.anthropic.com"),
+			"claude-sonnet-5", "https://api.anthropic.com", "anthropic"),
 		claudeCode("claude-code-api-key", "an Anthropic API key", "ANTHROPIC_API_KEY",
-			"claude-sonnet-5", "https://api.anthropic.com"),
+			"claude-sonnet-5", "https://api.anthropic.com", "anthropic"),
 		// Claude Code against a model that is not Anthropic's. It speaks the
 		// Anthropic Messages API and Fireworks serves that API, so the client's
 		// API-KEY path — a different credential, a different header, a different
 		// prompt from the subscription one — is covered on a host that has no
 		// Anthropic key. It also gives `anthropic.messages` a second recording
-		// from a second provider, which is the surface cs-vcr routes by path.
+		// from a second provider, under the entry name a deployment reaching
+		// Fireworks gives it.
 		claudeCode("claude-code-fireworks", "a Fireworks API key", "FIREWORKS_API_KEY",
-			"accounts/fireworks/models/kimi-k3", "https://api.fireworks.ai/inference"),
+			"accounts/fireworks/models/kimi-k3", "https://api.fireworks.ai/inference", "fireworks"),
 		codexChatGPT(),
 		codexAPIKey(),
 		openCode("opencode-openai", "an OpenAI API key", "openai/gpt-5.6", "openai",
@@ -189,7 +190,7 @@ func subscriptionCredential(getenv func(string) string) (credential, error) {
 // lives. It matters only while recording — a replay session has nowhere to send
 // a request — but it decides which model answered, and the model is in the
 // request, so a fixture is tied to the one it was recorded against.
-func claudeCode(name, auth, key, model, upstream string) scenario {
+func claudeCode(name, auth, key, model, upstream, provider string) scenario {
 	needs, login := subscriptionCredential, true
 	keyAs := ""
 	if key != "" {
@@ -200,8 +201,8 @@ func claudeCode(name, auth, key, model, upstream string) scenario {
 		login: login, keyFrom: key, keyAs: keyAs, upstream: upstream,
 		// Claude Code appends the whole API path to what it is given.
 		urlSuffix: "",
-		provider:  "anthropic",
-		vcrConfig: "providers:\n  anthropic: {base_url: " + upstream + "}\n",
+		provider:  provider,
+		vcrConfig: "providers:\n  " + provider + ": {base_url: " + upstream + "}\n",
 		needs:     needs,
 		prepare: func(sc scenario, ws *workspace, c credential, m mode, _ string) error {
 			// The account state Claude Code would otherwise build on its first

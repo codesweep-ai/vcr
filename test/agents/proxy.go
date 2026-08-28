@@ -160,7 +160,7 @@ func (p *proxy) origin() string {
 
 func (p *proxy) baseURL(provider, cassette, suffix string) string {
 	return "http://127.0.0.1:" + strconv.Itoa(p.port) +
-		config.CassettePrefix + provider + "/" + cassette + suffix
+		config.Prefix + provider + "/" + cassette + suffix
 }
 
 func (p *proxy) waitReady() error {

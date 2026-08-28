@@ -28,9 +28,9 @@ import (
 // and getting it wrong produces a 404 from the provider rather than anything
 // that names the mistake.
 //
-// The provider segment is the other half of the prefix. Each client here has a
-// conventional one, and `--provider` names the entry instead for a deployment
-// that calls it something else.
+// The provider segment is the other half of the prefix, and it arrives as an
+// argument. It is a key into the deployment's own `providers`, so nothing here
+// can derive it from the client.
 
 // agent is one client cs-vcr can print settings for.
 type agent struct {
@@ -42,36 +42,15 @@ type agent struct {
 	// the whole reason this command exists.
 	suffix string
 	// env are the variables that point the agent at cs-vcr. Empty for a client
-	// that has no base-URL variable at all.
-	env func(u urls) []envVar
+	// with no base-URL variable for this provider.
+	env func(provider, base string) []envVar
 	// command is a runnable one-liner: the environment, the binary and the
 	// flags, ready to be copied.
-	command func(u urls) string
+	command func(provider, base string) string
 	// persist is the same settings as a file, for pinning them to a project.
-	persist func(u urls) (path, body string)
+	persist func(provider, base string) (path, body string)
 	// notes are anything else true and worth knowing, printed as comments.
-	notes func(u urls) []string
-}
-
-// urls builds this agent's base URLs for one cassette, one provider at a time.
-//
-// A client is configured with one base URL per provider, and the URL says which
-// one it is for — so a client that reaches two of them is printed two lines
-// that differ in that segment.
-type urls struct {
-	base func(provider string) string
-	// chosen is the provider the caller named, or "" for this client's
-	// conventional one.
-	chosen string
-}
-
-// pick is the URL for the provider the caller named, falling back to the one
-// this client conventionally reaches.
-func (u urls) pick(conventional string) string {
-	if u.chosen != "" {
-		return u.base(u.chosen)
-	}
-	return u.base(conventional)
+	notes func(provider, base string) []string
 }
 
 // envVar is one printed setting. Values are emitted bare, so a value that would
@@ -96,16 +75,16 @@ func claudeCode() agent {
 		// No /v1: Claude Code appends the version itself, and a base URL that
 		// already carries one produces /v1/v1/messages.
 		suffix: "",
-		env: func(u urls) []envVar {
-			return []envVar{{"ANTHROPIC_BASE_URL", u.pick("anthropic")}}
+		env: func(_, base string) []envVar {
+			return []envVar{{"ANTHROPIC_BASE_URL", base}}
 		},
-		command: func(u urls) string {
-			return fmt.Sprintf("ANTHROPIC_BASE_URL=%s claude -p %q", u.pick("anthropic"), prompt)
+		command: func(_, base string) string {
+			return fmt.Sprintf("ANTHROPIC_BASE_URL=%s claude -p %q", base, prompt)
 		},
-		persist: func(u urls) (string, string) {
-			return ".claude/settings.json", fmt.Sprintf(`{"env": {"ANTHROPIC_BASE_URL": %q}}`, u.pick("anthropic"))
+		persist: func(_, base string) (string, string) {
+			return ".claude/settings.json", fmt.Sprintf(`{"env": {"ANTHROPIC_BASE_URL": %q}}`, base)
 		},
-		notes: func(_ urls) []string {
+		notes: func(_, _ string) []string {
 			return []string{
 				"Claude Code appends /v1 itself, so the base URL ends at the cassette name.",
 				"The Pro/Max subscription it is signed in with keeps working: cs-vcr forwards",
@@ -120,21 +99,21 @@ func codexCLI() agent {
 		name:   "codex",
 		title:  "Codex",
 		suffix: "/v1",
-		command: func(u urls) string {
+		command: func(_, base string) string {
 			return fmt.Sprintf(`codex exec -c 'model_provider="%[1]s"' \
   -c 'model_providers.%[1]s={name="%[1]s", base_url="%[2]s", env_key="OPENAI_API_KEY", wire_api="responses"}' \
-  %[3]q`, providerName, u.pick("openai"), prompt)
+  %[3]q`, providerName, base, prompt)
 		},
-		persist: func(u urls) (string, string) {
+		persist: func(_, base string) (string, string) {
 			return "~/.codex/config.toml", fmt.Sprintf(`model_provider = "%[1]s"
 
 [model_providers.%[1]s]
 name = "%[1]s"
 base_url = "%[2]s"
 env_key = "OPENAI_API_KEY"
-wire_api = "responses"`, providerName, u.pick("openai"))
+wire_api = "responses"`, providerName, base)
 		},
-		notes: func(_ urls) []string {
+		notes: func(provider, _ string) []string {
 			return []string{
 				"Codex has no base-URL environment variable, so the provider block is how it",
 				"is pointed anywhere. The -c flags above set the same keys without touching",
@@ -142,7 +121,7 @@ wire_api = "responses"`, providerName, u.pick("openai"))
 				"",
 				"Signed in with ChatGPT rather than an API key: replace env_key with",
 				"requires_openai_auth = true, drop the /v1 from the base URL, and point",
-				"cs-vcr's openai provider at https://chatgpt.com/backend-api/codex.",
+				fmt.Sprintf("the %s provider at https://chatgpt.com/backend-api/codex.", provider),
 			}
 		},
 	}
@@ -153,61 +132,53 @@ func openCode() agent {
 		name:   "opencode",
 		title:  "OpenCode",
 		suffix: "/v1",
-		env: func(u urls) []envVar {
-			if u.chosen != "" {
-				return []envVar{{openCodeVar(u.chosen), u.base(u.chosen)}}
+		env: func(provider, base string) []envVar {
+			if v := openCodeVar(provider); v != "" {
+				return []envVar{{v, base}}
 			}
-			return []envVar{
-				{"ANTHROPIC_BASE_URL", u.base("anthropic")},
-				{"OPENAI_BASE_URL", u.base("openai")},
-			}
+			return nil
 		},
-		command: func(u urls) string {
-			if u.chosen != "" {
-				return fmt.Sprintf("%s=%s opencode run --model %s/<model> %q",
-					openCodeVar(u.chosen), u.base(u.chosen), u.chosen, prompt)
+		command: func(provider, base string) string {
+			if v := openCodeVar(provider); v != "" {
+				return fmt.Sprintf("%s=%s opencode run --model %s/<model> %q", v, base, provider, prompt)
 			}
-			return fmt.Sprintf("ANTHROPIC_BASE_URL=%s opencode run --model anthropic/claude-sonnet-5 %q",
-				u.base("anthropic"), prompt)
+			return fmt.Sprintf("opencode run --model %s/<model> %q  # with the file below in place",
+				provider, prompt)
 		},
-		persist: func(u urls) (string, string) {
-			if u.chosen != "" {
-				return "./opencode.json", fmt.Sprintf(`{
+		persist: func(provider, base string) (string, string) {
+			return "./opencode.json", fmt.Sprintf(`{
   "$schema": "https://opencode.ai/config.json",
   "provider": {
     %[1]q: {"options": {"baseURL": %[2]q}}
   }
-}`, u.chosen, u.base(u.chosen))
-			}
-			return "./opencode.json", fmt.Sprintf(`{
-  "$schema": "https://opencode.ai/config.json",
-  "provider": {
-    "anthropic": {"options": {"baseURL": %[1]q}},
-    "openai":    {"options": {"baseURL": %[2]q}}
-  }
-}`, u.base("anthropic"), u.base("openai"))
+}`, provider, base)
 		},
-		notes: func(u urls) []string {
-			example := u.pick("anthropic")
-			return []string{
-				"Set the variable for the provider the model belongs to: an anthropic/… model",
-				"reads ANTHROPIC_BASE_URL, an openai/… model reads OPENAI_BASE_URL, and a",
-				"provider with no variable of its own is reached through OPENCODE_BASE_URL.",
-				"Each carries its own provider segment, so the URL says where the model runs.",
+		notes: func(provider, base string) []string {
+			out := []string{
+				"The file is the route that works for every provider. OpenCode's base-URL",
+				"variable is per provider, and only some providers have one.",
 				"",
 				"OpenCode also reads its whole configuration from OPENCODE_CONFIG_CONTENT, so",
 				"the file above can travel as one variable instead:",
 				"",
-				fmt.Sprintf(`  OPENCODE_CONFIG_CONTENT='{"provider":{"anthropic":{"options":{"baseURL":%q}}}}' \`, example),
-				fmt.Sprintf("    opencode run %q", prompt),
+				fmt.Sprintf(`  OPENCODE_CONFIG_CONTENT='{"provider":{%q:{"options":{"baseURL":%q}}}}' \`, provider, base),
+				fmt.Sprintf("    opencode run --model %s/<model> %q", provider, prompt),
 			}
+			if openCodeVar(provider) != "" {
+				return out
+			}
+			return append([]string{
+				fmt.Sprintf("OpenCode has no base-URL variable for %s, so the file above is how it", provider),
+				"is pointed here.",
+				"",
+			}, out...)
 		},
 	}
 }
 
-// openCodeVar is the base-URL variable OpenCode reads for one provider. Two of
-// them have one of their own; anything else is reached through OpenCode's, which
-// points whichever provider the running model names.
+// openCodeVar is the base-URL variable OpenCode reads for one provider, or ""
+// for a provider it has none for. The name is OpenCode's own, and it is the one
+// a model carries: `anthropic` in `anthropic/claude-sonnet-5`.
 func openCodeVar(provider string) string {
 	switch provider {
 	case "anthropic":
@@ -215,7 +186,7 @@ func openCodeVar(provider string) string {
 	case "openai":
 		return "OPENAI_BASE_URL"
 	}
-	return "OPENCODE_BASE_URL"
+	return ""
 }
 
 // agentNames lists what `cs-vcr config` accepts, for its usage line.
@@ -290,22 +261,19 @@ func tunnelPrefix(proxyURL string) string {
 // printAgentConfig writes what one agent needs in order to record into or
 // replay from one cassette.
 func printAgentConfig(out io.Writer, a agent, proxyURL, cassette, provider string, envOnly bool) error {
-	u := urls{
-		base:   func(p string) string { return agentBaseURL(proxyURL, p, cassette, a.suffix) },
-		chosen: provider,
-	}
+	base := agentBaseURL(proxyURL, provider, cassette, a.suffix)
 
 	var vars []envVar
 	if a.env != nil {
-		vars = a.env(u)
+		vars = a.env(provider, base)
 	}
 	vars = append(vars, tunnelEnv(proxyURL)...)
 	if envOnly {
 		return writeEnv(out, vars)
 	}
 
-	fmt.Fprintf(out, "# %s → cassette %q on %s\n\n", a.title, cassette, proxyURL)
-	fmt.Fprintf(out, "# Run it:\n%s%s\n", tunnelPrefix(proxyURL), a.command(u))
+	fmt.Fprintf(out, "# %s → cassette %q on the %s provider, at %s\n\n", a.title, cassette, provider, proxyURL)
+	fmt.Fprintf(out, "# Run it:\n%s%s\n", tunnelPrefix(proxyURL), a.command(provider, base))
 
 	if len(vars) > 0 {
 		fmt.Fprintf(out, "\n# Or set the environment once, and run %s as you normally would:\n", a.name)
@@ -314,12 +282,12 @@ func printAgentConfig(out io.Writer, a agent, proxyURL, cassette, provider strin
 		}
 	}
 	if a.persist != nil {
-		path, body := a.persist(u)
+		path, body := a.persist(provider, base)
 		fmt.Fprintf(out, "\n# Or pin it, in %s:\n%s\n", path, body)
 	}
 	if a.notes != nil {
 		fmt.Fprintln(out)
-		for _, line := range a.notes(u) {
+		for _, line := range a.notes(provider, base) {
 			fmt.Fprintln(out, strings.TrimRight("# "+line, " "))
 		}
 	}
@@ -367,7 +335,7 @@ func writeEnv(out io.Writer, vars []envVar) error {
 // cassette: the proxy, then the prefix naming both, then whatever version
 // segment this client expects.
 func agentBaseURL(proxyURL, provider, cassette, suffix string) string {
-	return strings.TrimSuffix(proxyURL, "/") + config.CassettePrefix + provider + "/" + cassette + suffix
+	return strings.TrimSuffix(proxyURL, "/") + config.Prefix + provider + "/" + cassette + suffix
 }
 
 // proxyURL is the address an agent should be pointed at, derived from what

@@ -82,8 +82,7 @@ func TestATraversingCassetteNameIsRefusedAndDoesNotDial(t *testing.T) {
 }
 
 // A base URL that stops before it has named both segments is a composition
-// mistake, and it is refused rather than guessed at. The one-segment form is
-// what a base URL written for an earlier release looks like.
+// mistake, and it is refused rather than guessed at.
 func TestAnIncompletePrefixIsRefused(t *testing.T) {
 	s, _ := forwardServer(t, nil)
 	for _, path := range []string{"/c/", "/c/feature", "/c/feature/"} {
@@ -130,7 +129,7 @@ func TestAPathThatNamesNoCassetteIsRefusedAndDoesNotDial(t *testing.T) {
 		if w.Code != http.StatusNotFound {
 			t.Errorf("%s: status = %d, want 404 (body %s)", path, w.Code, w.Body)
 		}
-		if !strings.Contains(w.Body.String(), "no_cassette") {
+		if !strings.Contains(w.Body.String(), "no_prefix") {
 			t.Errorf("%s: error type is not no_cassette: %s", path, w.Body)
 		}
 		// The reply says what the base URL should have ended in, because the

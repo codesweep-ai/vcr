@@ -50,8 +50,8 @@ func (l *logBuffer) String() string {
 }
 
 // newTestServer builds a proxy against a local upstream. tune adjusts the
-// configuration before it is resolved, which is how a test asks for a session
-// cassette or a pinned provider; nil is the plain deployment.
+// configuration before it is resolved, which is how a test gives a provider an
+// upstream of its own; nil is the plain deployment.
 func newTestServer(t *testing.T, offline bool, tune func(*config.Config), upstream http.HandlerFunc) (*Server, *logBuffer) {
 	t.Helper()
 	up := httptest.NewServer(upstream)
@@ -83,10 +83,10 @@ const testCassette = "session"
 const testProvider = "anthropic"
 
 func onCassette(path string) string {
-	if strings.HasPrefix(path, config.CassettePrefix) {
+	if strings.HasPrefix(path, config.Prefix) {
 		return path
 	}
-	return config.CassettePrefix + testProvider + "/" + testCassette + path
+	return config.Prefix + testProvider + "/" + testCassette + path
 }
 
 func post(t *testing.T, s *Server, path string, hdr map[string]string, body string) *httptest.ResponseRecorder {
@@ -287,9 +287,9 @@ func TestTheBaseURLNamesTheProvider(t *testing.T) {
 		// A path with no shape to route by, on each prefix. This is the probe.
 		{"/c/anthropic/session/api/hello", "anthropic", map[string]string{"user-agent": "Bun/1.4.0"}},
 		{"/c/openai/session/models", "openai", map[string]string{"user-agent": "Bun/1.4.0"}},
-		// Headers that used to decide it, sent against the other prefix: the
-		// URL wins, so a client cannot steer its own traffic to a second
-		// upstream by what it sends.
+		// Provider-specific headers sent against the other prefix: the URL
+		// wins, so a client cannot steer its own traffic to a second upstream
+		// by what it sends.
 		{"/c/openai/session/api/hello", "openai", map[string]string{"anthropic-version": "2023-06-01"}},
 		{"/c/openai/session/v1/messages", "openai", map[string]string{"x-api-key": "sk-ant"}},
 		{"/c/anthropic/session/v1/responses", "anthropic", map[string]string{"authorization": "Bearer sk-oai"}},

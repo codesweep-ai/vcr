@@ -70,7 +70,7 @@ cassettes          cassettes
 default provider   anthropic
 normalize ruleset  v6 (6 strip, 1 query, 9 replace)
 normalize root     /home/you/project
-cassette prefix    /c/<name>
+base URL prefix    /c/<provider>/<cassette>
 
 PROVIDER   BASE URL
 anthropic  https://api.anthropic.com
@@ -86,7 +86,7 @@ Pro/Max subscription:
 
 ```bash
 cs-vcr record
-ANTHROPIC_BASE_URL=http://127.0.0.1:8080/c/build claude -p "add a /version endpoint"
+ANTHROPIC_BASE_URL=http://127.0.0.1:8080/c/anthropic/build claude -p "add a /version endpoint"
 ```
 
 For a session you mean to replay, point the agent's proxy at cs-vcr as well. A base URL aims the
@@ -94,7 +94,8 @@ model calls. These agents also contact hosts of their own, and what those answer
 they send. `cs-vcr config <agent>` prints the settings, and
 [MANUAL.md](MANUAL.md#the-calls-a-base-url-does-not-govern) says what they cover.
 
-The `/c/build` on the end names the cassette this run belongs to. Nothing declares it: `record`
+The `/c/anthropic/build` on the end names the provider the traffic goes to and the cassette this run
+belongs to. The provider is an entry in the table above. Nothing declares the cassette: `record`
 creates it on the first request, and `replay` serves it.
 
 **Where each client expects that URL to end differs**, because each appends a different amount of
@@ -102,7 +103,7 @@ the API path to it, and Codex needs a `model_providers` entry rather than an env
 Ask cs-vcr for the one you want, and it prints the command to run:
 
 ```bash
-cs-vcr config claude --cassette build
+cs-vcr config claude --cassette build --provider anthropic
 ```
 
 The [README walkthroughs](README.md#walkthroughs) have the recipe for each of the three, end to end.

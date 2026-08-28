@@ -35,8 +35,8 @@ type Route struct {
 //
 // The provider is the one the base URL named, for every path on the prefix. A
 // client is configured with one base URL per provider, so the URL has already
-// answered the question — including for the bodiless startup probes, which
-// carry the prefix and nothing a guess could have read.
+// answered the question, including for the bodiless startup probes: they carry
+// the prefix and no header of their own.
 //
 // A replay session asks only the shape, and the provider segment goes unread.
 // It reads no provider configuration at all, which is what lets a recorded

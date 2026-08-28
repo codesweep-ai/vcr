@@ -16,7 +16,7 @@ cs-vcr cassette verify [NAME...]
 cs-vcr cassette scrub [NAME...] [--force] [--from-env VAR,...]
 cs-vcr cassette prune NAME [--force]
 cs-vcr calibrate NAME MISSDIR
-cs-vcr config [AGENT] [--cassette NAME] [--url URL] [--env-only]
+cs-vcr config [AGENT] [--cassette NAME] [--provider NAME] [--url URL] [--env-only]
 cs-vcr completion bash|zsh|fish|powershell
 cs-vcr manual
 cs-vcr version
@@ -122,7 +122,7 @@ paths where what differs is something the world decides rather than something th
 
 ```
 cs-vcr config                                  # what cs-vcr resolved
-cs-vcr config claude --cassette refactor-auth  # how to point an agent at it
+cs-vcr config claude --cassette refactor-auth --provider anthropic   # how to point an agent at it
 ```
 
 With no argument, prints the resolved configuration, including which file it came from. There is no
@@ -130,8 +130,8 @@ credential in the output, because cs-vcr holds none.
 
 With an agent, prints how to point that client at this cs-vcr and at one cassette. It prints a
 command to run, the environment to set instead, and the file to pin it in. The agents it knows are
-`claude`, `codex` and `opencode`. Where the `/c/<provider>/<cassette>` prefix goes relative to the `/v1` a client
-appends differs by client, and this is what says which.
+`claude`, `codex` and `opencode`. Where the `/c/<provider>/<cassette>` prefix goes relative to the
+`/v1` a client appends differs by client, and this is what says which.
 
 The output carries the proxy settings beside the base URL. They cover the calls the base URL does
 not, and a session recorded without them is one no other machine can replay. See "The calls a base
@@ -140,7 +140,7 @@ URL does not govern" below.
 `--env-only` prints just the `VAR=VALUE` lines, so a build can source them:
 
 ```bash
-set -a; . <(cs-vcr config claude --cassette refactor-auth --env-only); set +a
+set -a; . <(cs-vcr config claude --cassette refactor-auth --provider anthropic --env-only); set +a
 ```
 
 ### completion
@@ -171,7 +171,7 @@ cs-vcr has the reference, with no checkout to read and no page to fetch.
 | Option | Applies to | Meaning |
 |---|---|---|
 | `--cassette NAME` | config AGENT | The cassette the printed base URL names. Required. |
-| `--provider NAME` | config AGENT | The provider entry the printed base URL names. Default: the one this client conventionally reaches. |
+| `--provider NAME` | config AGENT | The provider entry the printed base URL names. Required. |
 | `--cassettes DIR` | record, replay | The directory holding cassettes. Default `./cassettes`. |
 | `--listen ADDR` | record, replay | Proxied port. Default `127.0.0.1:8080`. |
 | `--admin ADDR` | record, replay | Admin port, serving `/healthz`. Default `127.0.0.1:8081`. |
@@ -192,7 +192,8 @@ Only the base URL changes, and it carries `/c/<provider>/<cassette>`: the provid
 goes to, and the cassette the run belongs to. Nothing declares either: `record` creates the cassette
 on the first request that asks for it, and `replay` serves it. How much of the API path a client
 appends differs, so the prefix sits in a different place for each. Run
-`cs-vcr config <agent> --cassette <name>` and it prints the exact line for that client.
+`cs-vcr config <agent> --cassette <name> --provider <name>` and it prints the exact line for that
+client.
 
 **Claude Code** appends the version itself, so the URL stops at the cassette name:
 
@@ -235,7 +236,8 @@ OPENAI_BASE_URL=http://127.0.0.1:8080/c/openai/build/v1 opencode run --model ope
 ```
 
 To pin OpenCode per project instead, put the same URL under `provider.<name>.options.baseURL` in
-`opencode.json`. `cs-vcr config opencode` prints the block.
+`opencode.json`. `cs-vcr config opencode` prints the block, and it is the route that works for a
+provider OpenCode has no base-URL variable for.
 
 **A cassette per test.** Switching between them is that one string, and no restart. Several agents
 share one cs-vcr the same way:
@@ -309,10 +311,10 @@ declare it under `normalize.volatile`, or run `calibrate` to have the rule propo
 The base URL named a cassette that is not in the store, and `replay` will not create one. Check the
 name against `cs-vcr cassette ls`.
 
-**`no_cassette`**
+**`no_prefix`**
 
-The base URL carried no `/c/<provider>/<cassette>` prefix, so the request said nothing about where it
-was going or which cassette it belongs to. cs-vcr refuses it rather than picking either.
+The base URL carried no `/c/<provider>/<cassette>` prefix, so the request said nothing about where
+it was going or which cassette it belongs to. cs-vcr refuses it rather than picking either.
 
 **`bad_prefix`**
 

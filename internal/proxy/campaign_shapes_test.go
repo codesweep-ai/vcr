@@ -407,8 +407,7 @@ func TestRetryAfterATransientFailureReachesTheProvider(t *testing.T) {
 // The prefix is a base URL the client was configured with, and a client
 // configures one base URL per provider, so this is the fact the deployment
 // already knows. Asserted with the request that has nothing else to go on:
-// Claude Code's startup probe carries the prefix but no identifying header, and
-// inferring from the rest of it sent an Anthropic-only user to api.openai.com.
+// Claude Code's startup probe carries the prefix and no identifying header.
 func TestThePrefixDecidesEveryPathOnIt(t *testing.T) {
 	var got []string
 	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -438,16 +437,6 @@ func TestThePrefixDecidesEveryPathOnIt(t *testing.T) {
 	}
 	if len(got) != 2 {
 		t.Fatalf("sent %d requests", len(got))
-	}
-}
-
-// A provider key that could not appear in a base URL is refused at startup
-// rather than sitting in the map as an entry nothing can ask for.
-func TestAProviderKeyMustBeNameableInABaseURL(t *testing.T) {
-	cfg := config.Default()
-	cfg.Providers["not a name"] = &config.Provider{BaseURL: "https://example.test"}
-	if err := cfg.Resolve(); err == nil {
-		t.Fatal("a provider key that cannot be named in a base URL was accepted")
 	}
 }
 

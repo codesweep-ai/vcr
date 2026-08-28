@@ -43,15 +43,17 @@ a cassette. It consults the cassette for nothing: each call the session makes,
 including one it makes twice, reaches the provider, because a cassette is the
 record of a session rather than a cache.
 
-Point an agent at it with the base-URL variable for its provider, ending in
-/c/<name> to say which cassette the run belongs to:
+Point an agent at it with the base-URL variable for its provider, carrying
+/c/<provider>/<cassette> to say where the traffic goes and which cassette the
+run belongs to:
 
-  ANTHROPIC_BASE_URL=http://127.0.0.1:8080/c/build
+  ANTHROPIC_BASE_URL=http://127.0.0.1:8080/c/anthropic/build
 
-Nothing declares that name. This command creates the cassette on the first
-request that asks for it, and a second cassette is a second base URL, with no
-restart in between. Where the prefix goes relative to the /v1 a client appends
-differs by client, so run "cs-vcr config <agent>" for the exact URL.
+The provider names an entry under "providers". Nothing declares the cassette:
+this command creates it on the first request that asks for it, and a second
+cassette is a second base URL, with no restart in between. Where the prefix goes
+relative to the /v1 a client appends differs by client, so run
+"cs-vcr config <agent>" for the exact URL.
 
 A request whose base URL carries no prefix is refused: cs-vcr does not guess
 which cassette it meant. Nothing else about the agent changes, and it keeps
@@ -65,9 +67,11 @@ nearest entry, and the session exits non-zero.
 This is the command a pipeline runs. It cannot spend money — not because it is
 configured not to, but because it is not built with anywhere to send a request.
 
-The base URL says which cassette to serve, by ending in /c/<name>:
+The base URL says which cassette to serve, by carrying
+/c/<provider>/<cassette>. This command reads no provider configuration, so the
+provider segment only has to be there:
 
-  ANTHROPIC_BASE_URL=http://127.0.0.1:8080/c/build
+  ANTHROPIC_BASE_URL=http://127.0.0.1:8080/c/anthropic/build
 
 A cassette the store does not hold is refused and named, rather than created and
 then missed on every request, and so is a request whose base URL carries no
@@ -329,7 +333,7 @@ func printConfig(out io.Writer, app *App) error {
 	fmt.Fprintf(tw, "normalize ruleset\tv%d (%d strip, %d query, %d replace)\n",
 		cfg.Normalize.Version, len(cfg.Normalize.Strip), len(cfg.Normalize.Query), len(cfg.Normalize.Replace))
 	fmt.Fprintf(tw, "normalize root\t%s\n", orDash(cfg.Normalize.Root))
-	fmt.Fprintf(tw, "base URL prefix\t%s<provider>/<cassette>\n", config.CassettePrefix)
+	fmt.Fprintf(tw, "base URL prefix\t%s<provider>/<cassette>\n", config.Prefix)
 	fmt.Fprintln(tw, "\nPROVIDER\tBASE URL")
 	for _, name := range slices.Sorted(maps.Keys(cfg.Providers)) {
 		fmt.Fprintf(tw, "%s\t%s\n", name, cfg.Providers[name].BaseURL)

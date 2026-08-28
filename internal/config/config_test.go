@@ -38,7 +38,7 @@ func TestLoadRejectsUnknownKeys(t *testing.T) {
 // The prefix names the provider and the cassette with nothing declared
 // anywhere, and the remainder is what upstream sees. Splitting is on segment
 // boundaries, so /c/anthropicx is its own provider rather than `anthropic`.
-func TestRouteCassette(t *testing.T) {
+func TestRoutePrefix(t *testing.T) {
 	cases := []struct{ path, provider, name, rest string }{
 		{"/c/anthropic/feature/v1/messages", "anthropic", "feature", "/v1/messages"},
 		{"/c/openai/feat/v1/responses", "openai", "feat", "/v1/responses"},
@@ -50,36 +50,35 @@ func TestRouteCassette(t *testing.T) {
 		{"/c/anthropic/feature", "anthropic", "feature", "/"},
 	}
 	for _, tc := range cases {
-		provider, name, rest, err := RouteCassette(tc.path)
+		provider, name, rest, err := RoutePrefix(tc.path)
 		if err != nil {
-			t.Errorf("RouteCassette(%q): %v", tc.path, err)
+			t.Errorf("RoutePrefix(%q): %v", tc.path, err)
 			continue
 		}
 		if provider != tc.provider {
-			t.Errorf("RouteCassette(%q) provider = %q, want %q", tc.path, provider, tc.provider)
+			t.Errorf("RoutePrefix(%q) provider = %q, want %q", tc.path, provider, tc.provider)
 		}
 		if name != tc.name {
-			t.Errorf("RouteCassette(%q) cassette = %q, want %q", tc.path, name, tc.name)
+			t.Errorf("RoutePrefix(%q) cassette = %q, want %q", tc.path, name, tc.name)
 		}
 		if rest != tc.rest {
-			t.Errorf("RouteCassette(%q) rest = %q, want %q — upstream must see its own path", tc.path, rest, tc.rest)
+			t.Errorf("RoutePrefix(%q) rest = %q, want %q — upstream must see its own path", tc.path, rest, tc.rest)
 		}
 	}
 }
 
-// A prefix that names one segment where two are needed is the shape a base URL
-// written for an earlier release has. It is refused, and not as a URL that
-// carries no prefix at all: the reader has to be sent to the segment that is
-// missing rather than to the front of the string.
-func TestRouteCassetteRefusesAPrefixThatStopsEarly(t *testing.T) {
+// A prefix that names one segment where two are needed is refused, and not as a
+// URL that carries no prefix at all: the reader has to be sent to the segment
+// that is missing rather than to the front of the string.
+func TestRoutePrefixRefusesAPrefixThatStopsEarly(t *testing.T) {
 	for _, path := range []string{"/c/build", "/c/build/"} {
-		_, _, _, err := RouteCassette(path)
+		_, _, _, err := RoutePrefix(path)
 		if err == nil {
-			t.Errorf("RouteCassette(%q) accepted a prefix naming one segment", path)
+			t.Errorf("RoutePrefix(%q) accepted a prefix naming one segment", path)
 			continue
 		}
-		if errors.Is(err, ErrNoCassette) {
-			t.Errorf("RouteCassette(%q) reported it as carrying no prefix: %v", path, err)
+		if errors.Is(err, ErrNoPrefix) {
+			t.Errorf("RoutePrefix(%q) reported it as carrying no prefix: %v", path, err)
 		}
 	}
 }
@@ -87,42 +86,42 @@ func TestRouteCassetteRefusesAPrefixThatStopsEarly(t *testing.T) {
 // A base URL that never named a cassette is refused rather than absorbed into a
 // default. Absorbing it is how a mistyped base URL looks like it worked while
 // its traffic lands somewhere else.
-func TestRouteCassetteRefusesAPathThatNamesNone(t *testing.T) {
+func TestRoutePrefixRefusesAPathThatNamesNone(t *testing.T) {
 	for _, path := range []string{"/v1/messages", "/api/hello", "/", "/cx/build/v1/messages"} {
-		_, _, _, err := RouteCassette(path)
-		if !errors.Is(err, ErrNoCassette) {
-			t.Errorf("RouteCassette(%q) err = %v, want ErrNoCassette", path, err)
+		_, _, _, err := RoutePrefix(path)
+		if !errors.Is(err, ErrNoPrefix) {
+			t.Errorf("RoutePrefix(%q) err = %v, want ErrNoPrefix", path, err)
 		}
 	}
 }
 
 // The name arrives in a URL and becomes a directory, so it is checked rather
 // than trusted. Without this, /c/../../etc reads outside the cassette store.
-func TestRouteCassetteRejectsWhatIsNotAName(t *testing.T) {
-	// Each of these reaches RouteCassette as the segment after /c/, which is
+func TestRoutePrefixRejectsWhatIsNotAName(t *testing.T) {
+	// Each of these reaches RoutePrefix as the segment after /c/, which is
 	// what a client would have to send to escape the store.
 	for _, name := range []string{"..", ".hidden", "-flag", "", "a b", strings.Repeat("x", 129)} {
 		if err := CheckCassetteName(name); err == nil {
 			t.Errorf("CheckCassetteName(%q) accepted it", name)
 		}
-		_, got, _, err := RouteCassette("/c/anthropic/" + name + "/v1/messages")
+		_, got, _, err := RoutePrefix("/c/anthropic/" + name + "/v1/messages")
 		if err == nil {
-			t.Errorf("RouteCassette(/c/anthropic/%s/…) accepted it as %q", name, got)
+			t.Errorf("RoutePrefix(/c/anthropic/%s/…) accepted it as %q", name, got)
 		}
-		if errors.Is(err, ErrNoCassette) {
-			t.Errorf("RouteCassette(/c/anthropic/%s/…) reported it as naming none, which sends the reader to the wrong half of the URL", name)
+		if errors.Is(err, ErrNoPrefix) {
+			t.Errorf("RoutePrefix(/c/anthropic/%s/…) reported it as naming none, which sends the reader to the wrong half of the URL", name)
 		}
 		// The provider sits on a segment of its own and is held to the same
 		// shape, so the traversal it could otherwise carry is refused there too.
 		if err := CheckProviderName(name); err == nil {
 			t.Errorf("CheckProviderName(%q) accepted it", name)
 		}
-		if _, _, _, err := RouteCassette("/c/" + name + "/build/v1/messages"); err == nil {
-			t.Errorf("RouteCassette(/c/%s/build/…) accepted it as a provider", name)
+		if _, _, _, err := RoutePrefix("/c/" + name + "/build/v1/messages"); err == nil {
+			t.Errorf("RoutePrefix(/c/%s/build/…) accepted it as a provider", name)
 		}
 	}
 	// A bare prefix is refused too: a base URL ending in /c/ is unfinished.
-	if _, _, _, err := RouteCassette("/c/"); err == nil {
+	if _, _, _, err := RoutePrefix("/c/"); err == nil {
 		t.Error("a base URL ending in the bare prefix was accepted")
 	}
 	for _, name := range []string{"build", "claude-code-api-key", "run_2", "a.b", "A1"} {
