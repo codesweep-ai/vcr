@@ -1,5 +1,5 @@
 event: message_start
-data: {"type":"message_start","message":{"content":[],"id":"msg_7b9951576c704662cc2f1037","model":"accounts/fireworks/models/kimi-k3","role":"assistant","stop_details":null,"stop_reason":null,"stop_sequence":null,"type":"message","usage":{"input_tokens":0,"output_tokens":0,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"cache_creation":null,"service_tier":null,"inference_geo":null}}}
+data: {"type":"message_start","message":{"content":[],"id":"msg_c10cb1c24457780e43cd1da9","model":"accounts/fireworks/models/kimi-k3","role":"assistant","stop_details":null,"stop_reason":null,"stop_sequence":null,"type":"message","usage":{"input_tokens":0,"output_tokens":0,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"cache_creation":null,"service_tier":null,"inference_geo":null}}}
 
 event: ping
 data: {"type":"ping"}
@@ -8,7 +8,7 @@ event: content_block_start
 data: {"type":"content_block_start","index":0,"content_block":{"type":"thinking","thinking":"","signature":""}}
 
 event: content_block_delta
-data: {"delta":{"thinking":"The user wants me to create a file named hello.txt containing exactly \"hello world\", then reply with the single word done.\n\nLet me use the Write tool. The working directory is <ROOT>/work. I should create the file there.\n\nThe content should be exactly \"hello world\". The question is whether to include a trailing newline. \"containing exactly: hello world\" suggests the content should be exactly those 11 characters. Write tool may or may not add a newline. I'll write exactly \"hello world\" with no trailing newline.","type":"thinking_delta"},"index":0,"type":"content_block_delta"}
+data: {"delta":{"thinking":"The user wants me to create a file named hello.txt containing exactly \"hello world\" and then reply with the single word \"done\".\n\nLet me write the file.","type":"thinking_delta"},"index":0,"type":"content_block_delta"}
 
 event: content_block_delta
 data: {"type":"content_block_delta","index":0,"delta":{"signature":"","type":"signature_delta"}}
@@ -26,7 +26,7 @@ event: content_block_stop
 data: {"type":"content_block_stop","index":1}
 
 event: message_delta
-data: {"context_management":{"applied_edits":[]},"delta":{"stop_reason":"tool_use","stop_sequence":null,"stop_details":null},"type":"message_delta","usage":{"input_tokens":1654,"output_tokens":211,"cache_creation_input_tokens":0,"cache_read_input_tokens":0}}
+data: {"context_management":{"applied_edits":[]},"delta":{"stop_reason":"tool_use","stop_sequence":null,"stop_details":null},"type":"message_delta","usage":{"input_tokens":1654,"output_tokens":119,"cache_creation_input_tokens":0,"cache_read_input_tokens":0}}
 
 event: message_stop
 data: {"type":"message_stop"}

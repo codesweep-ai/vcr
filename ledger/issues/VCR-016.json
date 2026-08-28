@@ -29,6 +29,10 @@
     {
       "date": "2026-08-27",
       "text": "The shipped provider set grew to four: anthropic, openai, chatgpt and fireworks, each at its own endpoint. Naming the provider in the base URL is what allows the third, because openai and chatgpt are one vendor at two endpoints and a request cannot be told which it meant. A deployment reaching any of the four now writes no configuration file, and `cs-vcr config codex` prints the block each endpoint actually needs: a version segment and a key for one, neither for the other."
+    },
+    {
+      "date": "2026-08-27",
+      "text": "The cassettes were recorded again, so the metadata matches the entries that serve them: claude-code-fireworks records `fireworks` and codex-chatgpt records `chatgpt`, including the GET /models probe that opens a Codex session. Every step is a 200, and `make ci` replays all eight."
     }
   ],
   "links": []

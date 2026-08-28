@@ -1,10 +1,12 @@
-data: {"id":"chatcmpl-971caa237c544f14bc5f82545f722b29","object":"chat.completion.chunk","created":1787677914,"model":"accounts/fireworks/models/kimi-k3","choices":[{"index":0,"delta":{"role":"assistant"},"finish_reason":null,"raw_output":null}],"usage":null}
+data: {"id":"chatcmpl-a496f3fe12804de38511863b21cb6fe4","object":"chat.completion.chunk","created":1787884589,"model":"accounts/fireworks/models/kimi-k3","choices":[{"index":0,"delta":{"role":"assistant"},"finish_reason":null,"raw_output":null}],"usage":null}
 
-data: {"choices":[{"delta":{"tool_calls":[{"function":{"arguments":"{\"filePath\": \"<ROOT>/work/hello.txt\", \"content\": \"hello world\"}","name":"write"},"id":"write_0","index":0,"type":"function"}]},"finish_reason":null,"index":0,"raw_output":null}],"created":1787677914,"id":"chatcmpl-971caa237c544f14bc5f82545f722b29","model":"accounts/fireworks/models/kimi-k3","object":"chat.completion.chunk","usage":null}
+data: {"choices":[{"delta":{"reasoning_content":"The user wants me to create a file named hello.txt with exactly \"hello world\" content, then reply with just \"done\". Let me do that.\n\nI should use the write tool. The content should be exactly \"hello world\" — I'll include that content. Whether to include a trailing newline? \"exactly: hello world\" — I'll write \"hello world\" without a trailing newline to be exact."},"finish_reason":null,"index":0,"raw_output":null}],"created":1787884589,"id":"chatcmpl-a496f3fe12804de38511863b21cb6fe4","model":"accounts/fireworks/models/kimi-k3","object":"chat.completion.chunk","usage":null}
 
-data: {"id":"chatcmpl-971caa237c544f14bc5f82545f722b29","object":"chat.completion.chunk","created":1787677914,"model":"accounts/fireworks/models/kimi-k3","choices":[{"index":0,"delta":{},"finish_reason":"tool_calls","raw_output":null}],"usage":null}
+data: {"choices":[{"delta":{"tool_calls":[{"function":{"arguments":"{\"filePath\": \"<ROOT>/work/hello.txt\", \"content\": \"hello world\"}","name":"write"},"id":"write_0","index":0,"type":"function"}]},"finish_reason":null,"index":0,"raw_output":null}],"created":1787884589,"id":"chatcmpl-a496f3fe12804de38511863b21cb6fe4","model":"accounts/fireworks/models/kimi-k3","object":"chat.completion.chunk","usage":null}
 
-data: {"id":"chatcmpl-971caa237c544f14bc5f82545f722b29","object":"chat.completion.chunk","created":1787677914,"model":"accounts/fireworks/models/kimi-k3","choices":[],"usage":{"prompt_tokens":6824,"total_tokens":6909,"completion_tokens":85,"prompt_tokens_details":{"cached_tokens":0},"completion_tokens_details":{"reasoning_tokens":0},"output_tokens_details":{"reasoning_tokens":0}}}
+data: {"id":"chatcmpl-a496f3fe12804de38511863b21cb6fe4","object":"chat.completion.chunk","created":1787884589,"model":"accounts/fireworks/models/kimi-k3","choices":[{"index":0,"delta":{},"finish_reason":"tool_calls","raw_output":null}],"usage":null}
+
+data: {"id":"chatcmpl-a496f3fe12804de38511863b21cb6fe4","object":"chat.completion.chunk","created":1787884589,"model":"accounts/fireworks/models/kimi-k3","choices":[],"usage":{"prompt_tokens":6824,"total_tokens":6991,"completion_tokens":167,"prompt_tokens_details":{"cached_tokens":0},"completion_tokens_details":{"reasoning_tokens":82},"output_tokens_details":{"reasoning_tokens":82}}}
 
 data: [DONE]
 

@@ -1,10 +1,10 @@
-data: {"id":"chatcmpl-838e9997428f4b82a22622461fa6381b","object":"chat.completion.chunk","created":1787677918,"model":"accounts/fireworks/models/kimi-k3","choices":[{"index":0,"delta":{"role":"assistant"},"finish_reason":null,"raw_output":null}],"usage":null}
+data: {"id":"chatcmpl-5a480ced7154465b90f67734472561b7","object":"chat.completion.chunk","created":1787884593,"model":"accounts/fireworks/models/kimi-k3","choices":[{"index":0,"delta":{"role":"assistant"},"finish_reason":null,"raw_output":null}],"usage":null}
 
-data: {"id":"chatcmpl-838e9997428f4b82a22622461fa6381b","object":"chat.completion.chunk","created":1787677918,"model":"accounts/fireworks/models/kimi-k3","choices":[{"index":0,"delta":{"content":"done"},"finish_reason":null,"raw_output":null}],"usage":null}
+data: {"id":"chatcmpl-5a480ced7154465b90f67734472561b7","object":"chat.completion.chunk","created":1787884593,"model":"accounts/fireworks/models/kimi-k3","choices":[{"index":0,"delta":{"content":"done"},"finish_reason":null,"raw_output":null}],"usage":null}
 
-data: {"id":"chatcmpl-838e9997428f4b82a22622461fa6381b","object":"chat.completion.chunk","created":1787677918,"model":"accounts/fireworks/models/kimi-k3","choices":[{"index":0,"delta":{},"finish_reason":"stop","raw_output":null}],"usage":null}
+data: {"id":"chatcmpl-5a480ced7154465b90f67734472561b7","object":"chat.completion.chunk","created":1787884593,"model":"accounts/fireworks/models/kimi-k3","choices":[{"index":0,"delta":{},"finish_reason":"stop","raw_output":null}],"usage":null}
 
-data: {"id":"chatcmpl-838e9997428f4b82a22622461fa6381b","object":"chat.completion.chunk","created":1787677918,"model":"accounts/fireworks/models/kimi-k3","choices":[],"usage":{"prompt_tokens":6943,"total_tokens":6957,"completion_tokens":14,"prompt_tokens_details":{"cached_tokens":6823},"completion_tokens_details":{"reasoning_tokens":0},"output_tokens_details":{"reasoning_tokens":0}}}
+data: {"id":"chatcmpl-5a480ced7154465b90f67734472561b7","object":"chat.completion.chunk","created":1787884593,"model":"accounts/fireworks/models/kimi-k3","choices":[],"usage":{"prompt_tokens":7025,"total_tokens":7039,"completion_tokens":14,"prompt_tokens_details":{"cached_tokens":6823},"completion_tokens_details":{"reasoning_tokens":0},"output_tokens_details":{"reasoning_tokens":0}}}
 
 data: [DONE]
 

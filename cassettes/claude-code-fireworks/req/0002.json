@@ -30,7 +30,7 @@
       "content": [
         {
           "signature": "",
-          "thinking": "The user wants me to create a file named hello.txt containing exactly \"hello world\", then reply with the single word done.\n\nLet me use the Write tool. The working directory is <ROOT>/work. I should create the file there.\n\nThe content should be exactly \"hello world\". The question is whether to include a trailing newline. \"containing exactly: hello world\" suggests the content should be exactly those 11 characters. Write tool may or may not add a newline. I'll write exactly \"hello world\" with no trailing newline.",
+          "thinking": "The user wants me to create a file named hello.txt containing exactly \"hello world\" and then reply with the single word \"done\".\n\nLet me write the file.",
           "type": "thinking"
         },
         {
@@ -56,7 +56,7 @@
       "role": "user"
     },
     {
-      "content": "<total_tokens>14998135 tokens left</total_tokens>",
+      "content": "<total_tokens>14998227 tokens left</total_tokens>",
       "role": "system"
     }
   ],

@@ -36,6 +36,17 @@
       "call_id": "call_AtqF01CYO93hfAjZUynzdcTL",
       "output": "<path><ROOT>/work</path>\n<type>directory</type>\n<entries>\nopencode.json\n\n(1 entries)\n</entries>",
       "type": "function_call_output"
+    },
+    {
+      "arguments": "{\"patchText\":\"*** Begin Patch\\n*** Add File: hello.txt\\n+hello world\\n*** End Patch\"}",
+      "call_id": "call_TrRgoH6a691UE24YnqAs5BfJ",
+      "name": "apply_patch",
+      "type": "function_call"
+    },
+    {
+      "call_id": "call_TrRgoH6a691UE24YnqAs5BfJ",
+      "output": "Success. Updated the following files:\nA <ROOT-BARE>/work/hello.txt",
+      "type": "function_call_output"
     }
   ],
   "model": "gpt-5.6",

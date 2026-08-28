@@ -7,7 +7,7 @@
       "auth": "an Anthropic API key",
       "model": "claude-sonnet-5",
       "steps": 2,
-      "recorded": "2026-08-25"
+      "recorded": "2026-08-28"
     },
     "claude-code-fireworks": {
       "agent": "claude",
@@ -15,7 +15,7 @@
       "auth": "a Fireworks API key",
       "model": "accounts/fireworks/models/kimi-k3",
       "steps": 2,
-      "recorded": "2026-08-25"
+      "recorded": "2026-08-28"
     },
     "claude-code-subscription": {
       "agent": "claude",
@@ -23,7 +23,7 @@
       "auth": "a Claude Pro/Max subscription",
       "model": "claude-sonnet-5",
       "steps": 2,
-      "recorded": "2026-08-25"
+      "recorded": "2026-08-28"
     },
     "codex-api-key": {
       "agent": "codex",
@@ -31,15 +31,15 @@
       "auth": "an OpenAI API key",
       "model": "gpt-5.6-sol",
       "steps": 2,
-      "recorded": "2026-08-25"
+      "recorded": "2026-08-28"
     },
     "codex-chatgpt": {
       "agent": "codex",
       "agent_version": "0.149.1",
       "auth": "a ChatGPT subscription",
       "model": "gpt-5.6-sol",
-      "steps": 5,
-      "recorded": "2026-08-25"
+      "steps": 4,
+      "recorded": "2026-08-28"
     },
     "opencode-anthropic": {
       "agent": "opencode",
@@ -47,7 +47,7 @@
       "auth": "an Anthropic API key",
       "model": "anthropic/claude-sonnet-5",
       "steps": 3,
-      "recorded": "2026-08-25"
+      "recorded": "2026-08-28"
     },
     "opencode-fireworks": {
       "agent": "opencode",
@@ -55,15 +55,15 @@
       "auth": "a Fireworks API key",
       "model": "fireworks-ai/accounts/fireworks/models/kimi-k3",
       "steps": 3,
-      "recorded": "2026-08-25"
+      "recorded": "2026-08-28"
     },
     "opencode-openai": {
       "agent": "opencode",
       "agent_version": "1.18.22",
       "auth": "an OpenAI API key",
       "model": "openai/gpt-5.6",
-      "steps": 3,
-      "recorded": "2026-08-25"
+      "steps": 4,
+      "recorded": "2026-08-28"
     }
   }
 }

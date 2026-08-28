@@ -1,33 +1,21 @@
 event: message_start
-data: {"type":"message_start","message":{"model":"claude-haiku-4-5-20251001","id":"msg_011CePqcxkdznNuhY93itjQX","type":"message","role":"assistant","content":[],"stop_reason":null,"stop_sequence":null,"stop_details":null,"usage":{"input_tokens":618,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":0},"output_tokens":8,"service_tier":"standard","inference_geo":"not_available"}}}
+data: {"type":"message_start","message":{"model":"claude-sonnet-5","id":"msg_011CeUNJUbMaho7bWUVqgq9r","type":"message","role":"assistant","content":[],"stop_reason":null,"stop_sequence":null,"stop_details":null,"usage":{"input_tokens":2,"cache_creation_input_tokens":130,"cache_read_input_tokens":10586,"cache_creation":{"ephemeral_5m_input_tokens":130,"ephemeral_1h_input_tokens":0},"output_tokens":1,"service_tier":"standard","inference_geo":"global"}}        }
 
 event: content_block_start
-data: {"type":"content_block_start","index":0,"content_block":{"type":"thinking","thinking":"","signature":""}    }
+data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}           }
 
 event: ping
 data: {"type": "ping"}
 
 event: content_block_delta
-data: {"delta":{"thinking":"The user is asking me to generate a title for a conversation where someone is asking to create a file named hello.txt with specific content (\"hello world\") and then reply with \"done\".\n\nLet me think about what this conversation is about:\n- Creating a file (hello.txt)\n- Adding specific content to it\n- The main task is file creation\n\nFollowing the rules:\n- Same language as user message: English\n- Grammatically correct and natural\n- No tool names\n- Focus on what the user wants to do WITH the file (creating it with specific content)\n- Keep technical terms/filenames exact (hello.txt)\n- Remove articles (the, this, my, a, an)\n- Should be ≤50 characters\n- Single line\n\nThe main focus is: creating hello.txt with \"hello world\" content\n\nOptions:\n1. \"Create hello.txt file\" - 18 characters ✓\n2. \"Create hello.txt with hello world\" - 33 characters ✓\n3. \"hello.txt file creation\" - 23 characters ✓\n4. \"hello.txt setup\" - 15 characters ✓\n\nLooking at examples, they focus on the action/purpose:\n- \"Dark mode toggle in App\" (action + location)\n- \"Postgres API connection\" (what + with what)\n- \"Rate limiting implementation\" (feature implementation)\n\nBest fit: \"Create hello.txt with hello world\" or \"hello.txt file creation\"\n\nActually, simpler: \"Create hello.txt file\" is clear and concise.\n\nOr even simpler based on the examples pattern: \"hello.txt creation\"\n\nLet me check character count:\n\"hello.txt creation\" = 18 characters ✓\n\nThis is simple, clear, and follows the pattern of examples.","type":"thinking_delta"},"index":0,"type":"content_block_delta"}
-
-event: content_block_delta
-data: {"type":"content_block_delta","index":0,"delta":{"type":"signature_delta","signature":"EtMNCpoBCBEYAipA/Q4hp6OL3+cPLrS4UfXPJGiZZvg6kLKspaiYDQBNVHRE4724YosVh/Lombqu2dwJiqAAjvPO098oUb5uWVYCijIZY2xhdWRlLWhhaWt1LTQtNS0yMDI1MTAwMTgAQgh0aGlua2luZ1okYTYzM2U0MTQtYjEzZi00ZDEwLTk4YjItMjA0YWUzNTUwMmNjqAHMmbfUBhIMQN9kcz3o0GjAiez/GgxZWNbBpI9Cg6pSeokiMKpPSYdJIaAq60aOcZCmhdE4daPeonNn4UR3QoJ1dyZkYNfIHThdhYZfRXqJTsTuVSrlC2H7boIuOzRk+2JxIOupseB7JKG8bQRoGHIN5rdVVXHugIarLNgGZMl9b+el1GHvuzeE7OfEHbWBOUB7IdB8LVCzX51oub8QN8UBEaWxB5Ccy4CxeeRLbk15Y4c4hRk4nx6jFHslvr2lvCB9NwWrHzG3JFQ8b3ZQzNo11QyG+Ug0aeg9ZYerrxFJEMmukxI99NNVgkQA8+DqueCtB2tFbZtHX/vkXtwloK2xO99GbfddvaqV3uiCEvFeSwgjbeFyd/qdpWV9jo33uNrrrFvHFuI3C+e4z6LEgIuAlBG2sKakbGt2xsZ1Gof85nXVAkg/OVaEyahwAwop7GbW9eMTxDi1RX0leBuzaG5D4qWoAlM3DpZvDEL7qDdmFn6mPM/SsWw3ZdNERb9DjaTzRfpOmTr0/4RmYM2ET9PsYMKtlQvczLdyP8kXs7r/a+DoccrcK+vWA9H4SM5kA1DuRo7QF72weT6DilNU4EO53KnHvN2U4R151YalKb875/S+idmKhzgxnzxoPbGVGT3bnkrNpFou0ndcoDA2LBQ64g/72KzcVE9wWXzQi8kLiLzSGOLdQNjTmFVCdU4Sd22HiR9d5zjPIHSPHqhh3cdcuxKn4p63NFF8wFq+6uhN70PMvVdw94pmnmwf3byv67simVBN6WAZ1wTQz0VwpWnxPVF5L1DEfzUbIDt/qswvUqNU+63/aWoOygCD4ZnmsWu1FwC/nWXgwtjP2fm9WZJ/cA9+5S0uMKq6wDpOtTqQ1bYdpvb5ADHnr3MIL3BbVSEK/Gx8j40EyIxHgBjDMyaSLT9p0Q/81yp3YOKzPJAxAhKW4vS8q2IIK6B/pJ7w6PKV+r7tl0Kp/NFYTVEwkHMjfxmbBNdyPzibOWXmeK+8VkuZr3wN7p91E3KUg+1ChWSLjARmJMAF9uqKfj3XFZ2ZKvdq3QGq9DSGNawLRj56/ssYILVO6USbRAd8xvUBjc4NaCsXdiO93YZ7AHzCeGvk4Rk8c5865Oj0iMQksqe3QGgROGR8JNCuReTSM6GQ4FL9W3hSSvXuVKC6L586XZGWrYCc12gbewzwsxWeTQJovXUo+seDSQAWZpDF8wV8je1YC2WfRgihXamtiDKcE+7cAKZiQSnkGoADamTKjD9TlDN9mTQ+kO/jfCsqZrt/fIy8Pe1omLMol5l3JrczDyZWcFUaHG70DPqZlLjLSp7YJ9d7EL+g6PJxqG/Vy9wPyUIziULl8RWg7oNbqurA1eEkVFns1Jv2o1v0w142mrqm0hFJ+ZD7s09GyCEhxJiAD86Wo/YrXUyd9Yt7sIoYPetA9Iw3Z5d/0c/BMTtNbE1ReuPJe6Ia5ZXzyyRFlcqEfqSOiRc7DgitXYRswOC1uiH/U18VRp7RHH1FhmZg8Dh8dssBI2R40c01t4FTv5C6VYUmKtNpk6NH3yJczS6fNTf6ubDlg4PJEXy7mlpdHxA168z4wdCQMBdWzsguZBCgqKykQmNR/EVbaKDneSqODZmCUhcVT9nQ6Ra/cUo7b4LN++K7kpUR7WBbP+ECM7u0A3ZjeBAfbqHUzHfcsKQRNJPokMKOBklDc+1xWM7bA0TO/3hMSwxQJrt3sRdDCulhBjBtupuwf4xhx6uYauxm9w4/ED9bAupCLP4FmMm46but2oEWQawEYtey64BiyFI7BacBVyEuc4NLT4ZoOsl4HL9rFx0RD1dzFGUKOYVCbsB+D1nbVpdlKkqe5j8I2xvHNv8GgHlRjahvcch2nshluRs8V28YF7XMID4QQ3e1piVi7ESFx41KdFkw3V2wI9S1Fx2C6ztyMx1pfJq9X2UbgBPody0n1t/95dAa21hs1syeS571jXK7ZXATcliFJPblMo6a7J1GpSdLyPqkefciXNcgVifq+0U69ijuUBaFYrKt5PJZHx6lvTFULd6yizFWdeb2a3wyLxo6sCTG486bjmZzMqDWcVtQwKXkwagQwVVY74l6hjcFRsZKfYj/K9vo2N3mvEvX/9j0ZUKaPhgB"}   }
+data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"done"} }
 
 event: content_block_stop
-data: {"type":"content_block_stop","index":0  }
-
-event: content_block_start
-data: {"type":"content_block_start","index":1,"content_block":{"type":"text","text":""}          }
-
-event: content_block_delta
-data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"hello.txt creation"}  }
-
-event: content_block_stop
-data: {"type":"content_block_stop","index":1  }
+data: {"type":"content_block_stop","index":0     }
 
 event: message_delta
-data: {"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null,"stop_details":null},"usage":{"input_tokens":618,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":416,"output_tokens_details":{"thinking_tokens":406}}  }
+data: {"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null,"stop_details":null},"usage":{"input_tokens":2,"cache_creation_input_tokens":130,"cache_read_input_tokens":10586,"output_tokens":3,"output_tokens_details":{"thinking_tokens":0}} }
 
 event: message_stop
-data: {"type":"message_stop"             }
+data: {"type":"message_stop"              }
 
