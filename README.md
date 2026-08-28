@@ -187,19 +187,13 @@ model_provider = "cs-vcr"
 
 [model_providers.cs-vcr]
 name = "cs-vcr"
-base_url = "http://127.0.0.1:8080/c/openai/codex-build"
+base_url = "http://127.0.0.1:8080/c/chatgpt/codex-build"
 wire_api = "responses"
 requires_openai_auth = true
 ```
 
-Send cs-vcr's OpenAI traffic to `chatgpt.com`, the host that login works against:
-
-```yaml
-# ~/.config/cs-vcr/config.yaml; on macOS, ~/Library/Application Support/cs-vcr/config.yaml.
-# `cs-vcr config` prints the path it loaded.
-providers:
-  openai: {base_url: https://chatgpt.com/backend-api/codex}
-```
+The `chatgpt` in that URL is the provider that serves a ChatGPT login, at
+`chatgpt.com/backend-api/codex`. It ships with cs-vcr, so there is no configuration file to write.
 
 ```bash
 cs-vcr record                             # terminal 1
@@ -210,11 +204,11 @@ Signed in with an API key instead, change two lines in `config.toml`:
 
 ```toml
 base_url = "http://127.0.0.1:8080/c/openai/codex-build/v1"    # an API key session ends in /v1
-env_key = "OPENAI_API_KEY"                             # in place of requires_openai_auth
+env_key = "OPENAI_API_KEY"                                   # in place of requires_openai_auth
 ```
 
-Then leave cs-vcr's own config file alone. Its `openai` provider already points at
-`api.openai.com`, which is what accepts an API key.
+The provider changes with it: an API key is accepted at `openai`, which points at
+`api.openai.com`.
 
 ### 3. OpenCode
 

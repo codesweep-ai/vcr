@@ -535,10 +535,14 @@ const (
 // Default is the configuration before any file, environment or flag is applied.
 //
 // The provider set is populated because a proxy that knows no providers is
-// useless. These three are the ones this project records against, each at the
-// endpoint that serves its own API, so a deployment reaching one of them needs
-// no configuration file. A file adds an entry for anything else: a gateway, a
-// local model server, or a second endpoint of a provider already here.
+// useless. These four are the endpoints this project records against, so a
+// deployment reaching one of them needs no configuration file. A file adds an
+// entry for anything else: a gateway, or a local model server.
+//
+// `openai` and `chatgpt` are one vendor at two endpoints, and they are two
+// entries because a Codex signed in with ChatGPT talks to the second while an
+// API key is accepted at the first. Naming the provider in the base URL is what
+// lets both stand: the client picks one by the URL it is given.
 func Default() *Config {
 	return &Config{
 		Cassettes: "cassettes",
@@ -547,6 +551,7 @@ func Default() *Config {
 		Providers: map[string]*Provider{
 			"anthropic": {BaseURL: "https://api.anthropic.com"},
 			"openai":    {BaseURL: "https://api.openai.com"},
+			"chatgpt":   {BaseURL: "https://chatgpt.com/backend-api/codex"},
 			"fireworks": {BaseURL: "https://api.fireworks.ai/inference"},
 		},
 		Lookahead:      8,

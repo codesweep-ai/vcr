@@ -264,10 +264,54 @@ func TestConfigPrintsThePrefixAndTheProviders(t *testing.T) {
 	}
 	// The three that ship, and the one this file added.
 	for _, want := range []string{"/c/<provider>/<cassette>",
-		"anthropic", "openai", "fireworks", "gateway", "gateway.example.test"} {
+		"anthropic", "openai", "chatgpt", "fireworks", "gateway", "gateway.example.test"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("config output missing %q:\n%s", want, out)
 		}
+	}
+}
+
+// Codex reaches two endpoints, and which one it is decides two things beyond
+// the URL segment: whether the base URL carries a version, and whether the
+// login travels as a key. The provider names the endpoint, so the printed block
+// settles both rather than asking the reader to edit it.
+func TestConfigPrintsCodexPerEndpoint(t *testing.T) {
+	chatgpt, err := runWithConfig(t, "", nil, "config", "codex",
+		"--cassette", "build", "--provider", "chatgpt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		`base_url = "http://127.0.0.1:8080/c/chatgpt/build"`,
+		"requires_openai_auth = true",
+	} {
+		if !strings.Contains(chatgpt, want) {
+			t.Errorf("the ChatGPT block is missing %q:\n%s", want, chatgpt)
+		}
+	}
+	// The note names the other mode, so the assertion is on the setting.
+	if strings.Contains(chatgpt, "env_key") {
+		t.Errorf("the ChatGPT block asks for a key:\n%s", chatgpt)
+	}
+	if strings.Contains(chatgpt, "/c/chatgpt/build/v1") {
+		t.Errorf("the ChatGPT block carries a version its endpoint has none of:\n%s", chatgpt)
+	}
+
+	key, err := runWithConfig(t, "", nil, "config", "codex",
+		"--cassette", "build", "--provider", "openai")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		`base_url = "http://127.0.0.1:8080/c/openai/build/v1"`,
+		`env_key = "OPENAI_API_KEY"`,
+	} {
+		if !strings.Contains(key, want) {
+			t.Errorf("the API-key block is missing %q:\n%s", want, key)
+		}
+	}
+	if strings.Contains(key, "requires_openai_auth") {
+		t.Errorf("the API-key block asks for a subscription login:\n%s", key)
 	}
 }
 

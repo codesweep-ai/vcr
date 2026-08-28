@@ -201,27 +201,21 @@ client.
 ANTHROPIC_BASE_URL=http://127.0.0.1:8080/c/anthropic/build claude -p "add a /version endpoint"
 ```
 
-**Codex, signed in with ChatGPT**, in `~/.codex/config.toml`:
+**Codex, signed in with ChatGPT**, in `~/.codex/config.toml`. The `chatgpt` provider is where that
+login is accepted, and its endpoint carries no version, so the base URL carries none either:
 
 ```toml
 model_provider = "cs-vcr"
 
 [model_providers.cs-vcr]
 name = "cs-vcr"
-base_url = "http://127.0.0.1:8080/c/openai/build"
+base_url = "http://127.0.0.1:8080/c/chatgpt/build"
 wire_api = "responses"
 requires_openai_auth = true
 ```
 
-and `~/.config/cs-vcr/config.yaml`:
-
-```yaml
-providers:
-  openai: {base_url: https://chatgpt.com/backend-api/codex}
-```
-
-**Codex, signed in with an API key**: the same, with two changes in `config.toml`, and no cs-vcr
-config at all:
+**Codex, signed in with an API key**: the same, with two changes. An API key is accepted at
+`openai`, whose path is versioned:
 
 ```toml
 base_url = "http://127.0.0.1:8080/c/openai/build/v1"
@@ -257,13 +251,17 @@ ANTHROPIC_BASE_URL=http://127.0.0.1:8080/c/anthropic/$TEST/v1 opencode run --mod
 
 Each name is one path segment of letters, digits, dot, dash or underscore.
 
-**cs-vcr ships three providers**, so a run against one of them needs no configuration file:
+**cs-vcr ships four providers**, so a run against one of them needs no configuration file:
 
-| Provider | Endpoint |
-|---|---|
-| `anthropic` | `https://api.anthropic.com` |
-| `openai` | `https://api.openai.com` |
-| `fireworks` | `https://api.fireworks.ai/inference` |
+| Provider | Endpoint | |
+|---|---|---|
+| `anthropic` | `https://api.anthropic.com` | |
+| `openai` | `https://api.openai.com` | an OpenAI API key |
+| `chatgpt` | `https://chatgpt.com/backend-api/codex` | a ChatGPT subscription |
+| `fireworks` | `https://api.fireworks.ai/inference` | |
+
+One vendor may have two of them. A Codex signed in with ChatGPT talks to the second endpoint above,
+and an API key is accepted at the first, so the base URL picks which.
 
 **The provider is a key you choose.** It names an entry under `providers`, and cs-vcr reads no
 meaning into it. An entry called `fireworks` may serve the Anthropic Messages API. Add one for

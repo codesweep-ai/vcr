@@ -38,9 +38,11 @@ type agent struct {
 	// title is what a reader calls this agent, which is not what they type:
 	// "Claude Code" is the product, "claude" is the binary.
 	title string
-	// suffix is what this client expects after the cassette prefix, which is
-	// the whole reason this command exists.
-	suffix string
+	// suffix is what this client expects after the prefix, which is the whole
+	// reason this command exists. It takes the provider because one client can
+	// reach two endpoints that differ in it: the ChatGPT backend Codex talks to
+	// has no version segment, and the OpenAI API has one.
+	suffix func(provider string) string
 	// env are the variables that point the agent at cs-vcr. Empty for a client
 	// with no base-URL variable for this provider.
 	env func(provider, base string) []envVar
@@ -74,7 +76,7 @@ func claudeCode() agent {
 		title: "Claude Code",
 		// No /v1: Claude Code appends the version itself, and a base URL that
 		// already carries one produces /v1/v1/messages.
-		suffix: "",
+		suffix: noVersion,
 		env: func(_, base string) []envVar {
 			return []envVar{{"ANTHROPIC_BASE_URL", base}}
 		},
@@ -96,33 +98,46 @@ func claudeCode() agent {
 
 func codexCLI() agent {
 	return agent{
-		name:   "codex",
-		title:  "Codex",
-		suffix: "/v1",
-		command: func(_, base string) string {
-			return fmt.Sprintf(`codex exec -c 'model_provider="%[1]s"' \
-  -c 'model_providers.%[1]s={name="%[1]s", base_url="%[2]s", env_key="OPENAI_API_KEY", wire_api="responses"}' \
-  %[3]q`, providerName, base, prompt)
+		name:  "codex",
+		title: "Codex",
+		// The ChatGPT backend's endpoint is /responses with no version in front,
+		// so a base URL for it carries none either.
+		suffix: func(provider string) string {
+			if isChatGPT(provider) {
+				return ""
+			}
+			return "/v1"
 		},
-		persist: func(_, base string) (string, string) {
+		command: func(provider, base string) string {
+			return fmt.Sprintf(`codex exec -c 'model_provider="%[1]s"' \
+  -c 'model_providers.%[1]s={name="%[1]s", base_url="%[2]s", %[3]s, wire_api="responses"}' \
+  %[4]q`, providerName, base, codexAuthInline(provider), prompt)
+		},
+		persist: func(provider, base string) (string, string) {
 			return "~/.codex/config.toml", fmt.Sprintf(`model_provider = "%[1]s"
 
 [model_providers.%[1]s]
 name = "%[1]s"
 base_url = "%[2]s"
-env_key = "OPENAI_API_KEY"
-wire_api = "responses"`, providerName, base)
+%[3]s
+wire_api = "responses"`, providerName, base, codexAuthKey(provider))
 		},
 		notes: func(provider, _ string) []string {
-			return []string{
+			out := []string{
 				"Codex has no base-URL environment variable, so the provider block is how it",
 				"is pointed anywhere. The -c flags above set the same keys without touching",
 				"config.toml, which is what a build switching cassettes per test wants.",
 				"",
-				"Signed in with ChatGPT rather than an API key: replace env_key with",
-				"requires_openai_auth = true, drop the /v1 from the base URL, and point",
-				fmt.Sprintf("the %s provider at https://chatgpt.com/backend-api/codex.", provider),
 			}
+			if isChatGPT(provider) {
+				return append(out,
+					"This is the ChatGPT-subscription form: the login travels as itself rather",
+					"than as a key, and the backend's endpoint carries no version.",
+					"For an OPENAI_API_KEY session, print this again with --provider openai.")
+			}
+			return append(out,
+				"This is the API-key form. For a ChatGPT subscription, print this again with",
+				fmt.Sprintf("--provider %s, the endpoint that accepts one.", chatGPTProvider))
 		},
 	}
 }
@@ -131,7 +146,7 @@ func openCode() agent {
 	return agent{
 		name:   "opencode",
 		title:  "OpenCode",
-		suffix: "/v1",
+		suffix: withVersion,
 		env: func(provider, base string) []envVar {
 			if v := openCodeVar(provider); v != "" {
 				return []envVar{{v, base}}
@@ -174,6 +189,34 @@ func openCode() agent {
 			}, out...)
 		},
 	}
+}
+
+// noVersion and withVersion are the two fixed answers to "what does this client
+// append", for the clients that give the same one whatever they are pointed at.
+func noVersion(string) string   { return "" }
+func withVersion(string) string { return "/v1" }
+
+// chatGPTProvider is the entry cs-vcr ships for the endpoint a ChatGPT
+// subscription is accepted at. Codex reaches it differently from the OpenAI
+// API: no version segment, and a login rather than a key.
+const chatGPTProvider = "chatgpt"
+
+func isChatGPT(provider string) bool { return provider == chatGPTProvider }
+
+// codexAuthKey is the config.toml line that says how this endpoint authenticates.
+func codexAuthKey(provider string) string {
+	if isChatGPT(provider) {
+		return "requires_openai_auth = true"
+	}
+	return `env_key = "OPENAI_API_KEY"`
+}
+
+// codexAuthInline is the same setting inside a -c provider block.
+func codexAuthInline(provider string) string {
+	if isChatGPT(provider) {
+		return "requires_openai_auth=true"
+	}
+	return `env_key="OPENAI_API_KEY"`
 }
 
 // openCodeVar is the base-URL variable OpenCode reads for one provider, or ""
@@ -261,7 +304,7 @@ func tunnelPrefix(proxyURL string) string {
 // printAgentConfig writes what one agent needs in order to record into or
 // replay from one cassette.
 func printAgentConfig(out io.Writer, a agent, proxyURL, cassette, provider string, envOnly bool) error {
-	base := agentBaseURL(proxyURL, provider, cassette, a.suffix)
+	base := agentBaseURL(proxyURL, provider, cassette, a.suffix(provider))
 
 	var vars []envVar
 	if a.env != nil {

@@ -74,6 +74,7 @@ base URL prefix    /c/<provider>/<cassette>
 
 PROVIDER   BASE URL
 anthropic  https://api.anthropic.com
+chatgpt    https://chatgpt.com/backend-api/codex
 fireworks  https://api.fireworks.ai/inference
 openai     https://api.openai.com
 ```

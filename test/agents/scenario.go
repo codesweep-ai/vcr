@@ -319,8 +319,8 @@ func codexChatGPT() scenario {
 		// A ChatGPT login is accepted by the ChatGPT backend, whose endpoint is
 		// /responses with no version prefix — so the base URL carries none.
 		urlSuffix: "",
-		provider:  "openai",
-		vcrConfig: "providers:\n  openai: {base_url: https://chatgpt.com/backend-api/codex}\n",
+		provider:  "chatgpt",
+		vcrConfig: "providers:\n  chatgpt: {base_url: https://chatgpt.com/backend-api/codex}\n",
 		needs: func(getenv func(string) string) (credential, error) {
 			p := codexAuthPath(getenv)
 			if _, err := os.Stat(p); err != nil {

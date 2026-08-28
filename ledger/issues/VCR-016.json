@@ -25,6 +25,10 @@
     {
       "date": "2026-08-27",
       "text": "Followed up in review. The claude-code-fireworks scenario now names its provider entry `fireworks`, so the entry no longer states a vendor its base_url contradicts. The cassettes still carry `anthropic` as recorded metadata until they are recorded again. The printer's provider is an argument rather than a per-client default, and the prefix is one word in the code as well: Prefix, RoutePrefix, ErrNoPrefix, and the no_prefix and bad_prefix replies."
+    },
+    {
+      "date": "2026-08-27",
+      "text": "The shipped provider set grew to four: anthropic, openai, chatgpt and fireworks, each at its own endpoint. Naming the provider in the base URL is what allows the third, because openai and chatgpt are one vendor at two endpoints and a request cannot be told which it meant. A deployment reaching any of the four now writes no configuration file, and `cs-vcr config codex` prints the block each endpoint actually needs: a version segment and a key for one, neither for the other."
     }
   ],
   "links": []
