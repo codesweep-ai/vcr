@@ -14,10 +14,11 @@
 # To make it a sidecar, add an agent container to this pod. Containers in a pod
 # share one network namespace, so the agent reaches cs-vcr on localhost.
 #
-# Nothing here names a cassette. The agent does, by ending its base URL in
-# /c/<name>:
+# Nothing here names a cassette or a provider. The agent names both, by ending
+# its base URL in /c/<provider>/<cassette>. Both segments are required, and a
+# URL carrying one is refused as `bad_prefix`:
 #
-#   ANTHROPIC_BASE_URL=http://127.0.0.1:8080/c/build
+#   ANTHROPIC_BASE_URL=http://127.0.0.1:8080/c/anthropic/build
 #
 # What this file does have to get right is the store below, which has to be
 # readable by uid 65532 — under rootless podman, a host directory belonging to a

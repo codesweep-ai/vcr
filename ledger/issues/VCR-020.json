@@ -1,0 +1,22 @@
+{
+  "id": "VCR-020",
+  "title": "The pod manifest shows a base URL that the build would refuse",
+  "type": "defect",
+  "severity": "low",
+  "status": "open",
+  "foundBy": "session agent, reading deploy/vcr.yaml",
+  "opened": "2026-08-28",
+  "resolved": null,
+  "stint": null,
+  "evidence": {
+    "commits": [],
+    "integrated": [],
+    "verified": null
+  },
+  "resolution": null,
+  "details": "`deploy/vcr.yaml` tells the reader to end a base URL in `/c/<name>`, and shows `ANTHROPIC_BASE_URL=http://127.0.0.1:8080/c/build`.\n\nThe prefix has carried two segments since the provider became part of it. A URL with one segment is refused as `bad_prefix`, so a reader who copies the line gets a pod that serves nothing and an error naming a rule the file never mentioned.\n\nIt is the only place the old one-segment form survives.",
+  "notes": [],
+  "links": [
+    "VCR-016"
+  ]
+}

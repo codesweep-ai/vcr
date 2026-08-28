@@ -159,14 +159,21 @@ func report(out io.Writer, byPath map[string]*proposal, shapes []string, paired,
 	// Printed as config that parses, because pasting it is the whole point:
 	// `volatile` is a list of paths, and the evidence goes above each as a
 	// comment rather than beside it as a field that does not exist.
+	//
+	// Under `extend`, because a bare `volatile` REPLACES the shipped list. This
+	// output is meant to be pasted, and pasting it used to leave a deployment
+	// with these paths and none of the four cs-vcr ships. Those four are the
+	// tool results, so the paste fixed one miss and caused a miss on every
+	// multi-turn request after it.
 	fmt.Fprintf(out, "\n%d path(s) differed. Declare the ones the WORLD decides:\n\n", len(props))
 	fmt.Fprintln(out, "normalize:")
-	fmt.Fprintln(out, "  volatile:")
+	fmt.Fprintln(out, "  extend:")
+	fmt.Fprintln(out, "    volatile:")
 	for _, p := range props {
-		fmt.Fprintf(out, "    # %d difference(s), e.g.\n", p.count)
-		fmt.Fprintf(out, "    #   recorded: %s\n", p.recorded)
-		fmt.Fprintf(out, "    #   this run: %s\n", p.live)
-		fmt.Fprintf(out, "    - %s\n", p.path)
+		fmt.Fprintf(out, "      # %d difference(s), e.g.\n", p.count)
+		fmt.Fprintf(out, "      #   recorded: %s\n", p.recorded)
+		fmt.Fprintf(out, "      #   this run: %s\n", p.live)
+		fmt.Fprintf(out, "      - %s\n", p.path)
 	}
 	return nil
 }

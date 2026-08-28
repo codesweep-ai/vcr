@@ -400,6 +400,60 @@ func TestAnUnrecordedAuxiliaryTurnRepeatsTheLastOne(t *testing.T) {
 	}
 }
 
+// A cassette recorded on ONE model still has its bookkeeping recognized.
+//
+// The model was the only signal at first, and it is the wrong one: a harness
+// that wants a replayable cassette pins the model, and `claude -p --model X`
+// puts the title generation on X as well. Every step then carries the same
+// model, nothing is recognized as auxiliary, and the relaxation is off in the
+// case it exists for. Measured on two recordings of one task, alike but for the
+// credential: the half that let the client choose put its title call on haiku
+// and replayed clean, and the half that pinned the model missed one request of
+// three, on every run.
+//
+// What tells them apart here is the tool list. A step carrying twenty-one tools
+// is the work, and a step carrying none is not.
+func TestAnAuxiliaryTurnIsRecognizedOnAPinnedModel(t *testing.T) {
+	const (
+		pinned = "claude-fable-5"
+		title  = `{"messages":[{"text":"name this"}],"model":"` + pinned + `"}`
+		work   = `{"messages":[{"text":"do it"}],"tools":[{"name":"bash"}],"model":"` + pinned + `"}`
+		// The same bookkeeping call, worded as this run happened to word it.
+		liveTitle = `{"messages":[{"text":"name it differently"}],"model":"` + pinned + `"}`
+	)
+	s := script(t, title, work)
+	sel, miss := s.Next(ask(liveTitle), nil, 8, true)
+	if miss != nil {
+		t.Fatalf("the title turn missed on a single-model cassette: %+v", miss)
+	}
+	if !sel.Auxiliary || sel.Entry.Seq != 1 {
+		t.Fatalf("served %+v, want the recorded title turn marked auxiliary", sel)
+	}
+	// And the work still has to align exactly, on the same model.
+	if _, miss := s.Next(ask(work), nil, 8, true); miss != nil {
+		t.Fatalf("the real turn missed after the title turn was absorbed: %+v", miss)
+	}
+}
+
+// A cassette with no work in it absorbs nothing, which is the guard that keeps
+// the relaxation from swallowing ordinary traffic.
+//
+// Every step here is single-message, tool-free and on one model, so there is
+// nothing for a bookkeeping call to be distinguished FROM. A client whose every
+// request looks like this must still align exactly, or one of its turns would
+// answer any other.
+func TestASessionOfOnlyShapedTurnsAbsorbsNothing(t *testing.T) {
+	const (
+		one  = `{"messages":[{"text":"first"}],"model":"m"}`
+		two  = `{"messages":[{"text":"second"}],"model":"m"}`
+		live = `{"messages":[{"text":"neither"}],"model":"m"}`
+	)
+	s := script(t, one, two)
+	if _, miss := s.Next(ask(live), nil, 8, true); miss == nil {
+		t.Fatal("a cassette with no work in it absorbed an unrelated turn as bookkeeping")
+	}
+}
+
 // The relaxation is for bookkeeping calls only. A single-message turn that
 // carries tools is the session's work, and must still align exactly.
 func TestWorkIsNotTreatedAsAuxiliary(t *testing.T) {

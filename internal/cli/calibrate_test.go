@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -172,8 +173,21 @@ func TestCalibrateOutputParsesAsConfig(t *testing.T) {
 	if err != nil {
 		t.Fatalf("the proposal does not parse as config: %v\n%s", err, yaml)
 	}
-	if got := cfg.Normalize.VolatilePaths(); len(got) != 1 || got[0] != "input[].output[].text" {
-		t.Errorf("parsed volatile = %v, want the proposed path", got)
+	// The proposal ADDS to the shipped ruleset rather than standing in for it.
+	// Pasting it used to leave a deployment with this path and none of the four
+	// tool-result paths cs-vcr ships, so the paste fixed one miss and caused a
+	// miss on every multi-turn request after it.
+	got2 := cfg.Normalize.VolatilePaths()
+	if len(got2) == 0 || got2[len(got2)-1] != "input[].output[].text" {
+		t.Errorf("parsed volatile = %v, want the proposed path last", got2)
+	}
+	for _, shipped := range config.Default().Normalize.VolatilePaths() {
+		if !slices.Contains(got2, shipped) {
+			t.Errorf("pasting the proposal dropped the shipped volatile path %q: %v", shipped, got2)
+		}
+	}
+	if got := cfg.Normalize.ReplacedShipped(); len(got) > 0 {
+		t.Errorf("the proposal replaced %v instead of extending", got)
 	}
 	// And it does what it claims: the turn that missed now aligns.
 	rec, err := os.ReadFile(c.RequestPath(1))

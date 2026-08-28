@@ -35,6 +35,81 @@ func TestLoadRejectsUnknownKeys(t *testing.T) {
 	}
 }
 
+// `normalize.extend` adds to the shipped ruleset. The documented way to add one
+// rule used to drop the rest, because a YAML sequence replaces the slice it
+// decodes into: a file declaring one `replace` took the resolved ruleset from
+// ten replacements to one. The rules it dropped are what let a multi-turn
+// session replay, so the loss showed up as a miss on a request nobody edited.
+func TestExtendAddsToTheShippedRuleset(t *testing.T) {
+	shipped := Default().Normalize
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	body := "normalize:\n  extend:\n    volatile: [mine.path]\n" +
+		"    replace:\n      - {pattern: 'x', with: 'y'}\n" +
+		"    capture:\n      - {pattern: '(a)', as: '<A>'}\n"
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	c, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, w := range []struct {
+		field    string
+		got, was int
+	}{
+		{"volatile", len(c.Normalize.Volatile), len(shipped.Volatile)},
+		{"replace", len(c.Normalize.Replace), len(shipped.Replace)},
+		{"capture", len(c.Normalize.Capture), len(shipped.Capture)},
+	} {
+		if w.got != w.was+1 {
+			t.Errorf("%s has %d rules, want the %d shipped plus 1", w.field, w.got, w.was)
+		}
+	}
+	// Appended after the shipped rules, because order is part of the contract
+	// for replacements and a deployment's rule is the more specific one.
+	if last := c.Normalize.Replace[len(c.Normalize.Replace)-1]; last.Pattern != "x" {
+		t.Errorf("the added replacement is at %q, want it last", last.Pattern)
+	}
+	// And nothing was replaced, so there is nothing to report.
+	if got := c.Normalize.ReplacedShipped(); len(got) > 0 {
+		t.Errorf("extending reported a replacement of %v", got)
+	}
+}
+
+// The replacing form still works, for a deployment that means it, and says so.
+// Silently standing in for the shipped rules is the defect; doing it on purpose
+// is a choice cs-vcr has no business refusing.
+func TestReplacingTheShippedRulesetIsReported(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	body := "normalize:\n  volatile: [only.mine]\n"
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	c, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := c.Normalize.Volatile; len(got) != 1 {
+		t.Errorf("volatile has %d rules, want the 1 the file named", len(got))
+	}
+	if got := c.Normalize.ReplacedShipped(); !slices.Contains(got, "volatile") {
+		t.Errorf("replacing the volatile list went unreported: %v", got)
+	}
+}
+
+// `extend` carries the ruleset fields and nothing else. A version or a root
+// there would be a setting somebody could write and cs-vcr would ignore, which
+// is what this file's KnownFields decoding exists to prevent.
+func TestExtendRefusesWhatItCannotCarry(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte("normalize:\n  extend:\n    version: 99\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Load(path); err == nil {
+		t.Fatal("normalize.extend.version was accepted, and it does nothing")
+	}
+}
+
 // The prefix names the provider and the cassette with nothing declared
 // anywhere, and the remainder is what upstream sees. Splitting is on segment
 // boundaries, so /c/anthropicx is its own provider rather than `anthropic`.

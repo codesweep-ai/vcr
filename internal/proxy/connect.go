@@ -50,16 +50,24 @@ var defaultBlockedHosts = []string{
 
 // tunnelRefusal reports why a host may not be tunnelled, or "" to allow it.
 //
-// Offline sessions refuse the configured providers as well. `replay` says of
-// itself that no provider will be contacted, and a tunnel that would carry a
-// client to one anyway makes that sentence false — for a client that reached it
-// through this port rather than around it.
+// The configured providers are refused too, in BOTH modes. Replay needs it to
+// keep its own promise: a session that says no provider will be contacted, and
+// then carries a client to one, has told the truth about the forward path and
+// not about this one.
+//
+// Recording needs it for a reason of its own. cs-vcr reaches a provider on the
+// forward path, where it records what passes. A CONNECT to that same host is a
+// model call going AROUND the recorder: bytes are piped, nothing is stored, and
+// the cassette comes out missing a request the client will make again on
+// replay. Refusing it is what makes the recording complete.
+//
+// Refusing in both is also the rule the rest of this file rests on. Two of the
+// four hosts above are providers already, so the split refused api.anthropic.com
+// while recording and let api.openai.com through, which is a line nothing draws
+// on purpose.
 func (s *Server) tunnelRefusal(host string) string {
 	if slices.Contains(defaultBlockedHosts, host) {
 		return "cs-vcr does not tunnel " + host + ": it is one of the hosts an agent contacts on its own, and what it answers changes the prompt"
-	}
-	if !s.offline {
-		return ""
 	}
 	for name, p := range s.cfg.Providers {
 		if p == nil || p.BaseURL == "" {
@@ -70,7 +78,7 @@ func (s *Server) tunnelRefusal(host string) string {
 			continue
 		}
 		if strings.EqualFold(hostOnly(u.Host), host) {
-			return "cs-vcr is replaying and will not tunnel to the " + name + " provider: this session contacts none"
+			return "cs-vcr does not tunnel to the " + name + " provider: a model call has to arrive on the base URL, where it can be recorded and replayed"
 		}
 	}
 	return ""

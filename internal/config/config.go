@@ -22,6 +22,7 @@ import (
 	"net/url"
 	"os"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -125,9 +126,10 @@ type Config struct {
 	//
 	// An auxiliary request is answered by any recorded auxiliary turn, whatever
 	// model recorded it, and by the most recent one when the cassette has no
-	// unserved auxiliary left. A recorded turn counts as auxiliary only when it
-	// is ALSO on a model the cassette does not otherwise use, so a cassette
-	// recorded on one model has nothing to absorb with.
+	// unserved auxiliary left. A recorded turn counts as auxiliary only when the
+	// cassette also holds real work to tell it apart from: a step on another
+	// model, or a step that is not shaped like bookkeeping. A cassette whose
+	// every step is a single tool-free message has nothing to absorb with.
 	//
 	// On by default, and false turns it off. It only ever fires where the
 	// alternative is a miss, so it cannot pull a session off a step that
@@ -216,8 +218,41 @@ type Normalize struct {
 	// in CI's checkout.
 	Replace []Replacement `yaml:"replace"`
 
+	// Extend adds to the shipped ruleset instead of replacing it, and is the
+	// key almost every deployment wants.
+	//
+	// A YAML sequence REPLACES the slice it decodes into, so `volatile: [x]`
+	// leaves the ruleset with one volatile path rather than five. That is the
+	// documented way to add a rule, and following it silently drops the rules
+	// that make a multi-turn session replay at all. Under `extend` the entries
+	// are appended to what cs-vcr ships, in order, after it.
+	//
+	// The replacing form is still there, for a deployment that means it. It
+	// says so at startup, naming what it dropped.
+	Extend *Extension `yaml:"extend,omitempty"`
+
+	// replaced names the ruleset fields a config file replaced rather than
+	// extended, for the startup line that reports them.
+	replaced []string
+
 	compiled []compiledReplacement
 	captures []compiledCapture
+}
+
+// Extension is the additive half of the ruleset: the same fields, appended to
+// what cs-vcr ships rather than standing in for them.
+//
+// A type of its own rather than a second Normalize, so that `extend` cannot
+// carry a version, a root or an `extend` of its own. None of the three has a
+// meaning here, and a field that can be set and does nothing is the failure
+// this file's KnownFields decoding exists to prevent.
+type Extension struct {
+	Strip    []string      `yaml:"strip_fields,omitempty"`
+	Query    []string      `yaml:"strip_query,omitempty"`
+	Volatile []string      `yaml:"volatile,omitempty"`
+	Capture  []Capture     `yaml:"capture,omitempty"`
+	Drop     []string      `yaml:"drop,omitempty"`
+	Replace  []Replacement `yaml:"replace,omitempty"`
 }
 
 // Replacement is one regex substitution. `with` may reference capture groups as
@@ -791,8 +826,66 @@ func Load(path string) (*Config, error) {
 	if err := dec.Decode(cfg); err != nil {
 		return nil, fmt.Errorf("parse config %s: %w", path, err)
 	}
+	// Which shipped lists this file stood in for, noted before `extend` is
+	// folded in and makes every one of them differ legitimately.
+	cfg.Normalize.replaced = replacedShipped(&cfg.Normalize, &Default().Normalize)
+	cfg.Normalize.extend()
 	return cfg, nil
 }
+
+// extend folds the additive half into the ruleset and clears it, so that
+// applying twice is not a thing that can happen.
+//
+// Appended after the shipped rules rather than before, because order is part of
+// the contract for replacements (R15) and a deployment's rule is the more
+// specific of the two. A shipped rule that a deployment needs to come second is
+// a shipped rule it should be replacing instead.
+func (n *Normalize) extend() {
+	e := n.Extend
+	if e == nil {
+		return
+	}
+	n.Strip = append(n.Strip, e.Strip...)
+	n.Query = append(n.Query, e.Query...)
+	n.Volatile = append(n.Volatile, e.Volatile...)
+	n.Capture = append(n.Capture, e.Capture...)
+	n.Drop = append(n.Drop, e.Drop...)
+	n.Replace = append(n.Replace, e.Replace...)
+	n.Extend = nil
+}
+
+// replacedShipped names the ruleset fields whose shipped rules a config file
+// stood in for.
+//
+// Reported rather than refused, because replacing is a legitimate thing to
+// mean. What is not legitimate is doing it by accident, which is what the
+// documented `volatile: [one.path]` used to be.
+func replacedShipped(loaded, shipped *Normalize) []string {
+	var out []string
+	if len(shipped.Strip) > 0 && !slices.Equal(loaded.Strip, shipped.Strip) {
+		out = append(out, "strip_fields")
+	}
+	if len(shipped.Query) > 0 && !slices.Equal(loaded.Query, shipped.Query) {
+		out = append(out, "strip_query")
+	}
+	if len(shipped.Volatile) > 0 && !slices.Equal(loaded.Volatile, shipped.Volatile) {
+		out = append(out, "volatile")
+	}
+	if len(shipped.Drop) > 0 && !slices.Equal(loaded.Drop, shipped.Drop) {
+		out = append(out, "drop")
+	}
+	if len(shipped.Capture) > 0 && !slices.Equal(loaded.Capture, shipped.Capture) {
+		out = append(out, "capture")
+	}
+	if len(shipped.Replace) > 0 && !slices.Equal(loaded.Replace, shipped.Replace) {
+		out = append(out, "replace")
+	}
+	return out
+}
+
+// ReplacedShipped names the ruleset fields a config file replaced rather than
+// extended. Empty for the common case, and for a deployment using `extend`.
+func (n *Normalize) ReplacedShipped() []string { return n.replaced }
 
 // ApplyEnv overlays the environment. Only settings a deployment needs to vary
 // per run are here; anything else belongs in the file.

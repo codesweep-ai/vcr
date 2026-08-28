@@ -367,6 +367,12 @@ That step replays truncated, so record it again.
 3. Run `cs-vcr calibrate NAME ./misses`.
 4. Read what it proposes, and keep the rules you agree with.
 
+Everything you add goes under `normalize.extend`, which appends to the ruleset cs-vcr ships. A rule
+written directly under `normalize` stands in for the shipped list instead. One added `volatile` path
+would then leave you with that path alone, and without the four tool-result paths every multi-turn
+replay needs. cs-vcr says so at startup when a config does that, and `calibrate` proposes the
+`extend` form.
+
 Most of what a real run varies is already covered by the defaults. These are the ones that need a
 decision:
 
@@ -386,7 +392,8 @@ the turns you are recording:
 
 ```yaml
 normalize:
-  strip_fields: [tools]
+  extend:
+    strip_fields: [tools]
 ```
 
 `drop` is the one for a preamble block. Codex assembles its instructions from whatever the
@@ -396,7 +403,8 @@ aligns with none of four, so the item has to go on both sides:
 
 ```yaml
 normalize:
-  drop: ["<plugins_instructions>"]
+  extend:
+    drop: ["<plugins_instructions>"]
 ```
 
 A marker matches where a block opens, not wherever it appears. A prompt that mentions the tag is
@@ -438,20 +446,25 @@ export NO_PROXY=127.0.0.1,localhost
 One address for both. `NO_PROXY` sends the model calls straight to the base URL above, and everything
 else is offered to the tunnel.
 
-The tunnel refuses three hosts: `api.anthropic.com`, `chatgpt.com` and `ab.chatgpt.com`. Everything
-else is carried. That is a refusal list rather than an allowlist on purpose. An agent's tools share
-its environment, so a blanket block would take away `git`, `curl` and every package manager it might
-shell out to. `github.com` is carried for the same reason, though Codex reaches it: nothing it
-returns has been seen to change a prompt.
+The tunnel refuses two kinds of host. The first is the ones these agents contact on their own:
+`api.anthropic.com`, `chatgpt.com`, `ab.chatgpt.com` and `models.opencode.ai`. The second is every
+host a configured provider names.
 
-Refuse the same hosts while recording as while replaying. Blocked in both halves, the two runs ask
-the same question, which is the whole point.
+Everything else is carried. That is a refusal list rather than an allowlist on purpose. An agent's
+tools share its environment, so a blanket block would take away `git`, `curl` and every package
+manager it might shell out to. `github.com` is carried for the same reason, though Codex reaches it:
+nothing it returns has been seen to change a prompt.
+
+Both kinds are refused while recording as well as while replaying, and each half needs it. Blocked
+in both, the two runs ask the same question, which is the whole point. A `CONNECT` to a provider is
+also a model call going around this proxy. The bytes are piped rather than stored, so the cassette
+comes out missing a request the client will make again on replay.
 
 No certificate is involved. A `CONNECT` proxy pipes bytes and TLS stays end to end. The hostname it
 decides on is the one in the `CONNECT` line, before any of that begins.
 
-A `replay` session refuses the configured providers as well. It says of itself that no provider will
-be contacted, and a tunnel that carried a client to one would make that untrue.
+This is why a `replay` session can say of itself that no provider will be contacted. Nothing it
+serves reaches one, and nothing it tunnels does either.
 
 ## Notes for agents
 

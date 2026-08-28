@@ -181,13 +181,19 @@ func TestConnectLeavesTheRequestCountersAlone(t *testing.T) {
 	}
 }
 
-// TestConnectRefusesProvidersWhileReplaying: `replay` says of itself that no
-// provider will be contacted. A tunnel is the one way a client could reach one
-// through cs-vcr anyway, so an offline session refuses the configured providers
-// on top of the default list.
-func TestConnectRefusesProvidersWhileReplaying(t *testing.T) {
+// TestConnectRefusesProvidersInBothModes: a configured provider is refused
+// whether recording or replaying, and the two need it for different reasons.
+//
+// Replaying, it is the session's own promise: one that says it contacts no
+// provider must not carry a client to one. Recording, it is what keeps the
+// cassette complete. A tunnel is piped rather than recorded, so a model call
+// that arrives as CONNECT reaches the provider without being stored, and the
+// replay of that session has nothing to serve when the client asks again.
+//
+// api.openai.com specifically, because it is configured and NOT on the default
+// list: nothing but the provider rule can refuse it.
+func TestConnectRefusesProvidersInBothModes(t *testing.T) {
 	srv := connectServer(t, offline)
-	// Configured, and not on the default list: only the offline rule stops it.
 	code, conn, _ := connectTo(t, srv.Listener.Addr().String(), "api.openai.com:443")
 	if conn != nil {
 		conn.Close()
@@ -196,12 +202,10 @@ func TestConnectRefusesProvidersWhileReplaying(t *testing.T) {
 		t.Errorf("replaying, CONNECT api.openai.com = %d, want %d", code, http.StatusForbidden)
 	}
 
-	// Recording, the same host is a provider this session may legitimately
-	// reach, so only the offline rule refuses it.
 	rec := New(&config.Config{Providers: map[string]*config.Provider{
 		"openai": {BaseURL: "https://api.openai.com"},
 	}}, slog.New(slog.DiscardHandler), online)
-	if why := rec.tunnelRefusal("api.openai.com"); why != "" {
-		t.Errorf("recording, api.openai.com refused: %s", why)
+	if why := rec.tunnelRefusal("api.openai.com"); why == "" {
+		t.Error("recording, api.openai.com was tunnelled: a model call around the base URL is one the cassette will not hold")
 	}
 }

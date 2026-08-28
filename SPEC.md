@@ -176,6 +176,13 @@ answers it.*
 **R8.** A miss **MUST** report the step it could have been, naming the recorded request and the
 paths that disagreed.
 
+**R8a.** A recorded step **MUST NOT** be treated as a bookkeeping call unless the cassette also holds
+work to tell it apart from. Work is a step on another model, or one not shaped like bookkeeping.
+*The relaxation is a hole in exact alignment, and this bounds it. A cassette whose every entry is a
+single tool-free message has nothing to distinguish, so any entry would answer any miss. The model
+alone does not bound it. A harness that wants a replayable cassette pins the model, which puts the
+client's bookkeeping call on the same one as the work.*
+
 *Why a window rather than strict order: clients pipeline. Codex issues two `GET /models` at startup,
 and Claude Code runs title generation alongside its main loop. A larger window cannot serve a wrong
 step, because alignment is exact, so a step that aligns is this request. The window bounds the
@@ -320,9 +327,11 @@ one, a recording carries a block of prompt that a replay cannot rebuild.*
 refusal takes away `git`, `curl` and every package manager the agent might shell out to, and
 nothing they return changes the prompt.*
 
-**R32.** A replaying session **MUST** also refuse the providers it was configured with. *It says of
-itself that it contacts none, and a tunnel is the one way a client could reach one through cs-vcr
-anyway.*
+**R32.** Every session **MUST** also refuse the providers it was configured with, whether recording
+or replaying. *A replaying one says of itself that it contacts none, and a tunnel is the one way a
+client could reach one anyway. A recording one needs it for a reason of its own. A tunnel is piped
+rather than stored, so a model call arriving as `CONNECT` reaches the provider without being
+recorded, and the replay then has nothing to serve.*
 
 **R33.** A tunnel **MUST NOT** count as a request. *Requests are what a session can record, and a
 recording asserts that it recorded every one of them. A tunnel records nothing.*
@@ -580,20 +589,30 @@ providers:
   fireworks: {base_url: https://api.fireworks.ai/inference}
 
 normalize:
-  version: 11
-  volatile: ["input[].output", "messages[].content[].content"]
-  strip_fields: [client_metadata, prompt_cache_key]
-  strip_query: [client_version]
-  drop: ["<plugins_instructions>"]
-  replace:
-    - {pattern: "(Today's date is )\\d{4}-\\d{2}-\\d{2}", with: "${1}<DATE>"}
-  capture:
-    - {pattern: "dispatch-[0-9]{10,}", as: "<DISPATCH>"}
   root: /abs/path
+  # Added to the rules cs-vcr ships. This is the key a deployment wants.
+  extend:
+    volatile: ["tool.output.mine"]
+    strip_fields: [my_client_metadata]
+    drop: ["<my_preamble>"]
+    replace:
+      - {pattern: "(ticket )[0-9]+", with: "${1}<TICKET>"}
+    capture:
+      - {pattern: "dispatch-[0-9]{10,}", as: "<DISPATCH>"}
+  # The same names directly under `normalize` stand in for the shipped list
+  # instead of adding to it, which a deployment may mean and rarely does.
+  version: 11
+  strip_query: [client_version]
 ```
 
 **R43.** An unknown key **MUST** be an error. *The failure this file most invites is "I set it and it
 was ignored".*
+
+**R43b.** A `normalize.extend` list **MUST** be appended to the shipped rules for that field, after
+them. A list named directly under `normalize` replaces the shipped one, and the session **MUST**
+report which fields it replaced. *A YAML sequence stands in for the slice it decodes into, so the
+documented way to add one rule used to drop the rest. What it dropped was silent, and the rules it
+dropped are what let a multi-turn session replay at all.*
 
 **R43a.** A config file named outright, by `--config` or `CS_VCR_CONFIG`, **MUST** exist. *The
 default location holding nothing is the ordinary case, and not an error. Naming a file that is not

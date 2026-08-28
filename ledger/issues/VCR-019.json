@@ -1,0 +1,20 @@
+{
+  "id": "VCR-019",
+  "title": "record tunnels a client to a provider that replay refuses",
+  "type": "defect",
+  "severity": "med",
+  "status": "open",
+  "foundBy": "session agent, reading tunnelRefusal while wiring the cs-sandbox agent tiers",
+  "opened": "2026-08-28",
+  "resolved": null,
+  "stint": null,
+  "evidence": {
+    "commits": [],
+    "integrated": [],
+    "verified": null
+  },
+  "resolution": null,
+  "details": "`tunnelRefusal` refuses the configured providers only when the session is offline, so `replay` refuses `api.openai.com` and `api.fireworks.ai` while `record` carries a client straight to them.\n\nThat breaks the property every cassette rests on: the two halves have to ask the same question. A side call refused during replay and answered during recording changes the prompt that follows it, and the miss surfaces far from the cause.\n\nIt is also a hole in recording on its own terms. A CONNECT to a provider is a model call that went around the base URL, so it reaches the provider without passing through the recorder. The cassette does not contain it, and the replay cannot serve it. Refusing it while recording is what makes the recording complete.\n\nThe manual has the same gap, from the other side. \"The calls a base URL does not govern\" says the tunnel refuses three hosts and names them. The build refuses four: `models.opencode.ai` joined the list and the prose did not. Neither the prose nor the list mentions that replay refuses the providers as well.",
+  "notes": [],
+  "links": []
+}

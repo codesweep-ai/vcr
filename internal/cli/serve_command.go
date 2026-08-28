@@ -13,6 +13,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"slices"
+	"strings"
 	"syscall"
 	"text/tabwriter"
 	"time"
@@ -185,6 +186,15 @@ func runServe(ctx context.Context, app *App, out io.Writer, offline bool, dumpMi
 		attrs = append(attrs, slog.Int("providers", len(cfg.Providers)))
 	}
 	app.Log.Info("serving", attrs...)
+	// A config file that stood in for a shipped list rather than extending it.
+	// Said out loud because the alternative is silent: the rules it dropped are
+	// the ones that make a multi-turn session replay, and their absence shows up
+	// as a miss on a request nobody edited.
+	if replaced := cfg.Normalize.ReplacedShipped(); len(replaced) > 0 {
+		app.Log.Warn("this config replaces rules cs-vcr ships rather than adding to them",
+			slog.String("fields", strings.Join(replaced, ", ")),
+			slog.String("add_instead", "normalize.extend"))
+	}
 	if offline {
 		// The property that makes a pipeline harmless, stated out loud so a log
 		// reader can confirm it held.
@@ -332,6 +342,10 @@ func printConfig(out io.Writer, app *App) error {
 	fmt.Fprintf(tw, "cassettes\t%s\n", cfg.Cassettes)
 	fmt.Fprintf(tw, "normalize ruleset\tv%d (%d strip, %d query, %d replace)\n",
 		cfg.Normalize.Version, len(cfg.Normalize.Strip), len(cfg.Normalize.Query), len(cfg.Normalize.Replace))
+	if replaced := cfg.Normalize.ReplacedShipped(); len(replaced) > 0 {
+		fmt.Fprintf(tw, "\treplaces the shipped %s (use normalize.extend to add instead)\n",
+			strings.Join(replaced, ", "))
+	}
 	fmt.Fprintf(tw, "normalize root\t%s\n", orDash(cfg.Normalize.Root))
 	fmt.Fprintf(tw, "base URL prefix\t%s<provider>/<cassette>\n", config.Prefix)
 	fmt.Fprintln(tw, "\nPROVIDER\tBASE URL")

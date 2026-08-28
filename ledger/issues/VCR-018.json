@@ -1,0 +1,20 @@
+{
+  "id": "VCR-018",
+  "title": "A pinned model defeats the auxiliary-turn relaxation",
+  "type": "defect",
+  "severity": "med",
+  "status": "open",
+  "foundBy": "session agent, replaying the cs-sandbox agent matrix",
+  "opened": "2026-08-28",
+  "resolved": null,
+  "stint": null,
+  "evidence": {
+    "commits": [],
+    "integrated": [],
+    "verified": null
+  },
+  "resolution": null,
+  "details": "`auxiliaryEntry` recognizes a recorded step as bookkeeping only when it is on a model the cassette does not otherwise use. Claude Code's title generation usually lands on haiku, so that holds for a session which lets the client choose.\n\nIt stops holding the moment a harness pins the model, and a harness that wants a replayable cassette pins the model. `claude -p --model X` puts the title call on X too, the cassette has one model throughout, and no step is recognized as auxiliary. The relaxation is then off in the one case it was written for.\n\nMeasured across the cs-sandbox agent matrix. The shared Claude cell, whose title call landed on haiku, replayed 2 of 2 requests clean. The lent cell, identical but for the credential, put the title call on the pinned model and missed one request of three, stably, across runs.\n\nThe model is the wrong axis. What separates bookkeeping from work in that cassette is the tool list: the main turn carries 21 tools and the title call carries none. `shaped` already reads the tool list, and the guard the model check provides can be had from it.",
+  "notes": [],
+  "links": []
+}

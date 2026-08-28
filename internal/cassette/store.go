@@ -29,6 +29,8 @@ type Recording struct {
 type Store struct {
 	// dominant caches dominantModel(): nil until computed.
 	dominant *string
+	// unshaped caches hasUnshapedStep(): nil until computed.
+	unshaped *bool
 
 	c *Cassette
 
@@ -403,23 +405,67 @@ func auxiliary(canonical []byte) bool {
 
 // auxiliaryEntry reports whether the recorded step at i is a bookkeeping call.
 //
-// Stricter than the live side, and this is what keeps the relaxation from
-// swallowing ordinary traffic: the step must ALSO be on a model this cassette
-// does not otherwise use. A bookkeeping call is cheap by construction, which
-// is why it is on another model at all, and a cassette whose steps are all one
-// model has no such call to offer. Without this a recording of a client that
-// sends single-block prompts and no tools would answer any of its own misses
-// with any other step.
+// Stricter than the live side, and deliberately: without a second condition, a
+// recording of a client that sends single-block prompts and no tools would
+// answer any of its own misses with any other step. What the second condition
+// has to establish is that this cassette does real WORK somewhere, so that a
+// step which is not that work can be told apart from one that is.
+//
+// Two things establish it, and either will do.
+//
+// A model this cassette does not otherwise use. A bookkeeping call is cheap by
+// construction, which is why a client puts it on another model at all.
+//
+// Or a step that is not shaped like bookkeeping. A cassette holding one request
+// with twenty-one tools and one with none is a session whose work is plain,
+// whatever models it ran on.
+//
+// The second exists because the first stops holding exactly where it is needed.
+// A harness that wants a replayable cassette pins the model, and `claude -p
+// --model X` puts the title generation on X too. The cassette then has one
+// model throughout and nothing is recognized, which is the case the relaxation
+// was written for. Measured on two recordings of one task: the half that let
+// the client choose put its title call on haiku and replayed clean, and the
+// half that pinned the model missed one request of three, every run.
+//
+// The protection is unchanged. A cassette whose steps are ALL single-block and
+// tool-free has no work to distinguish anything from, so neither condition
+// holds and the relaxation stays off.
 func (s *Store) auxiliaryEntry(i int) bool {
 	canon, err := s.canonical(i)
 	if err != nil {
 		return false
 	}
 	model, ok := shaped(canon)
-	if !ok || model == "" {
+	if !ok {
 		return false
 	}
-	return model != s.dominantModel()
+	if model != "" && model != s.dominantModel() {
+		return true
+	}
+	return s.hasUnshapedStep()
+}
+
+// hasUnshapedStep reports whether any step in this cassette looks like work
+// rather than bookkeeping: more than one message, or any tools at all.
+//
+// Computed once, like dominantModel, because Next asks per miss.
+func (s *Store) hasUnshapedStep() bool {
+	if s.unshaped == nil {
+		found := false
+		for i := range s.script {
+			canon, err := s.canonical(i)
+			if err != nil {
+				continue
+			}
+			if _, ok := shaped(canon); !ok {
+				found = true
+				break
+			}
+		}
+		s.unshaped = &found
+	}
+	return *s.unshaped
 }
 
 // dominantModel is the model most of this cassette's steps were recorded on,
