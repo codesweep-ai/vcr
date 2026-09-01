@@ -597,12 +597,10 @@ func Default() *Config {
 			// recordings made under the old ones instead of silently missing them.
 			// Bump it whenever anything below changes, and re-record.
 			//
-			// v12 adds `<skills_instructions>` to Drop. A dropped block changes
-			// the canonical form, so it changes every key — which is exactly
-			// what this counter is for, and why cassettes recorded under v11
-			// are refused by name rather than left to miss one request at a
-			// time.
-			Version: 12,
+			// v13 blanks the month Claude Code writes into its web-search
+			// tool description. It is the fourth rendering of the day, and the
+			// first one that lives in a tool rather than in the prompt.
+			Version: 13,
 			// The minimum names: markers and identifiers that change
 			// between two requests the model would answer identically.
 			Strip: []string{
@@ -721,6 +719,19 @@ func Default() *Config {
 				// of a session miss tomorrow — or in an hour, for a machine
 				// whose day has not turned over yet.
 				{Pattern: `(Today's date: )\w{3} \w{3} \d{1,2} \d{4}`, With: `${1}<DATE>`},
+				// And the fourth, which is not in the prompt at all. Claude
+				// Code dates its web-search TOOL, in the prose of the
+				// description it sends with every request:
+				//   The current month is August 2026 — use this when searching…
+				// A tool description is hashed like any other part of the body,
+				// so this turns over on the first of the month and takes every
+				// request of the session with it.
+				//
+				// The month goes and the sentence stays, like the three above:
+				// a reader of the recording has to be able to see which line
+				// was normalized, and the rest of the description still says
+				// which tool the model was offered.
+				{Pattern: `(The current month is )\w+ \d{4}`, With: `${1}<MONTH>`},
 				// And the machine's zone, from the same block. It is the other
 				// half of the clock: a session recorded in Berlin misses every
 				// request in a CI runner that keeps UTC, whatever the date says.

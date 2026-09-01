@@ -384,6 +384,51 @@ func TestDefaultNormalizesTheMachineAndTheAccount(t *testing.T) {
 	}
 }
 
+// Claude Code dates a TOOL, not just the prompt, and the three date rules above
+// do not reach it: the month is spelled by name, inside the description of the
+// web-search tool, which is hashed like any other part of the body. A cassette
+// recorded in August then misses every request of every session in September.
+func TestDefaultNormalizesTheMonthInAToolDescription(t *testing.T) {
+	n := Default().Normalize
+	if err := n.Compile(); err != nil {
+		t.Fatal(err)
+	}
+	// The description as the client sends it, em dash and all.
+	tool := func(month string) string {
+		return `"Search the web. Returns result blocks with titles and URLs. US-only.\n\n` +
+			`- The current month is ` + month + ` — use this when searching for recent information.\n` +
+			`- ` + "`allowed_domains`" + ` filter results."`
+	}
+	august, _ := n.Apply([]byte(tool("August 2026")))
+	september, _ := n.Apply([]byte(tool("September 2026")))
+	if string(august) != string(september) {
+		t.Errorf("two months still differ:\n  %s\n  %s", august, september)
+	}
+	// The year turns over too, and a rule that took only the month name would
+	// leave December 2026 and December 2027 as two different requests.
+	if december, _ := n.Apply([]byte(tool("December 2027"))); string(december) != string(august) {
+		t.Errorf("two years still differ:\n  %s\n  %s", december, august)
+	}
+	// The value goes, the sentence stays. The rest of the description says
+	// which tool the model was offered, and that has to keep distinguishing it.
+	for _, want := range []string{
+		"The current month is <MONTH> — use this when searching",
+		"Search the web. Returns result blocks",
+	} {
+		if !strings.Contains(string(august), want) {
+			t.Errorf("%q did not survive normalization:\n%s", want, august)
+		}
+	}
+	// A different tool is still a different request: the rule reaches the date
+	// and nothing else in the description.
+	other := `"Search the web. Returns result blocks with titles and URLs. EU-only.\n\n` +
+		`- The current month is August 2026 — use this when searching for recent information.\n` +
+		`- ` + "`allowed_domains`" + ` filter results."`
+	if out, _ := n.Apply([]byte(other)); string(out) == string(august) {
+		t.Error("two different web-search tools normalized to the same thing")
+	}
+}
+
 // The account reminder comes and goes between two runs of one task.
 //
 // Claude Code learns the account behind a subscription asynchronously, so the
@@ -576,10 +621,14 @@ func TestAShallowRootHasNoBareForm(t *testing.T) {
 // changes every key, which is what the version counter exists to announce:
 // cassettes recorded under v11 must be refused by name, not left to miss one
 // request at a time.
+//
+// The version is pinned here so that moving it is an edit somebody makes on
+// purpose. v13 is the web-search month, which moved it for the same reason a
+// drop does: the committed fixtures have to follow in the same change.
 func TestTheShippedRulesetDropsBothPreambleBlocks(t *testing.T) {
 	n := Default().Normalize
-	if n.Version != 12 {
-		t.Fatalf("normalize ruleset version = %d, want 12", n.Version)
+	if n.Version != 13 {
+		t.Fatalf("normalize ruleset version = %d, want 13", n.Version)
 	}
 	for _, want := range []string{"<plugins_instructions>", "<skills_instructions>"} {
 		if !slices.Contains(n.Drop, want) {

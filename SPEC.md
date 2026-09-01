@@ -857,6 +857,7 @@ amount of field stripping reaches them.
 | What varies | Normalized to | Why it would break |
 |---|---|---|
 | `Today's date is 2026-08-12.`, and the spellings Codex and OpenCode use | `<DATE>` | every request misses tomorrow |
+| `The current month is August 2026`, in the description of Claude Code's web-search tool | `<MONTH>` | every request misses on the first of the month |
 | `Primary working directory: /abs/path` | `<CWD>` | CI checks out elsewhere |
 | the checkout path anywhere else, slugified or with its leading `/` gone | `<ROOT>`, `<ROOT-SLUG>`, `<ROOT-BARE>` | tool calls carry absolute paths, and a patch reports them without the slash |
 | `cc_version=2.1.219.c4e`, in the billing header Claude Code sends as its first system block | `cc_version=2.1.219` | the suffix changes between runs of one binary |
