@@ -13,14 +13,14 @@
       "ddad5a3"
     ],
     "integrated": [],
-    "verified": "`make fixtures` recorded all eight scenarios and passed, 107s. `make test-integration` replays all eight with fabricated credentials in 18.0s, and `make test-smoke` passes in 6.1s where it previously ran to its ten-minute timeout. Every cassette.yaml now reads normalize_version: 10. A scan of all 58 cassette files found none of the three API keys, neither login's tokens, the account id, the home path or the username."
+    "verified": "`make fixtures` recorded all eight scenarios and passed, 107s. `make test-integration` replays all eight with fabricated credentials in 18.0s, and `make test-smoke` passes in 6.1s where it previously ran to its ten-minute timeout. Every cassette.yaml now reads normalize_version: 10. A scan of every committed cassette file found none of the three API keys, neither login's tokens, the account id, the home path or the username."
   },
   "resolution": null,
   "details": "The eight cassettes under `cassettes/` all record `normalize_version: 6`. This build's ruleset is v10. A cassette whose ruleset is not the build's is refused, so no fixture replays, and `make test-smoke` and `make test-integration` both fail.\n\nFour commits moved the ruleset without re-recording. `3da5d83` took it to v7, `3c98639` to v8, `85f574b` to v9 and `ceb0594` to v10. CONTRIBUTING.md requires a ruleset change to bump the version and re-record in the same pull request.\n\nThe remedy is `make fixtures`, which records one real session per scenario. It needs a Claude Pro or Max login, an Anthropic key, an OpenAI key and a Fireworks key, and it spends money. That is why it was not done in the session that found this.\n\nThe two defects closed beside this one changed how the failure presents. It is now reported in under a second, naming both versions and the remedy. Neither of them re-records anything, so this stays open until the fixtures are recorded again.",
   "notes": [
     {
       "date": "2026-08-20",
-      "text": "Recorded against Claude Code 2.1.232, Codex 0.145.0 and OpenCode 1.18.11, which are the versions the manifest now pins for replay. The scrub removed three ChatGPT account ids from the codex-chatgpt responses, and the recording run replayed the cassette after scrubbing it, which is what proves the scrub did not break the match."
+      "text": "Recorded against Claude Code 2.1.232, Codex 0.145.0 and OpenCode 1.18.11, which are the versions the manifest now pins for replay. The scrub took three ChatGPT account ids out of the codex-chatgpt responses. The recording run replayed the cassette after scrubbing it, which proves the scrub did not break the match."
     }
   ],
   "links": [

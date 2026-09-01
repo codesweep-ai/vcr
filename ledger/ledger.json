@@ -3,7 +3,7 @@
   "idPrefix": "VCR",
   "schemaVersion": "issue.v1",
   "staleAfterDays": 14,
-  "description": "cs-vcr records the traffic between an AI coding agent and its LLM provider into committed, diffable cassettes, and replays it with no provider reachable — so a build can run the whole agent loop for $0 and no API key need enter a sandbox. This ledger tracks its defects, improvements and ideas.",
+  "description": "cs-vcr records the traffic between an AI coding agent and its LLM provider into committed, diffable cassettes, and replays it with no provider reachable. A build runs the whole agent loop for $0, and no API key need enter a sandbox. This ledger tracks its defects, improvements and ideas.",
   "toolVersion": "0.3.3",
   "commitUrlTemplate": "https://github.com/codesweep-ai/vcr/commit/{sha}"
 }

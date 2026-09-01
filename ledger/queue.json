@@ -8,7 +8,7 @@
     },
     {
       "id": "VCR-013",
-      "why": "A one-line hint currently sends a re-recording contributor after the wrong cause."
+      "why": "A one-line hint sends a re-recording contributor after the wrong cause."
     }
   ]
 }
