@@ -1,0 +1,22 @@
+{
+  "id": "VCR-022",
+  "title": "A client that hangs up is recorded as a 502 from the provider",
+  "type": "defect",
+  "severity": "med",
+  "status": "open",
+  "foundBy": "session agent, reading the claude-login cassettes in cs-sandbox while fixing VCR-021",
+  "opened": "2026-09-01",
+  "resolved": null,
+  "stint": null,
+  "evidence": {
+    "commits": [],
+    "integrated": [],
+    "verified": null
+  },
+  "resolution": null,
+  "details": "When a client disconnects mid-request, `ReverseProxy` calls its `ErrorHandler`. That handler writes a 502 `upstream_error` through the tap, and `record` stores it as a step of the session.\n\nThe 502 is cs-vcr's own. No provider sent it, and the client never saw it, because the client had already gone. The recording log says as much:\n\n```\nlevel=ERROR msg=\"upstream failed\" err=\"context canceled\"\nlevel=WARN msg=\"recording a transient failure as a step of the session\" status=502 cassette=claude-login-lent\nlevel=INFO msg=recorded seq=2 cassette=claude-login-lent streaming=false events=0\n```\n\nReplay is then less faithful than the recording. The step is served to a client that is still alive and reading, so it receives an error the recorded session never delivered. R31 says why that matters: a Stainless SDK retries a 5xx, and the cassette holds no second copy of a request that was only asked once.\n\nTwo of cs-sandbox's committed fixtures carry one. `claude-login-lent` and `claude-login-shared` each end on a 502 whose body reads `{\"error\":{\"type\":\"upstream_error\",\"source\":\"cs-vcr\"}}`. Claude Code prints its answer and exits while the session-title call is still in flight, so the race is reliable there rather than occasional. One recording run caught `opencode-fireworks-lent` the same way.\n\nIt is latent today. Those cassettes replay with every step served and nothing missed, because the agent exits before it can retry. A client that read the step and retried would miss.\n\nThe transient-failure branch is written for a provider having a bad moment, and that reasoning does not reach this case. `record` already computes `clientGone` from the request context, which is what separates the two. The neighbouring case is the `t.status == 0` branch, which declines to record when nothing reached the client at all.",
+  "notes": [],
+  "links": [
+    "VCR-021"
+  ]
+}
