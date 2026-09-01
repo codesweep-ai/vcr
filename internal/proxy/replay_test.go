@@ -3,6 +3,7 @@ package proxy
 import (
 	"bufio"
 	"compress/gzip"
+	"context"
 	"fmt"
 	"io"
 	"log/slog"
@@ -653,6 +654,74 @@ func TestAHangUpMidStreamStillRecordsWhatTheClientReceived(t *testing.T) {
 	// an answer cut off halfway looks exactly the same.
 	if !strings.Contains(logs.String(), "client closed the connection") {
 		t.Errorf("the interruption was not reported:\n%s", logs)
+	}
+}
+
+// The neighbouring case, where the client leaves before upstream has answered
+// at all.
+//
+// The reverse proxy's error handler then writes cs-vcr's own 502 to a
+// connection that is gone. Nothing reached a client, so there is no interaction
+// to record — and recording one would make replay less faithful than the
+// recording, by serving that error to a client which is still there to read it.
+//
+// Claude Code produces this on every run: it prints its answer and exits while
+// the session-title call is still in flight, and two of cs-sandbox's committed
+// fixtures ended on a 502 nobody had received.
+func TestAnErrorForAClientThatLeftIsNotRecorded(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "left")
+
+	// An upstream that never answers, so the only thing that can end this
+	// request is the client leaving. `held` releases it at the end of the test
+	// whatever happened, because httptest.Server.Close waits for its handlers.
+	held := make(chan struct{})
+	defer close(held)
+	rec, logs := cassetteServer(t, dir, online, func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case <-held:
+		case <-r.Context().Done():
+		}
+	})
+	front := httptest.NewServer(rec)
+	defer front.Close()
+
+	ctx, hangUp := context.WithCancel(context.Background())
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
+		front.URL+onCassette("/v1/messages"), strings.NewReader(`{"model":"claude-sonnet-5"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		if resp, err := http.DefaultClient.Do(req); err == nil {
+			resp.Body.Close()
+		}
+	}()
+	// Give the request time to reach upstream, then leave while it is waiting.
+	time.Sleep(100 * time.Millisecond)
+	hangUp()
+	<-done
+
+	// The decision is made as the abandoned handler unwinds, after the client
+	// has gone, so there is a moment to wait through.
+	deadline := time.Now().Add(10 * time.Second)
+	for !strings.Contains(logs.String(), "the client left before upstream answered") &&
+		time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	if n := rec.Snapshot().Recorded; n != 0 {
+		t.Fatalf("recorded = %d, want nothing: the 502 reached no client\nlogs: %s", n, logs)
+	}
+	entries, err := sessionStore(t, rec).Cassette().Entries()
+	if err == nil && len(entries) != 0 {
+		t.Fatalf("the cassette holds %d entry/entries, want none: %+v", len(entries), entries)
+	}
+	// And it has to say so, because a session that recorded one step fewer than
+	// it made is otherwise only visible in the accounting.
+	if !strings.Contains(logs.String(), "the client left before upstream answered") {
+		t.Errorf("the skipped step was not reported:\n%s", logs)
 	}
 }
 

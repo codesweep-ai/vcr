@@ -356,6 +356,12 @@ This is a warning. A client pipelined, and the step was found within the look-ah
 This is a warning. The response did not run to its end, usually because the client had what it wanted and
 hung up. What it received was recorded.
 
+**`not recording cs-vcr's own error`**
+
+This is a warning. The client left before upstream answered, so the 502 cs-vcr wrote reached nobody
+and no step was recorded. The session made one more call than the cassette holds, which the summary
+shows.
+
 **`the response outgrew the capture limit`**
 
 This is a warning. The client received the whole response, and the cassette kept the first 64 MiB of it.

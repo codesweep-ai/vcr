@@ -44,6 +44,11 @@ type tap struct {
 	// wroteHeader guards against the double WriteHeader that a proxy error
 	// handler can otherwise trigger after upstream has already replied.
 	wroteHeader bool
+	// selfGenerated says the status here is cs-vcr's own rather than a
+	// provider's: the reverse proxy's error handler wrote it, and upstream
+	// contributed nothing. Set only where that write actually took the header,
+	// so an error arriving after a real reply leaves this false.
+	selfGenerated bool
 }
 
 func (t *tap) WriteHeader(code int) {

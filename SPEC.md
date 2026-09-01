@@ -378,6 +378,14 @@ captured.*
 other, and **SHOULD** be flagged. *A cassette carrying a rate limit replays that rate limit, and the
 client retries it exactly as it did.*
 
+**R28a.** A response cs-vcr generated for a client that had already disconnected **MUST NOT** be
+recorded, and the decision **SHOULD** be reported. *The error is cs-vcr's own and reached nobody:
+the client hung up, the request was cancelled under the reverse proxy, and its error handler
+answered a connection that was gone. Recording it makes replay less faithful than the recording,
+because the step is served to a client that is still there and reading. By R31 a 5xx is what an SDK
+retries, and the cassette holds no second copy of a request that was asked once. Claude Code reaches
+this on every run: it prints its answer and exits while the session-title call is in flight.*
+
 **R29.** Request headers **MUST NOT** be recorded. *A cassette needs the body to match on and the
 response to replay, and neither needs an `Authorization` header. There is then no credential to
 redact, and no redactor to keep correct as header names change.*

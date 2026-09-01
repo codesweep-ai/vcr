@@ -740,6 +740,9 @@ func (s *Server) forward(w http.ResponseWriter, r *http.Request, prov *config.Pr
 		ErrorLog:      slog.NewLogLogger(s.log.Handler(), slog.LevelError),
 		ErrorHandler: func(w http.ResponseWriter, _ *http.Request, err error) {
 			s.log.Error("upstream failed", slog.Any("err", err))
+			if t != nil && !t.wroteHeader {
+				t.selfGenerated = true
+			}
 			writeError(w, http.StatusBadGateway, "upstream_error", "upstream request failed")
 		},
 	}
@@ -761,6 +764,30 @@ func (s *Server) record(t *tap, rec recordCtx, started time.Time, complete, clie
 		// silence this deferred write exists to end.
 		s.log.Warn("upstream produced no response; nothing to record",
 			slog.String("hash", rec.key.Hash[:12]), slog.String("cassette", rec.cassette))
+		return
+	}
+	if t.selfGenerated && clientGone {
+		// cs-vcr's own error, written to a client that had already left. The
+		// tap holds a 502 nobody received: the client hung up, net/http
+		// cancelled the request under the reverse proxy, and the error handler
+		// answered a connection that was gone.
+		//
+		// Not a step of the session, for the same reason the branch above is
+		// not one — nothing reached a client — and recording it makes replay
+		// LESS faithful than the recording. The step would be served to a
+		// client that is still there and reading, handing it an error the
+		// recorded session never delivered. R31 says what follows: a
+		// Stainless SDK retries a 5xx, and the cassette holds no second copy
+		// of a request that was asked once.
+		//
+		// Both halves of the condition carry weight. Without clientGone this
+		// would also drop a genuine upstream failure the client did receive,
+		// which is a fact about the session. Without selfGenerated it would
+		// drop the interrupted stream below, which is most of an answer and
+		// has to be kept.
+		s.log.Warn("not recording cs-vcr's own error: the client left before upstream answered",
+			slog.String("hash", rec.key.Hash[:12]), slog.String("cassette", rec.cassette),
+			slog.Int("status", t.status))
 		return
 	}
 	if !complete {
