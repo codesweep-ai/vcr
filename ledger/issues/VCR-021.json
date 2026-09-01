@@ -1,0 +1,22 @@
+{
+  "id": "VCR-021",
+  "title": "Claude Code dates its web-search tool, so every cassette misses on the first of the month",
+  "type": "defect",
+  "severity": "high",
+  "status": "closed",
+  "foundBy": "cs-sandbox replay tier, 2026-09-01: four of fourteen cells failed against cassettes recorded 2026-08-28",
+  "opened": "2026-09-01",
+  "resolved": "2026-09-01",
+  "stint": "2026-09-01 web-search month",
+  "evidence": {
+    "commits": [
+      "64760a0"
+    ],
+    "integrated": [],
+    "verified": "go test ./internal/config/ -run TestDefaultNormalizesTheMonthInAToolDescription -count=1: PASS. The same test fails with the rule removed. cs-sandbox's agents_replay tier passes 14 of 14 cells against a cs-vcr built from this tree, serving 29 requests and missing none. Under v12, that tier reports a miss on every claude cell."
+  },
+  "resolution": "The shipped ruleset blanks the month to `<MONTH>`, which takes the ruleset to v13. The eight committed fixtures were renormalized rather than re-recorded. None carries the sentence, so every body and hash round-tripped byte for byte, and only `normalize_version` moved. SPEC.md section 13 lists the substitution beside the three date spellings.",
+  "details": "Claude Code writes the current month into the description of its web-search tool:\n\n```\n- The current month is August 2026 — use this when searching for recent information.\n```\n\nA tool description is hashed like any other part of the body. On the first of the month, every request in a Claude Code session stops matching.\n\nThe three shipped date rules do not reach it. Each is written for a day the client renders as one, in the prompt. This month is spelled by name, inside a tool.\n\nThe cs-sandbox replay tier measured it on 2026-09-01, against cassettes recorded on 2026-08-28. All four of its claude cells failed. Its ten codex and opencode cells passed, because Claude Code alone dates a tool definition. The miss lands on the request carrying the question. The agent has no answer to print, so the run reports a model that would not reply.\n\nThis repository's own fixtures did not catch it. Its Claude Code scenarios restrict the toolset to Read and Write. No web-search tool reaches the body, so the smoke tier stayed green through the turn of the month.\n\nCalibrate proposes `tools[].description` as a volatile path. That works, and it is too broad. It takes the prose of every tool out of the key, when one sentence in one description is what the world decides.",
+  "notes": [],
+  "links": []
+}
