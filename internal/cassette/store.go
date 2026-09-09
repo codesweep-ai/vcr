@@ -209,7 +209,20 @@ func (s *Store) Next(req Request, volatile []Rule, lookahead int, auxiliaryTurns
 		}
 		sel := &Selection{Entry: s.script[i], Expected: s.cursor + 1, Tolerated: al.Tolerated}
 		s.served[i] = true
-		s.last = i
+		// A high-water mark, not the step served most recently in time. The two
+		// differ whenever a straggler lands: a probe the client makes an extra
+		// time arrives after the session has moved on, and assigning here would
+		// rewind the frontier to it. The window then collapses BEHIND the
+		// session — measured from a step it passed long ago — and the next real
+		// turn falls outside it, which is reported as a miss against a request
+		// nobody was making.
+		//
+		// Measured on a codex recording that opens with four `GET /models`: the
+		// replay made three, served its whole first turn by lookahead, then the
+		// fourth probe arrived and dropped last from 17 back to 2. The next
+		// turn, recorded 4 steps inside the window, was refused. The client
+		// backed off four minutes before the session realigned.
+		s.last = max(s.last, i)
 		for s.cursor < len(s.script) && s.served[s.cursor] {
 			s.cursor++
 		}

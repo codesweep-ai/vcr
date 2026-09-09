@@ -61,6 +61,55 @@ func TestAScriptIsServedInOrder(t *testing.T) {
 	}
 }
 
+// A straggler must not rewind the window behind the session.
+//
+// This is the shape that cost four minutes on every replay of a codex
+// recording. The cassette opens with several `GET /models` probes; the replay
+// makes fewer of them, so the cursor stays parked on an unclaimed probe while
+// the session's real turns are served ahead of it by lookahead. When the
+// missing probe finally arrives, it is a step far BEHIND everything served so
+// far — and if the frontier follows it, the window closes around a point the
+// session passed long ago, and the next real turn is refused for being too far
+// ahead of a step nobody is waiting for.
+//
+// Written with a lookahead of 2 so the arithmetic is visible: the session
+// reaches step 6, the straggler at step 1 lands, and step 7 must still be
+// within reach.
+func TestAStragglerDoesNotRewindTheWindow(t *testing.T) {
+	const (
+		probe1 = `{"turn":"probe1"}`
+		probe2 = `{"turn":"probe2"}`
+		far    = `{"turn":"far"}`
+		next   = `{"turn":"next"}`
+	)
+	// TWO unclaimed probes at the front, because one is not enough to show
+	// this: serving a lone straggler lets the cursor run past everything
+	// already served, and the cursor is itself a frontier. The second probe is
+	// what keeps the cursor parked afterwards, which is when the rewound mark
+	// decides the window on its own.
+	s := script(t, probe1, probe2, one, two, three, far, next)
+
+	// The session runs ahead, leaving both probes unclaimed.
+	for _, body := range []string{one, two, three, far} {
+		if _, miss := s.Next(ask(body), nil, 2, false); miss != nil {
+			t.Fatalf("setup: %s missed: %+v", body, miss)
+		}
+	}
+	// One straggler lands, far behind everything served.
+	if _, miss := s.Next(ask(probe1), nil, 2, false); miss != nil {
+		t.Fatalf("the straggling probe missed: %+v", miss)
+	}
+	// And the session carries on. Step 7 is one past the furthest it reached,
+	// so it is in the window unless the straggler dragged the window back.
+	sel, miss := s.Next(ask(next), nil, 2, false)
+	if miss != nil {
+		t.Fatalf("the next turn was refused after a straggler landed: %+v", miss)
+	}
+	if sel.Entry.Seq != 7 {
+		t.Errorf("served step %d, want 7", sel.Entry.Seq)
+	}
+}
+
 // A client repeating itself is served the same answer again rather than
 // consuming the next step. This is a retry, and it is Codex asking for the
 // model list twice at startup — neither is the session moving on.

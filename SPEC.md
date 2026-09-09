@@ -194,6 +194,14 @@ beside the main loop. Anchored at the cursor, one such step pins the window for 
 session. Every later request is then measured from a step that will never be served, and a 45-step
 recording replayed 2 of them.*
 
+*Furthest, and it only ever moves forward. R6's straggler is a step BEHIND everything served so far,
+so an anchor following the most recent step would jump backwards when one landed. The window then
+closes around a point the session passed long ago. Its next real turn is refused for being too far
+ahead of a step nobody is waiting for. Measured on a codex cassette opening with four `GET /models`:
+the replay made three and ran its whole first turn on the window. The fourth probe then arrived and
+dropped the anchor 15 steps. The turn 4 steps later missed, and the client spent four minutes
+backing off before the session realigned.*
+
 ### 5.2 Alignment
 
 Alignment walks the recorded request and the live one in parallel and reaches one of three verdicts.

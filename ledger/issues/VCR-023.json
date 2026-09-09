@@ -1,0 +1,20 @@
+{
+  "id": "VCR-023",
+  "title": "A straggling probe rewound the replay window behind the session",
+  "type": "defect",
+  "severity": "high",
+  "status": "closed",
+  "foundBy": "session agent, chasing a codex replay that took 363s where its peers took 70s, 2026-09-09",
+  "opened": "2026-09-09",
+  "resolved": "2026-09-09",
+  "stint": "2026-09-09 replay window anchor",
+  "evidence": {
+    "commits": [],
+    "integrated": [],
+    "verified": "TestAStragglerDoesNotRewindTheWindow fails without the change and passes with it. It needs TWO unclaimed probes at the front: serving a lone straggler lets the cursor run past everything already served, and the cursor is itself a frontier, so one probe hides the defect."
+  },
+  "resolution": "The window anchor is a high-water mark. Serving a step only ever moves it forward, so a straggler landing behind the session leaves the window where the session is.",
+  "details": "SPEC 5.1 says the scan reaches at most lookahead steps past THE FURTHEST STEP ALREADY SERVED, and says plainly why. The code set that mark to whichever step was served most recently in time, which is a different thing whenever a step is served out of order.\n\nR6 is what makes them differ. It serves an already-served step again for a client that probes more often on one run than another, and says the extra ask can arrive after the session has moved past the step answering it. Such a straggler is behind everything served, so recording it as the furthest point drags the anchor backwards.\n\nMeasured on a codex-subscription cassette that opens with four GET /models. The replay made three, so the cursor parked on the fourth while the session's whole first turn was served on the window. The third probe then arrived late and dropped the anchor from step 18 to step 3. The next real turn sat at step 22, comfortably inside a window measured from 18 and far outside one measured from 3, so it missed. Codex backed off four minutes before the session realigned.\n\nThe cost was a replay that took 363s where every other scenario took about 70s, on a tier that contacts no provider and should be bounded by nothing but the harness. It was invisible as a defect: the run passed, the campaign reached its verdict, and the only symptom was the clock.\n\nRe-recording did not help and could not. The recording faithfully captures probes the replay does not repeat, which is the condition the window exists to absorb.",
+  "notes": [],
+  "links": []
+}
