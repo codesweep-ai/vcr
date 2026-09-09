@@ -127,11 +127,11 @@ session. A rule's reason belongs beside the rule in [`SPEC.md`](SPEC.md), and th
 found it belongs in the pull request.
 
 ```
-Fix the port parse in the sidecar redirect rule
+Stop sending redirects to the wrong port
 ```
 
 ```
-Replay SSE per event, not as one write
+Let a streaming client read a replayed session
 
 A client assembling deltas sees framing rather than bytes, so
 a single write plays back as a session the client cannot read.
