@@ -10,7 +10,7 @@
   "stint": "2026-08-21 CI failure investigation",
   "evidence": {
     "commits": [
-      "d313eb4"
+      "fc9e26f"
     ],
     "integrated": [],
     "verified": "`./bin/cs-vcr cassette verify` reports all eight cassettes ok and exits 0, where it exited 4 naming 21 stale entries. `make test-smoke` replays all eight fixtures against Claude Code 2.1.232, Codex 0.148.0 and OpenCode 1.18.11 in 17.6s, all PASS. `./bin/cs-vcr cassette scrub` reports all eight clean, and `make check` exits 0."
@@ -21,7 +21,13 @@
     {
       "date": "2026-08-21",
       "text": "`make fixtures` was not an option on the host that fixed this. It has an OpenAI and a Fireworks key but no Anthropic key, and the Claude Pro/Max and ChatGPT scenarios need interactive logins. A partial recording run would have left at least three cassettes at v11 and CI still red."
+    },
+    {
+      "date": "2026-09-09",
+      "text": "The evidence sha is corrected here. This record cited `d313eb4` from the commit that filed it, and no such commit is in this repository, so the sha came from a history rewritten before it was pushed. The commit that did the work is `fc9e26f`, which takes every `cassette.yaml` off `normalize_version: 11`, and it is the only commit in the range that does. `3fe5281`, which filed and closed this record, touches `ledger/` alone. The cause this record names, `d3b0e62`, was always resolvable and is unchanged."
     }
   ],
-  "links": ["VCR-010"]
+  "links": [
+    "VCR-010"
+  ]
 }
