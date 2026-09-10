@@ -129,10 +129,20 @@ func (s *Server) serveConnect(w http.ResponseWriter, r *http.Request) {
 	}
 	defer client.Close()
 
+	// Counted before the client is told, as the refusal above is. A caller that
+	// has read the 200 has to be able to read the counter that goes with it, and
+	// counting afterwards leaves a window where it cannot: the write returns as
+	// soon as the bytes are handed to the kernel, so the client can observe the
+	// response before this goroutine runs another statement. That window is why
+	// the counter check in connect_test.go failed on a loaded CI runner while
+	// passing everywhere else.
+	//
+	// It also reads better as a fact: the tunnel is open once the dial and the
+	// hijack have both succeeded, whether or not the client learns of it.
+	s.count(func(st *Stats) { st.TunnelOpened++ })
 	if _, err := client.Write([]byte("HTTP/1.1 200 Connection established\r\n\r\n")); err != nil {
 		return
 	}
-	s.count(func(st *Stats) { st.TunnelOpened++ })
 
 	// Both directions, and the first to end finishes the tunnel: a peer that
 	// closed has nothing more to say, and the deferred closes free the other.
