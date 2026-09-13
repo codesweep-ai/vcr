@@ -2,8 +2,8 @@
 # `podman kube play deploy/vcr.yaml`.
 #
 # No cs-vcr image is published. The release ships a static binary, so this
-# mounts that binary into a base image holding nothing else, rather than asking
-# you to pull something that does not exist.
+# mounts that binary into a stock Fedora image, rather than asking you to pull
+# something that does not exist.
 #
 # `replay` is the command a pod runs: it serves from the cassette and is built
 # without anywhere to send a request, so nothing here can make it spend money.
@@ -38,9 +38,10 @@ metadata:
 spec:
   containers:
     - name: vcr
-      # Nothing but a filesystem layout and the nonroot user 65532 the
-      # securityContext below runs as.
-      image: gcr.io/distroless/static-debian12:nonroot
+      # The binary is static and needs nothing from this image. The image has
+      # no user 65532, so the securityContext below names the group as well,
+      # or the process would run in group 0.
+      image: registry.fedoraproject.org/fedora-minimal:44
       command: ["/usr/local/bin/cs-vcr"]
       args: ["replay"]
       env:
@@ -73,6 +74,7 @@ spec:
       securityContext:
         runAsNonRoot: true
         runAsUser: 65532
+        runAsGroup: 65532
         allowPrivilegeEscalation: false
         readOnlyRootFilesystem: true
         capabilities:
