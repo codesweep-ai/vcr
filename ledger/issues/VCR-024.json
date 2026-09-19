@@ -1,0 +1,20 @@
+{
+  "id": "VCR-024",
+  "title": "config opencode prints a provider key that OpenCode does not use for Fireworks",
+  "type": "defect",
+  "severity": "med",
+  "status": "open",
+  "foundBy": "session agent working in the simple-tools-demo repository, which runs a three member campaign at the pinned build of 2026-09-17, while pointing a pinned opencode 1.18.31 at a cassette",
+  "opened": "2026-09-19",
+  "resolved": null,
+  "stint": null,
+  "evidence": {
+    "commits": [],
+    "integrated": [],
+    "verified": null
+  },
+  "resolution": null,
+  "details": "`cs-vcr config opencode --cassette hello --provider fireworks` prints this block, and a run line that names the model as `fireworks/<model>`:\n\n```\n\"provider\": {\n  \"fireworks\": {\"options\": {\"baseURL\": \"http://127.0.0.1:8080/c/fireworks/hello/v1\"}}\n}\n```\n\nOpenCode's own id for that provider is `fireworks-ai`. `opencode models` lists `fireworks-ai/accounts/fireworks/models/...` and nothing under `fireworks`. A `baseURL` set under the key `fireworks` therefore configures a provider the run never uses, and the agent calls Fireworks at its default address.\n\nThe damage is contained. With the proxy variables set as the same output advises, the call arrives as a `CONNECT` and cs-vcr refuses it with `cs-vcr does not tunnel to the fireworks provider`. The summary shows `requests 0` and `tunnel refused 3`, so nothing is spent and nothing is recorded. A reader who followed the printed block exactly still ends with a run that cannot work, and an error that does not mention the key.\n\nWith the key written as `fireworks-ai` and nothing else changed, the same run records and replays three steps.\n\nThe cs-vcr provider name and the client's provider id are different things, and `config` prints the first where the client needs the second. The Fireworks entry is the one where the two differ.\n\nTo reproduce, follow the printed `OPENCODE_CONFIG_CONTENT` line against `cs-vcr replay`, with `--model fireworks-ai/accounts/fireworks/models/kimi-k2p7-code`.",
+  "notes": [],
+  "links": []
+}
