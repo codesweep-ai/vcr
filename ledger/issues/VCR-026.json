@@ -1,0 +1,22 @@
+{
+  "id": "VCR-026",
+  "title": "The scrubber refuses a reserved documentation address, and nothing lets one through",
+  "type": "improvement",
+  "severity": "low",
+  "status": "open",
+  "foundBy": "session agent working in the tour repository, which records and replays a three member campaign through cs-vcr, while gating a recording on the scrubber's exit status",
+  "opened": "2026-09-19",
+  "resolved": null,
+  "stint": null,
+  "evidence": {
+    "commits": [],
+    "integrated": [],
+    "verified": null
+  },
+  "resolution": null,
+  "details": "`cs-vcr cassette scrub` reports every mail address it finds, and exits 4 while any is left. It has no allow-list. So it refuses a cassette for `developer@example.com`, which an agent invented for a commit. It refuses one as readily for any public address that a tool prints.\n\n`example.com`, `example.org` and `example.net` are reserved for documentation, and an address there belongs to nobody. The `.invalid` domain already passes: `agent@example.invalid` is not reported.\n\nThe cost is that a gate built on the exit status cannot pass a real agent session. Two recordings of one campaign were refused this way. The first held the invented address above. The second held two addresses in the orchestrator's tool output, and they were never identified, because the gate of the time deleted what it refused. The model chooses afresh each time, so the next recording can hold another. The only remedy today is a `capture` rule that blanks every address in the cassette, which the tour now uses. That works, and it has a side effect. An address the model writes into a file, where the request never held it, is replayed as a placeholder.\n\nLetting the reserved domains through, and an allow-list for the rest, would let a gate tell a leak from a harmless address. cs-lint has `emailAllow` for the same reason.\n\nTo reproduce, add `see maintainer@example.com` to a request in any cassette and run `cs-vcr cassette scrub <name>`.",
+  "notes": [],
+  "links": [
+    "VCR-025"
+  ]
+}
