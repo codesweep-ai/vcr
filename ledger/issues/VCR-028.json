@@ -3,19 +3,30 @@
   "title": "A dumped miss can be an empty file, and the summary's `rejected` line is named nowhere in the manual",
   "type": "defect",
   "severity": "low",
-  "status": "open",
+  "status": "closed",
   "foundBy": "session agent replaying a multi-member campaign through cs-vcr, several replays at a time on one shared host",
   "opened": "2026-09-20",
-  "resolved": null,
-  "stint": null,
+  "resolved": "2026-09-20",
+  "stint": "2026-09-20 probe and miss dump",
   "evidence": {
-    "commits": [],
+    "commits": [
+      "5f21a45"
+    ],
     "integrated": [],
-    "verified": null
+    "verified": "go test ./internal/proxy/ -run TestADumpedMiss -count=20 and go test ./internal/cli/ -run TestCalibrateReadsOnlyTheDumpedBodies -count=20: PASS, and both failed before the change. The dump test sends Authorization and X-Api-Key and asserts neither value reaches the file. `cs-vcr manual | grep -c rejected` returns 3, and returned 0 before."
   },
-  "resolution": null,
+  "resolution": "Each dumped miss has a `.request` file naming the method, the target and who sent it. MANUAL.md has a section on the summary that says every miss is also a rejection, and what else `rejected` counts.",
   "details": "**The empty dump.** With `--dump-misses`, the proxy logged `missed request written` with a file name for each miss that VCR-027 describes. Each of those files was 0 bytes long. The request was a GET with no body, so there was no body to write, but the log line says that a request was written. `cs-vcr calibrate` has nothing to read in such a file. A dump that held the method, the target and the headers would have named the cause at once. As it was, three separate readers each had to find it in the proxy log.\n\n**The `rejected` line.** The summary that `cs-vcr` prints when it stops has a `rejected` count. It moved with `misses` in every run seen. `MANUAL.md` does not hold the word. A first-time reader could not tell whether `rejected 3` was a second fault or the same one.\n\n**What is asked for.** Write the request line and the headers into every dumped miss, and keep the body as it is now. Say in the manual what `rejected` counts and how it differs from `misses`.\n\n**How to reproduce.** Run the steps in VCR-027 with `--dump-misses ./misses`, then run `ls -l ./misses` and search the output of `cs-vcr manual` for `rejected`.",
-  "notes": [],
+  "notes": [
+    {
+      "date": "2026-09-20",
+      "text": "One difference from what was asked, for the filer. The record asks for the request line and the headers in every dumped miss. The request line is written, and only three headers: `User-Agent`, `Content-Type` and `Content-Length`. Request headers carry the credential, SPEC rule R29 keeps them out of a cassette, and a miss directory sits in the same checkout. `User-Agent` is the header that would have named `curl` or the doctor command here."
+    },
+    {
+      "date": "2026-09-20",
+      "text": "A second difference. The line goes in a new file, `<step>.request`, beside the body file, and the body file is unchanged. `diff` against the cassette and `cs-vcr calibrate` both read `<step>.json` as a bare body, so adding lines to it would break both. `calibrate` now reads only the `.json` files. SPEC rule R37a holds the contract."
+    }
+  ],
   "links": [
     "VCR-027"
   ]

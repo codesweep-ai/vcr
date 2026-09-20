@@ -1,0 +1,20 @@
+{
+  "id": "VCR-030",
+  "title": "SPEC.md uses the rule numbers R30 to R33 twice, so a reference to one of them names two rules",
+  "type": "defect",
+  "severity": "low",
+  "status": "open",
+  "foundBy": "session agent, while looking for a free rule number in SPEC.md for the probe rule R21",
+  "opened": "2026-09-20",
+  "resolved": null,
+  "stint": null,
+  "evidence": {
+    "commits": [],
+    "integrated": [],
+    "verified": null
+  },
+  "resolution": null,
+  "details": "`SPEC.md` numbers its requirements so that code and records can cite them. R30, R31, R32 and R33 each appear twice. Section 6.1 on tunnelling uses them for the `CONNECT` rules. Sections 7 and 8 use them again, for response headers, the 400 status, refusing an unnamed cassette, and exit status 4.\n\nA comment in `internal/proxy/proxy.go` cites R31, and the manual and the ledger cite R33. A reader cannot tell which rule is meant without reading both.\n\nRenumbering the tunnelling rules is the smaller change, because fewer places cite them. Every citation in the code, the docs and the ledger has to move with them.\n\nTo reproduce, run `grep -o '\\*\\*R[0-9]*[a-z]*\\.\\*\\*' SPEC.md | sort | uniq -d`.",
+  "notes": [],
+  "links": []
+}
