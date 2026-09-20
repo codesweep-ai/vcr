@@ -1,0 +1,22 @@
+{
+  "id": "VCR-029",
+  "title": "A picture inside a request is matched byte for byte, so an agent that shows the model a screenshot misses on the next run",
+  "type": "improvement",
+  "severity": "med",
+  "status": "open",
+  "foundBy": "session agent replaying a multi-member campaign through cs-vcr, several replays at a time on one shared host",
+  "opened": "2026-09-20",
+  "resolved": null,
+  "stint": null,
+  "evidence": {
+    "commits": [],
+    "integrated": [],
+    "verified": null
+  },
+  "resolution": null,
+  "details": "**What happened.** An agent in a recorded campaign takes a screenshot of a web page and shows it to the model. The picture travels inside a request, as `messages[].content[].image_url.url` holding base64 data. On a busy host the second rendering differed by three bytes out of about fifteen thousand, and the replay missed at that step twice in a row. `cs-vcr calibrate` named the path from the real miss, and declaring it under `normalize.extend.volatile` cured it.\n\n**Why it matters.** `cs-vcr` already matches loosely on what a tool printed, because that is an observation of the world and not a decision. A picture a tool took is the same kind of thing. It is only compared exactly because it sits in a field that the shipped rules do not know. Every agent with a browser or a vision tool will meet this, and each author will have to find it through a miss. A rule written for one path covers one path. A picture in a tool result, or in another provider's content block, would miss again.\n\n**What is asked for.** Treat an inline image or other binary payload as a volatile observation in the rules `cs-vcr` ships, for each surface it knows. The OpenAI form is `image_url` with a `data:` address, and the Anthropic form is an `image` block with a base64 `source`. Say so in the manual beside the text on changed tool output.\n\n**How to reproduce.** Record a session in which the agent sends a screenshot to the model. Replay it on a machine under other load, with `--dump-misses`, and run `cs-vcr calibrate` on the result.",
+  "notes": [],
+  "links": [
+    "VCR-017"
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "id": "VCR-027",
+  "title": "A request for a cassette's bare address counts as a miss, so a health probe from outside fails a replay that served every recorded call",
+  "type": "defect",
+  "severity": "high",
+  "status": "open",
+  "foundBy": "session agent replaying a multi-member campaign through cs-vcr, several replays at a time on one shared host",
+  "opened": "2026-09-20",
+  "resolved": null,
+  "stint": null,
+  "evidence": {
+    "commits": [],
+    "integrated": [],
+    "verified": null
+  },
+  "resolution": null,
+  "details": "**What happened.** A campaign of several agents was replayed through `cs-vcr replay`. Each agent's base address was the proxy's address for its own cassette, of the form `/c/<provider>/<cassette>`. Somebody on the host ran `cs-sandbox doctor`, which checks that each credential lender reaches its upstream by asking for that bare address. For each agent that was up, the proxy logged a `cassette miss` with `target=/` and the reason `this run asked for / instead`. The summary then showed `misses` and `rejected` equal to the number of probes, and `requests` larger than `replayed` by the same number. The process then gave exit status 4. Every recorded call had been served, in order.\n\n**Why it matters.** A miss means that the client asked something the recording does not hold. This request did not come from the client, and it is not a call to any provider surface. The probe does not move the cassette's position, which is right, so the only harm is the count and the exit status. A person who looks at the machine while a replay runs fails it. A consumer can work around this by subtracting the misses whose target is `/`, and that is a rule each consumer has to discover. SBX-048 asks for the probe to change on its side.\n\n**What is asked for.** Answer a request for `/` under a known cassette without counting a miss, and count it apart, as `probes` for example. Rule R6 already serves a client's repeated `GET /models` probe again, and VCR-023 settled how a late one is placed. This is the same idea for a request that matches no provider route at all.\n\n**The record mode twin is not tested.** `serve_command.go` says that anything unrecognised on the proxied port is forwarded to a provider. A probe that arrives during `cs-vcr record` may therefore reach the provider, or be written into the cassette as a step that no replay will ever make. Somebody should check that before a recording made on a shared host is trusted.\n\n**How to reproduce.** Start `cs-vcr replay --cassettes DIR`, run `curl http://127.0.0.1:PORT/c/<provider>/<cassette>`, and stop the proxy. The summary shows `misses 1` and the exit status is 4.",
+  "notes": [],
+  "links": [
+    "VCR-023",
+    "VCR-028"
+  ]
+}
