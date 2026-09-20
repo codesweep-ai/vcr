@@ -451,13 +451,18 @@ would then leave you with that path alone, and without the four tool-result path
 replay needs. cs-vcr says so at startup when a config does that, and `calibrate` proposes the
 `extend` form.
 
-Most of what a real run varies is already covered by the defaults. These are the ones that need a
-decision:
+Most of what a real run varies is already covered by the defaults. They tolerate what a tool
+printed, and a picture or file the agent sent inline. On Anthropic that is an `image` or `document`
+block with a base64 `source`. On OpenAI it is an `image_url`, `file` or `input_audio` part. A
+screenshot that
+renders a few bytes differently is served, and counted under `drifted observations`. These are the
+ones that need a decision:
 
 | What varied | Rule | Why it is safe |
 |---|---|---|
 | a per-run identifier in the prompt *and* in a path the agent opens | `capture` | an identifier for one run, not part of the question |
 | a wall clock or a pid in tool output | `volatile`, or `replace` outside a tool result | the agent reports it and does not act on it |
+| a screenshot or a file sent inline, in a field the defaults do not name | `volatile`, on the payload field alone | it is what a tool saw, and the question beside it stays exact |
 | a sentence the client includes only sometimes | `replace` | not part of the question |
 | a whole list ITEM the client includes only sometimes | `drop` | it changes the list's length, which no substitution reaches |
 | the `tools` list, when MCP servers connect on one run and not the next | `strip_fields` | see below |

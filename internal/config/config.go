@@ -692,6 +692,24 @@ func Default() *Config {
 				// request — the first one carrying anything the world had
 				// answered.
 				"messages[role=tool].content",
+				// A picture or a file the agent shows the model, inline. It is
+				// an observation like the ones above, and it sits outside any
+				// tool result: an agent screenshots a page and sends it in a
+				// user message. Measured on a campaign with a browser, where a
+				// second rendering differed by three bytes in fifteen thousand
+				// and the replay missed at that step twice in a row.
+				//
+				// Each path names the payload and not the block around it, so
+				// the block's type, its media type and the text beside it all
+				// stay exact. On Anthropic that also leaves a `url` source
+				// exact. The two OpenAI image fields hold an address of either
+				// kind, and a path cannot tell a `data:` one from a remote one.
+				"messages[].content[].source.data",      // Anthropic: image, document
+				"messages[].content[].image_url.url",    // OpenAI chat: image
+				"messages[].content[].file.file_data",   // OpenAI chat: file
+				"messages[].content[].input_audio.data", // OpenAI chat: audio
+				"input[].content[].image_url",           // OpenAI responses: image
+				"input[].content[].file_data",           // OpenAI responses: file
 			},
 			// Codex asks for the model list at startup and names its own build
 			// in the query: `GET /v1/models?client_version=0.145.0`. The

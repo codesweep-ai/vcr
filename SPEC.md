@@ -242,6 +242,24 @@ normalize:
     - messages[role=tool].content     # OpenAI chat: a tool result is a message of its own
 ```
 
+They also name an inline payload on each surface, which is a picture or a file the agent shows the
+model outside any tool result:
+
+```yaml
+    - messages[].content[].source.data        # Anthropic messages: image, document
+    - messages[].content[].image_url.url      # OpenAI chat: image
+    - messages[].content[].file.file_data     # OpenAI chat: file
+    - messages[].content[].input_audio.data   # OpenAI chat: audio
+    - input[].content[].image_url             # OpenAI responses: image
+    - input[].content[].file_data             # OpenAI responses: file
+```
+
+*A screenshot is an observation of the world, like the text a tool printed. Two renderings of one
+page differ by a few bytes. Each path names the payload alone, so the block's type, its media type
+and the text beside it stay exact. An Anthropic `url` source stays exact too. The two OpenAI image
+fields hold either a `data:` address or a remote one, and a path cannot tell them apart. A changed
+remote address is therefore tolerated, and reported as drift.*
+
 ### 5.3 Normalization
 
 Alignment compares canonical requests: the body with keys sorted, insignificant whitespace removed,
