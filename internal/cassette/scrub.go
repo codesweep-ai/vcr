@@ -6,7 +6,9 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
+	"strings"
 )
 
 // Scrubbing is what makes a private recording publishable.
@@ -35,12 +37,39 @@ import (
 type Secret struct {
 	Name  string
 	Value string
+	// Kind is what a finding is reported as, and With is what stands in for the
+	// value. Both have a default, `env:<Name>` and `<SECRET>`, which is what a
+	// variable the caller named gets. The recorder's own identity brings its
+	// own, so a username reads as `<USER>` in a diff.
+	Kind string
+	With string
 }
 
-// A literal shorter than this is not scrubbed, and the report says so. A
-// four-character value matches inside ordinary prose, and a scrub that rewrites
-// half the words in a prompt is worse than one that refuses.
-const minSecretLen = 12
+// A literal shorter than minSecretLen is matched as a whole word, and one
+// shorter than minWordLen is not looked for at all, which the report says.
+//
+// A short value inside ordinary prose is the risk: `ada` is in `adapter`, and a
+// scrub that rewrites half the words in a prompt is worse than one that
+// refuses. But a username is short, and it is the personal value most likely to
+// be in a cassette, because a sandbox gives its guest the name of whoever
+// launched it. On word boundaries it is found in `home/ada/app` and in
+// `/tmp/ada-verify.js`, and `adapter` is left alone. Two characters are too few
+// for even that.
+const (
+	minSecretLen = 12
+	minWordLen   = 3
+)
+
+// protocolWords are short values that are not looked for even as whole words,
+// because the API is written in them: every request of every cassette holds
+// `"role":"user"`. A recorder whose login is one of these would have --force
+// rewrite the protocol, and the finding count would say nothing. `root` and
+// `localhost` are here for the same reason from another source: they are in
+// every shell transcript and every dev-server address an agent prints.
+var protocolWords = map[string]bool{
+	"user": true, "system": true, "assistant": true, "developer": true, "tool": true,
+	"root": true, "localhost": true,
+}
 
 // detector is one shape of credential or personal data, and what replaces it.
 type detector struct {
@@ -118,10 +147,14 @@ func (r ScrubReport) Total() int {
 //
 // Every file in the directory is scanned, index and metadata included: a path
 // recorded in the index is as readable as one in a body.
-func Scrub(dir string, secrets []Secret, apply bool) (ScrubReport, error) {
+//
+// allowEmail names addresses that are not findings, each either a whole address
+// or `@domain`, which covers that domain and everything under it.
+func Scrub(dir string, secrets []Secret, allowEmail []string, apply bool) (ScrubReport, error) {
 	var rep ScrubReport
 	lits, skipped := literals(secrets)
 	rep.Skipped = skipped
+	keep := addressesToKeep(allowEmail)
 
 	found := map[string]map[string]int{} // file -> kind -> count
 	err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
@@ -139,7 +172,7 @@ func Scrub(dir string, secrets []Secret, apply bool) (ScrubReport, error) {
 		if err != nil {
 			rel = path
 		}
-		out, counts := scrubBytes(b, lits)
+		out, counts := scrubBytes(b, lits, keep)
 		if len(counts) == 0 {
 			return nil
 		}
@@ -172,32 +205,104 @@ func literals(secrets []Secret) ([]detector, []Skipped) {
 		switch {
 		case s.Value == "":
 			skipped = append(skipped, Skipped{s.Name, "not set in this environment"})
-		case len(s.Value) < minSecretLen:
+		case len(s.Value) < minWordLen:
 			skipped = append(skipped, Skipped{s.Name,
-				fmt.Sprintf("under %d characters, so it would match ordinary text", minSecretLen)})
+				fmt.Sprintf("under %d characters, so it would match ordinary text", minWordLen)})
+		case protocolWords[strings.ToLower(s.Value)]:
+			skipped = append(skipped, Skipped{s.Name,
+				"it is a word the API itself uses, so every cassette holds it"})
 		default:
-			out = append(out, detector{
-				kind: "env:" + s.Name,
-				re:   regexp.MustCompile(regexp.QuoteMeta(s.Value)),
-				with: "<SECRET>",
-			})
+			d := detector{kind: s.Kind, with: s.With, re: literal(s.Value)}
+			if d.kind == "" {
+				d.kind = "env:" + s.Name
+			}
+			if d.with == "" {
+				d.with = "<SECRET>"
+			}
+			out = append(out, d)
 		}
 	}
 	return out, skipped
 }
 
+// literal is the pattern a named value is looked for with: anywhere for a long
+// one, and on word boundaries for a short one. A boundary is only asked for at
+// an end that is a word character, because `\b` beside anything else never
+// matches.
+func literal(value string) *regexp.Regexp {
+	pat := regexp.QuoteMeta(value)
+	if len(value) < minSecretLen {
+		if isWord(value[0]) {
+			pat = `\b` + pat
+		}
+		if isWord(value[len(value)-1]) {
+			pat += `\b`
+		}
+	}
+	return regexp.MustCompile(pat)
+}
+
+func isWord(c byte) bool {
+	return c == '_' || c >= '0' && c <= '9' || c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z'
+}
+
+// reservedDomains belong to nobody. RFC 2606 sets aside the three example
+// domains for documentation, and with RFC 6761 the four top-level names. An
+// agent that needs an author for a commit invents `developer@example.com`, so
+// reporting these fails the gate on every real session and protects no one.
+var reservedDomains = []string{
+	"example.com", "example.org", "example.net",
+	"example", "invalid", "test", "localhost",
+}
+
+// addressesToKeep reports whether an address the detector matched is one that
+// is not a finding: reserved, or allowed by the caller.
+func addressesToKeep(allowEmail []string) func(match []byte) bool {
+	var addresses, domains []string
+	for _, a := range allowEmail {
+		a = strings.ToLower(strings.TrimSpace(a))
+		if rest, ok := strings.CutPrefix(a, "@"); ok {
+			domains = append(domains, rest)
+		} else if a != "" {
+			addresses = append(addresses, a)
+		}
+	}
+	domains = append(domains, reservedDomains...)
+	return func(match []byte) bool {
+		addr := strings.ToLower(string(match))
+		if slices.Contains(addresses, addr) {
+			return true
+		}
+		host := addr[strings.LastIndexByte(addr, '@')+1:]
+		for _, d := range domains {
+			// On a label boundary, so `myexample.com` is not `example.com`.
+			if host == d || strings.HasSuffix(host, "."+d) {
+				return true
+			}
+		}
+		return false
+	}
+}
+
 // scrubBytes applies the literals first and the shapes second, so a value the
 // caller named is reported under its own name rather than under whichever
 // pattern happens to match it.
-func scrubBytes(b []byte, lits []detector) ([]byte, map[string]int) {
+func scrubBytes(b []byte, lits []detector, keepAddress func([]byte) bool) ([]byte, map[string]int) {
 	counts := map[string]int{}
-	for _, d := range append(append([]detector{}, lits...), detectors...) {
-		n := len(d.re.FindAll(b, -1))
+	for _, d := range append(slices.Clone(lits), detectors...) {
+		n := 0
+		out := d.re.ReplaceAllFunc(b, func(m []byte) []byte {
+			if d.kind == "email" && keepAddress(m) {
+				return m
+			}
+			n++
+			return d.re.Expand(nil, []byte(d.with), m, d.re.FindSubmatchIndex(m))
+		})
 		if n == 0 {
 			continue
 		}
 		counts[d.kind] += n
-		b = d.re.ReplaceAll(b, []byte(d.with))
+		b = out
 	}
 	return b, counts
 }

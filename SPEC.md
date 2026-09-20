@@ -593,6 +593,17 @@ a second time.*
 command line, and one that could not be looked for **MUST** be reported. *Every process on a machine
 can read another's arguments, and an unset variable must not print as "clean".*
 
+**R50a.** A named value under 12 characters **MUST** be matched as a whole word. One under 3
+characters, or one that is a word of the API such as `user`, **MUST NOT** be looked for, and
+**MUST** be reported as such. *A username is short, and it is the personal value a cassette most
+often holds, because a sandbox names its guest after whoever launched it. Matched anywhere, `ada`
+rewrites `adapter`. Every request holds `"role":"user"`, so no boundary makes that word safe.*
+
+**R50b.** An address in a domain reserved for documentation or testing **MUST NOT** be a finding,
+and neither is one the caller allowed by address or by domain. *An agent that needs an author for a
+commit invents `developer@example.com`. A gate that fails on it fails on every real session, and
+the only remedy left is a rule that blanks every address in the cassette.*
+
 Removing a value from a **request** changes what replay matches on, and that is the point. Such a
 value was going to make the cassette replay for nobody but the person who recorded it. The remedy is
 a `normalize` rule, which blanks it on both sides, so a scrub that breaks a replay has found a rule

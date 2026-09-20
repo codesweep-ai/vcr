@@ -3,9 +3,15 @@ package cassette
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
+
+// someones is an address outside the reserved domains, which the scrubber lets
+// through. Put together here, because the repository's own gate refuses a file
+// that holds one.
+const someones = "ada" + "@" + "corp.io"
 
 // A cassette with something in it that must not be published: a key quoted in a
 // prompt, an address the agent was told, and a token in a recorded answer.
@@ -18,7 +24,7 @@ func scrubbable(t *testing.T) string {
 	}
 	if _, err := s.Append(Recording{
 		Entry:    Entry{Method: "POST", Path: "/v1/messages", Status: 200},
-		Request:  []byte(`{"messages":[{"role":"user","content":"deploy with sk-ant-api03-AAAAAAAAAAAAAAAAAAAAAAAA, ask ada@example.com"}]}`),
+		Request:  []byte(`{"messages":[{"role":"user","content":"deploy with sk-ant-api03-AAAAAAAAAAAAAAAAAAAAAAAA, ask ` + someones + `"}]}`),
 		Response: []byte(`{"safety_identifier":"user-AAAAAAAAAAAAAAAAAAAA","text":"use Bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjMifQ.not-a-real-signature"}`),
 	}); err != nil {
 		t.Fatal(err)
@@ -35,7 +41,7 @@ func TestScrubReportsWithoutChangingAnything(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	rep, err := Scrub(dir, nil, false)
+	rep, err := Scrub(dir, nil, nil, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -67,10 +73,10 @@ func TestScrubReportsWithoutChangingAnything(t *testing.T) {
 // request: a cassette is committed whole.
 func TestScrubRemovesWhatItFinds(t *testing.T) {
 	dir := scrubbable(t)
-	if _, err := Scrub(dir, nil, true); err != nil {
+	if _, err := Scrub(dir, nil, nil, true); err != nil {
 		t.Fatal(err)
 	}
-	rep, err := Scrub(dir, nil, false)
+	rep, err := Scrub(dir, nil, nil, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -82,7 +88,7 @@ func TestScrubRemovesWhatItFinds(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		for _, gone := range []string{"sk-ant-", "ada@example.com", "eyJhbGciOi", "user-AAAA"} {
+		for _, gone := range []string{"sk-ant-", someones, "eyJhbGciOi", "user-AAAA"} {
 			if strings.Contains(string(b), gone) {
 				t.Errorf("%s still holds %q:\n%s", f, gone, b)
 			}
@@ -113,7 +119,7 @@ func TestScrubFindsAValueNamedByTheCaller(t *testing.T) {
 	if err := os.WriteFile(req, append(b, []byte(password)...), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	rep, err := Scrub(dir, []Secret{{Name: "DEPLOY_PASSWORD", Value: password}}, true)
+	rep, err := Scrub(dir, []Secret{{Name: "DEPLOY_PASSWORD", Value: password}}, nil, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -141,7 +147,7 @@ func TestScrubFindsAValueNamedByTheCaller(t *testing.T) {
 // scrubbed and is not.
 func TestScrubSaysWhichSecretsItCouldNotLookFor(t *testing.T) {
 	dir := scrubbable(t)
-	rep, err := Scrub(dir, []Secret{{Name: "ABSENT_KEY"}, {Name: "SHORT_KEY", Value: "xy"}}, false)
+	rep, err := Scrub(dir, []Secret{{Name: "ABSENT_KEY"}, {Name: "SHORT_KEY", Value: "xy"}}, nil, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -173,7 +179,7 @@ func TestScrubLeavesAnOrdinarySessionAlone(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	rep, err := Scrub(dir, nil, true)
+	rep, err := Scrub(dir, nil, nil, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -229,5 +235,129 @@ func TestKeyDetectorsNeedAKeyToStart(t *testing.T) {
 				t.Errorf("detected=%v, want %v for %s", found, tc.want, tc.body)
 			}
 		})
+	}
+}
+
+// withRequest is a one-step cassette whose request holds the given text.
+func withRequest(t *testing.T, text string) (dir, req string) {
+	t.Helper()
+	dir = filepath.Join(t.TempDir(), "session")
+	s, err := OpenStore(dir, "test", 1, func() int64 { return 0 })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Append(Recording{
+		Entry:    Entry{Method: "POST", Path: "/v1/messages", Status: 200},
+		Request:  []byte(`{"messages":[{"role":"user","content":"` + text + `"}]}`),
+		Response: []byte(`{"ok":true}`),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	return dir, filepath.Join(dir, "req", "0001.json")
+}
+
+func kinds(rep ScrubReport) map[string]int {
+	out := map[string]int{}
+	for _, f := range rep.Findings {
+		out[f.Kind] += f.Count
+	}
+	return out
+}
+
+// A username is the personal value most likely to be in a cassette, because a
+// sandbox gives its guest the name of whoever launched it, and it is short. It
+// is found as a whole word, in every spelling a recorded campaign carried it:
+// a path with no leading slash, a file name an agent made up, a directory
+// listing. Inside a longer word it is ordinary text and is left alone.
+func TestScrubFindsAShortValueAsAWholeWord(t *testing.T) {
+	dir, req := withRequest(t, `drwxr-xr-x 2 ada ada 4096 . home/ada/hello-app /tmp/ada-verify.js adapter canada`)
+	rep, err := Scrub(dir, []Secret{{Name: "WHO", Value: "ada"}}, nil, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rep.Skipped) != 0 {
+		t.Errorf("skipped = %+v, want the value looked for", rep.Skipped)
+	}
+	if n := kinds(rep)["env:WHO"]; n != 4 {
+		t.Errorf("found %d, want the 4 whole words", n)
+	}
+	b, err := os.ReadFile(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"home/<SECRET>/hello-app", "/tmp/<SECRET>-verify.js", "adapter canada"} {
+		if !strings.Contains(string(b), want) {
+			t.Errorf("the request does not hold %q:\n%s", want, b)
+		}
+	}
+}
+
+// Whole words are still not enough for the words the API itself is written in.
+// `user` is in every request of every cassette as a role, so a recorder whose
+// login is `user` would have --force rewrite the protocol.
+func TestScrubRefusesAValueTheProtocolIsWrittenIn(t *testing.T) {
+	dir, _ := withRequest(t, "hello")
+	rep, err := Scrub(dir, []Secret{{Name: "WHO", Value: "user"}}, nil, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rep.Skipped) != 1 || !strings.Contains(rep.Skipped[0].Why, "every cassette") {
+		t.Errorf("skipped = %+v, want `user` refused and the reason given", rep.Skipped)
+	}
+	if rep.Total() != 0 || rep.Rewritten != 0 {
+		t.Errorf("findings = %+v, rewritten = %d, want nothing touched", rep.Findings, rep.Rewritten)
+	}
+}
+
+// A secret may say what kind it is and what stands in for it, which is how the
+// recorder's own name reads as `<USER>` in a diff rather than as a secret.
+func TestScrubUsesTheKindAndPlaceholderASecretBrings(t *testing.T) {
+	dir, req := withRequest(t, "cd /home/ada/app")
+	rep, err := Scrub(dir, []Secret{{Name: "username", Value: "ada", Kind: "recorder:username", With: "<USER>"}}, nil, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if kinds(rep)["recorder:username"] != 1 {
+		t.Errorf("findings = %+v, want one recorder:username", rep.Findings)
+	}
+	if b, _ := os.ReadFile(req); !strings.Contains(string(b), "/home/<USER>/app") {
+		t.Errorf("the placeholder was not used:\n%s", b)
+	}
+}
+
+// An address in a domain reserved for documentation belongs to nobody, and an
+// agent invents one whenever it needs an author for a commit. Reporting it makes
+// the gate fail on every real session. The rest are still found, unless the
+// caller allowed them by address or by domain.
+func TestScrubLetsReservedAndAllowedAddressesThrough(t *testing.T) {
+	// Put together here rather than written out, for the addresses that are not
+	// reserved: the repository's own gate refuses a file that holds one.
+	at := func(local, domain string) string { return local + "@" + domain }
+	kept := []string{"developer@example.com", "agent@example.invalid",
+		at("a", "docs.example.org"), at("x", "svc.test"),
+		at("noreply", "anthropic.com"), at("Bot", "Users.NoReply.GitHub.com")}
+	gone := []string{at("ada", "corp.io"), at("notexample.com", "evil.io"), at("b", "myexample.com")}
+	dir, req := withRequest(t, strings.Join(append(slices.Clone(kept), gone...), " "))
+	rep, err := Scrub(dir, nil, []string{at("noreply", "anthropic.com"), "@github.com"}, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := kinds(rep)["email"]; n != 3 {
+		t.Errorf("found %d addresses, want the 3 that belong to somebody: %+v", n, rep.Findings)
+	}
+	b, err := os.ReadFile(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := string(b)
+	for _, kept := range kept {
+		if !strings.Contains(got, kept) {
+			t.Errorf("%s was rewritten:\n%s", kept, got)
+		}
+	}
+	for _, gone := range gone {
+		if strings.Contains(got, gone) {
+			t.Errorf("%s survived:\n%s", gone, got)
+		}
 	}
 }

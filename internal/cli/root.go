@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"github.com/codesweep-ai/vcr"
+	"github.com/codesweep-ai/vcr/internal/cassette"
 	"github.com/codesweep-ai/vcr/internal/config"
 	"github.com/codesweep-ai/vcr/internal/paths"
 	"github.com/spf13/cobra"
@@ -47,6 +48,16 @@ type App struct {
 	Path string // the config file that was loaded (or would have been)
 
 	Getenv func(string) string // injected in tests
+	// Recorder is who is running the command, for `cassette scrub --recorder`.
+	// Injected in tests, which must not depend on who runs them.
+	Recorder func() []cassette.Secret
+}
+
+func (a *App) recorder() []cassette.Secret {
+	if a.Recorder != nil {
+		return a.Recorder()
+	}
+	return recorderIdentity()
 }
 
 func (a *App) getenv(k string) string {

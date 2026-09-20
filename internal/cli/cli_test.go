@@ -228,6 +228,92 @@ func TestScrubReportsASecretItCouldNotLookFor(t *testing.T) {
 	}
 }
 
+// The recorder's own name is the personal value a cassette most often holds,
+// and it is short, so it is found as a whole word. Asked for with one flag,
+// because a gate that needs four variables exported first is one nobody builds.
+// Who the recorder is comes from the App, so the test does not depend on who
+// runs it.
+func TestScrubFindsTheRecorder(t *testing.T) {
+	store := t.TempDir()
+	writeCassette(t, filepath.Join(store, "mine"),
+		`{"messages":[{"role":"user","content":"ls home/ada/app on analytical-engine, by Ada Lovelace"}]}`)
+
+	app := &App{
+		Getenv: func(k string) string { return map[string]string{"CS_VCR_CASSETTES": store}[k] },
+		Recorder: func() []cassette.Secret {
+			return []cassette.Secret{
+				{Name: "your username", Value: "ada", Kind: "recorder:username", With: "<USER>"},
+				{Name: "your hostname", Value: "analytical-engine", Kind: "recorder:hostname", With: "<HOST>"},
+				{Name: "your git name", Value: "Ada Lovelace", Kind: "recorder:git-name", With: "<NAME>"},
+				{Name: "your git address", Kind: "recorder:git-email", With: "<EMAIL>"},
+			}
+		},
+	}
+	t.Setenv("CS_VCR_HOME", t.TempDir())
+	scrub := func(args ...string) (string, error) {
+		cmd := newRootCmd(app)
+		out := &bytes.Buffer{}
+		cmd.SetOut(out)
+		cmd.SetErr(out)
+		cmd.SetArgs(append([]string{"cassette", "scrub", "mine"}, args...))
+		err := cmd.Execute()
+		return out.String(), err
+	}
+
+	// Without the flag nobody asked, and the cassette reads as clean.
+	if out, err := scrub(); err != nil {
+		t.Fatalf("without --recorder: %v\n%s", err, out)
+	}
+	out, err := scrub("--recorder")
+	var status *ExitStatus
+	if !errors.As(err, &status) || status.Code != ExitCassetteMiss {
+		t.Fatalf("error = %v, want exit %d\n%s", err, ExitCassetteMiss, out)
+	}
+	for _, want := range []string{"recorder:username", "recorder:hostname", "recorder:git-name",
+		"your git address was not looked for"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the report does not hold %q:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "analytical-engine") {
+		t.Errorf("the report printed what it found:\n%s", out)
+	}
+	if out, err = scrub("--recorder", "--force"); err != nil {
+		t.Fatalf("--force: %v\n%s", err, out)
+	}
+	b, err := os.ReadFile(filepath.Join(store, "mine", "req", "0001.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(b), "ls home/<USER>/app on <HOST>, by <NAME>") {
+		t.Errorf("the request was not rewritten as expected:\n%s", b)
+	}
+}
+
+// A gate built on the exit status has to pass a real session, and a real
+// session holds addresses that are nobody's secret: one the agent invented in a
+// reserved domain, and the public one a tool prints on every commit.
+func TestScrubPassesAddressesThatBelongToNobody(t *testing.T) {
+	store := t.TempDir()
+	// Put together here, because the repository's own gate refuses a file that
+	// holds an address outside the reserved domains.
+	public := "noreply" + "@" + "anthropic.com"
+	writeCassette(t, filepath.Join(store, "session"),
+		`{"messages":[{"role":"user","content":"by developer@example.com, Co-Authored-By: `+public+`"}]}`)
+	env := map[string]string{"CS_VCR_CASSETTES": store}
+
+	out, err := run(t, env, "cassette", "scrub", "session")
+	if err == nil || !strings.Contains(out, "found 1 email") {
+		t.Fatalf("want the one public address reported and the reserved one not: %v\n%s", err, out)
+	}
+	if out, err = run(t, env, "cassette", "scrub", "session", "--allow-email", public); err != nil {
+		t.Errorf("an allowed address still fails the gate: %v\n%s", err, out)
+	}
+	if out, err = run(t, env, "cassette", "scrub", "session", "--allow-email", "@anthropic.com"); err != nil {
+		t.Errorf("an allowed domain still fails the gate: %v\n%s", err, out)
+	}
+}
+
 // writeCassette lays down a one-step cassette with the given request body, so a
 // command test has something real to read.
 func writeCassette(t *testing.T, dir, request string) {

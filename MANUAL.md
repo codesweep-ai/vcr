@@ -13,7 +13,7 @@ cs-vcr replay   [--cassettes DIR] [--listen ADDR] [--admin ADDR] [--dump-misses 
 cs-vcr cassette ls [NAME] [--json]
 cs-vcr cassette show NAME STEP
 cs-vcr cassette verify [NAME...]
-cs-vcr cassette scrub [NAME...] [--force] [--from-env VAR,...]
+cs-vcr cassette scrub [NAME...] [--force] [--from-env VAR,...] [--recorder] [--allow-email ADDR,...]
 cs-vcr cassette prune NAME [--force]
 cs-vcr calibrate NAME MISSDIR
 cs-vcr config [AGENT] [--cassette NAME] [--provider NAME] [--url URL] [--env-only]
@@ -116,7 +116,33 @@ cs-vcr cassette scrub build --from-env OPENAI_API_KEY,FIREWORKS_API_KEY --force
 ```
 
 The value is read from the environment, not from the command line, where every process on the
-machine could read it.
+machine could read it. A value of 12 characters or more is found anywhere. A shorter one is found
+as a whole word, so `ada` matches in `home/ada/app` and in `/tmp/ada-verify.js`, and not in
+`adapter`. `scrub` does not look for a value under 3 characters, or for a word the API itself
+uses, such as `user`. It says so when that happens.
+
+`--recorder` looks for whoever runs the command: the username, the hostname, and the git name and
+address.
+
+```bash
+cs-vcr cassette scrub build --recorder
+```
+
+A sandbox gives its guest the username of whoever launched it, so your username is the personal
+value a cassette most often holds. With `--force`, the four values become `<USER>`, `<HOST>`,
+`<NAME>` and `<EMAIL>`.
+
+`scrub` reports every email address except one that belongs to nobody. Those are an address under
+`example.com`, `example.org` or `example.net`, and one ending in `.example`, `.invalid`, `.test` or
+`.localhost`, which are reserved for documentation and testing. To let another address through,
+name it or its domain:
+
+```bash
+cs-vcr cassette scrub build --allow-email @users.noreply.github.com
+```
+
+`@domain` covers that domain and every name under it. A whole address, such as the one a tool signs
+its commits with, lets through that address alone.
 
 Taking a value out of a request changes what replay matches on. That value was going to make the
 cassette replay for nobody but you, and the remedy is a `normalize` rule, which blanks it on both
@@ -194,6 +220,8 @@ cs-vcr has the reference, with no checkout to read and no page to fetch.
 | `--json` | cassette ls | Machine-readable output. |
 | `--force` | cassette scrub, prune | Remove rather than report. |
 | `--from-env VAR,...` | cassette scrub | Environment variables holding secrets to look for. |
+| `--recorder` | cassette scrub | Also look for your username, hostname, and git name and address. |
+| `--allow-email ADDR,...` | cassette scrub | Addresses that are not findings: a whole address, or `@domain`. |
 | `--url URL` | config AGENT | Where the agent reaches cs-vcr. Default: derived from `listen`. |
 | `--env-only` | config AGENT | Print only the `VAR=VALUE` lines. |
 | `--config FILE` | all | Config file path. The file has to exist; leave the flag out for the defaults. |

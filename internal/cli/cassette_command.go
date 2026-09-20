@@ -5,8 +5,11 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
+	"os/user"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"text/tabwriter"
 
 	"github.com/codesweep-ai/vcr/internal/cassette"
@@ -226,8 +229,8 @@ func verifyCassettes(out io.Writer, app *App, names []string) error {
 // for a stronger reason: taking a value out of a request changes what replay
 // matches on, and whoever runs this has to see what is about to change.
 func newCassetteScrubCmd(app *App) *cobra.Command {
-	var force bool
-	var fromEnv []string
+	var force, recorder bool
+	var fromEnv, allowEmail []string
 	cmd := &cobra.Command{
 		Use:   "scrub [cassette...]",
 		Short: "Find credentials and personal data in a cassette, and take them out",
@@ -238,7 +241,16 @@ given, and exits non-zero while anything is left, so it can gate a commit.
 Known credential shapes and email addresses are always looked for. --from-env
 names environment variables whose values are also secrets, matched literally —
 the value is read from the environment rather than the command line, where every
-process on the machine could read it.
+process on the machine could read it. A value under 12 characters is matched as
+a whole word, which is what finds a username.
+
+--recorder looks for whoever is running the command: their username, hostname,
+and git name and address. A sandbox gives its guest the username of whoever
+launched it, so that is the personal value a cassette most often holds.
+
+An address in a domain reserved for documentation, such as example.com or
+.invalid, belongs to nobody and is not reported. --allow-email lets others
+through, each either a whole address or @domain.
 
 A value taken out of a REQUEST changes what replay matches on. That is worth
 knowing rather than hiding: such a value was going to make the cassette replay
@@ -252,13 +264,48 @@ which blanks it on both sides.`,
 					return err
 				}
 			}
-			return scrubCassettes(cmd.OutOrStdout(), app, names, secretsFromEnv(app.getenv, fromEnv), force)
+			secrets := secretsFromEnv(app.getenv, fromEnv)
+			if recorder {
+				secrets = append(secrets, app.recorder()...)
+			}
+			return scrubCassettes(cmd.OutOrStdout(), app, names, secrets, allowEmail, force)
 		},
 	}
 	cmd.Flags().BoolVarP(&force, "force", "f", false, "rewrite the files (without this, only report)")
 	cmd.Flags().StringSliceVar(&fromEnv, "from-env", nil,
 		"environment variables holding secrets to look for, by name (repeatable, or comma-separated)")
+	cmd.Flags().BoolVar(&recorder, "recorder", false,
+		"also look for your own username, hostname, and git name and address")
+	cmd.Flags().StringSliceVar(&allowEmail, "allow-email", nil,
+		"addresses that are not findings: a whole address, or @domain (repeatable, or comma-separated)")
 	return cmd
+}
+
+// recorderIdentity is who is running this command, as the values a recording
+// made on this machine would carry. One that cannot be learned is carried
+// through empty, so the report says it was not looked for.
+func recorderIdentity() []cassette.Secret {
+	var username string
+	if u, err := user.Current(); err == nil {
+		username = u.Username
+	}
+	host, _ := os.Hostname()
+	return []cassette.Secret{
+		{Name: "your username", Value: username, Kind: "recorder:username", With: "<USER>"},
+		{Name: "your hostname", Value: host, Kind: "recorder:hostname", With: "<HOST>"},
+		{Name: "your git name", Value: gitConfig("user.name"), Kind: "recorder:git-name", With: "<NAME>"},
+		{Name: "your git address", Value: gitConfig("user.email"), Kind: "recorder:git-email", With: "<EMAIL>"},
+	}
+}
+
+// gitConfig is one value of the caller's git configuration, or nothing where
+// git is absent or the key is unset.
+func gitConfig(key string) string {
+	out, err := exec.Command("git", "config", "--get", key).Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
 }
 
 // secretsFromEnv reads the named variables. A name that is not set is carried
@@ -272,7 +319,7 @@ func secretsFromEnv(getenv func(string) string, names []string) []cassette.Secre
 	return out
 }
 
-func scrubCassettes(out io.Writer, app *App, names []string, secrets []cassette.Secret, force bool) error {
+func scrubCassettes(out io.Writer, app *App, names []string, secrets []cassette.Secret, allowEmail []string, force bool) error {
 	left := 0
 	for _, n := range names {
 		dir := filepath.Join(app.Cfg.Cassettes, n)
@@ -281,7 +328,7 @@ func scrubCassettes(out io.Writer, app *App, names []string, secrets []cassette.
 		if _, err := cassette.Open(dir); err != nil {
 			return err
 		}
-		rep, err := cassette.Scrub(dir, secrets, force)
+		rep, err := cassette.Scrub(dir, secrets, allowEmail, force)
 		if err != nil {
 			return err
 		}
