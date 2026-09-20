@@ -1,0 +1,24 @@
+{
+  "id": "VCR-032",
+  "title": "OpenCode puts the developer's own Claude Code skills into the prompt of every live scenario, by name and by home path",
+  "type": "defect",
+  "severity": "high",
+  "status": "closed",
+  "foundBy": "session agent, running the live replay tier with the pinned agents before re-recording the fixtures for VCR-029",
+  "opened": "2026-09-20",
+  "resolved": "2026-09-20",
+  "stint": "2026-09-20 image payloads",
+  "evidence": {
+    "commits": [
+      "37a6222"
+    ],
+    "integrated": [],
+    "verified": "With claude 2.1.245, codex 0.149.1 and opencode 1.18.22 on the PATH, `CS_VCR_AGENTS=1 CS_VCR_AGENTS_STRICT=1 go test ./test/agents -run TestReplayFixtures -count=1` on a host with skills under ~/.claude/skills. Before the change the three opencode scenarios failed at step 2 and the other five passed. After it all 8 passed, against fixtures recorded on another host."
+  },
+  "resolution": "The three scenarios set `OPENCODE_DISABLE_CLAUDE_CODE` and `OPENCODE_DISABLE_EXTERNAL_SKILLS`, so the agent does not look for the files at all.",
+  "details": "The live agent suite gives each agent a fresh `HOME`, so that nothing of the developer's reaches the prompt. OpenCode gets past it. It reads Claude Code's skills as its own, and it finds them by walking up from its working directory. The workspace is deliberately not a git repository, so nothing stops the walk. It sits in the developer's cache directory, which is under their real home, so the walk reaches `~/.claude/skills`.\n\nOn a host that has skills there, every one is listed in OpenCode's system prompt, with a `<location>` that holds the developer's home path. The three OpenCode scenarios then miss at step 2, with `input[0].content` differing. The committed fixtures list one built-in skill, because the host that recorded them had none of its own.\n\nReplaying is the mild half. A recording made on such a host would commit the developer's skill list and login name to a public repository, and would replay nowhere else, CI included. The scrubber finds neither, because a skill name and a path are not shapes it knows.\n\nTo reproduce, put any skill under `~/.claude/skills`, install opencode 1.18.22, and run `CS_VCR_AGENTS=1 CS_VCR_AGENTS_STRICT=1 go test ./test/agents -run TestReplayFixtures/opencode`.\n\nThe same walk could find an `AGENTS.md` or an `.opencode` directory above the workspace. That is not covered here, and moving the workspace out from under the home directory would close it.",
+  "notes": [],
+  "links": [
+    "VCR-029"
+  ]
+}
