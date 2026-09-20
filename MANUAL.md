@@ -74,6 +74,17 @@ serves with none.
 Exits **4** if any request had no recording. With `--dump-misses`, each missed request is written to
 `DIR/<step>.json`, named after the step it was compared against, ready for `diff` or `calibrate`.
 
+To check that a session is up for one cassette, ask for the base URL itself:
+
+```bash
+curl http://127.0.0.1:8080/c/anthropic/build
+```
+
+cs-vcr answers `{"cassette":"build","mode":"replay","source":"cs-vcr"}` and counts a probe. A probe
+is not a request. It moves nothing in the cassette and cannot cause a miss, and `record` answers it
+the same way without calling the provider. A cassette that `replay` does not hold answers
+`unknown_cassette`, so the check also finds a mistyped name.
+
 ### cassette
 
 ```

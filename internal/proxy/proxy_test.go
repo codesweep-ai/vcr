@@ -101,6 +101,15 @@ func post(t *testing.T, s *Server, path string, hdr map[string]string, body stri
 	return w
 }
 
+// do sends a bodiless request with a method of the caller's choosing, for the
+// tests where the method is the point.
+func do(t *testing.T, s *Server, method, path string) *httptest.ResponseRecorder {
+	t.Helper()
+	w := httptest.NewRecorder()
+	s.ServeHTTP(w, httptest.NewRequest(method, onCassette(path), http.NoBody))
+	return w
+}
+
 // get is for the bodiless requests an agent makes around its prompts — the
 // model list, a startup probe — which a session needs replayed just as much.
 func get(t *testing.T, s *Server, path string) *httptest.ResponseRecorder {

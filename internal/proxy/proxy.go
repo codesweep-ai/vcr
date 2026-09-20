@@ -111,6 +111,11 @@ type Stats struct {
 	Recorded int `json:"recorded"`
 	Misses   int `json:"misses"`
 	Rejected int `json:"rejected"`
+	// Probes counts requests for a cassette's bare address, which is somebody
+	// asking whether cs-vcr is up rather than the session asking a provider
+	// anything. Apart from Requests for the reason the tunnels are: a request is
+	// what a session can record, and a probe is answered here and kept nowhere.
+	Probes int `json:"probes"`
 	// OutOfOrder counts entries served at a position other than the one the
 	// script expected — a client that pipelined, almost always. Reported so
 	// that "the recorded order was reproduced" stays an observable property.
@@ -278,6 +283,11 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// request would classify as an unrecognized surface.
 	stripPrefix(r, rest)
 
+	if isProbe(r) && s.answersProbe(provider, name) {
+		s.serveProbe(w, r, name)
+		return
+	}
+
 	route := s.routeFor(r, provider)
 	s.count(func(st *Stats) {
 		st.Requests++
@@ -400,6 +410,50 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// or from neither.
 		method: r.Method, path: key.Target,
 	})
+}
+
+// isProbe reports whether a request asks for a cassette's bare address and
+// carries nothing: the base URL an agent was given, with no provider path after
+// it. No client asks a provider that. It is a health checker or a person with
+// curl, asking whether anything is listening where the agent was pointed.
+//
+// GET and HEAD only. A POST there is a client whose base URL lost its path, and
+// that has to stay the miss it is.
+func isProbe(r *http.Request) bool {
+	return r.URL.Path == "/" && (r.Method == http.MethodGet || r.Method == http.MethodHead)
+}
+
+// answersProbe reports whether a probe gets the answer it came for, which is
+// whether the address would work for the agent it was given to. Where it would
+// not, the request goes down the ordinary path and is refused there like any
+// other, so a checker hears about a mistyped cassette or provider in the same
+// words the agent would.
+//
+// A recording session does not open the cassette to find out. Opening one
+// creates it, and a probe must not leave a cassette behind.
+func (s *Server) answersProbe(provider, name string) bool {
+	if s.ReachesUpstream() {
+		_, err := s.provider(provider)
+		return err == nil
+	}
+	_, err := s.storeFor(name)
+	return err == nil
+}
+
+// serveProbe answers a probe here, in both kinds of session. It is kept out of
+// selection because it is not the session's: counted as a miss, one probe from
+// outside failed a replay that had served every step. It is kept from the
+// provider because forwarding it recorded a step no replay would ever make.
+func (s *Server) serveProbe(w http.ResponseWriter, r *http.Request, name string) {
+	s.count(func(st *Stats) { st.Probes++ })
+	mode := "record"
+	if !s.ReachesUpstream() {
+		mode = "replay"
+	}
+	s.log.Info("answered a probe of the bare address",
+		slog.String("cassette", name), slog.String("remote", r.RemoteAddr))
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]string{"source": "cs-vcr", "mode": mode, "cassette": name})
 }
 
 // readAndRestoreBody reads the body and leaves the request able to be forwarded.

@@ -314,6 +314,16 @@ said which upstream this is. Nothing in the request says it: a Pro/Max subscript
 probe carries no identifying header at all. Naming the provider in the URL leaves its key free: a
 deployment may name an entry for the model it serves rather than for the shape it speaks.*
 
+**R21.** A cassette's bare address is the prefix with no path after it. A `GET` or `HEAD` for it
+**MUST** be answered 200 by cs-vcr itself, in a recording session and a replay session alike. It
+**MUST NOT** be forwarded, recorded or matched against the cassette. It **MUST** be counted as a
+probe, and **MUST NOT** be counted as a request or a miss. A prefix the session would refuse
+**MUST** still be refused.
+*The bare address is the base URL an agent was given, and no client asks a provider for it. The one
+asking is a health checker or a person with `curl`. Counted as a miss, one such check failed a
+replay that had served every step. Forwarded, it reached the provider and became a step that no
+replay ever makes.*
+
 ### 6.1 Tunnelling
 
 A base URL aims an agent's model calls at cs-vcr. It does not aim the rest. Claude Code checks its
@@ -449,7 +459,8 @@ Both commands print a summary on exit. It is the artifact a CI log shows.
 | `upstream calls` | Requests that reached a provider. Always 0 under `replay`. |
 | `misses` | Requests with no recording. Fails a replay session. |
 | `unknown cassette` | Requests that named no cassette, or named one that could not be used. |
-| `rejected` | Requests answered with an error. |
+| `rejected` | Requests answered with an error. Every miss is one, and so is every `unknown cassette`. |
+| `probes` | Printed when something asked for a cassette's bare address. Not part of `requests`. See R21. |
 | `abandoned` | Printed when the session exited with requests still in flight. |
 | `drifted observations` | Printed when a difference was tolerated at a volatile path. |
 | `out of recorded order` | Printed when a step was served out of sequence. |

@@ -556,6 +556,59 @@ func TestReplaySummaryReportsMisses(t *testing.T) {
 	}
 }
 
+// The contract a pipeline reads: somebody checking that the proxy is up, while
+// a replay runs, leaves its exit status alone. It used to be a miss, and one
+// `curl` of the base URL failed a session that had served every step.
+func TestAProbeDoesNotFailAReplay(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.yaml")
+	if err := os.WriteFile(cfgPath, []byte(unreachableProviders), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	listen, admin := port(t), port(t)
+	emptyCassette(t, filepath.Join(dir, "cassettes", testCassette))
+
+	cmd := newRootCmd(&App{Getenv: func(string) string { return "" }})
+	out := &bytes.Buffer{}
+	cmd.SetOut(out)
+	cmd.SetErr(out)
+	cmd.SetArgs([]string{"--config", cfgPath, "replay",
+		"--cassettes", filepath.Join(dir, "cassettes"),
+		"--listen", listen, "--admin", admin})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- cmd.ExecuteContext(ctx) }()
+
+	base := "http://" + listen + "/c/anthropic/" + testCassette
+	var status int
+	for deadline := time.Now().Add(10 * time.Second); time.Now().Before(deadline); time.Sleep(20 * time.Millisecond) {
+		if resp, err := http.Get(base); err == nil {
+			status = resp.StatusCode
+			resp.Body.Close()
+			break
+		}
+	}
+	cancel()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Errorf("replay exited with %v, want a clean exit", err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("serve did not shut down")
+	}
+	if status != http.StatusOK {
+		t.Errorf("probe status = %d, want 200", status)
+	}
+	got := out.String()
+	for _, want := range []string{`(?m)^probes +1$`, `(?m)^misses +0$`, `(?m)^requests +0$`} {
+		if !regexp.MustCompile(want).MatchString(got) {
+			t.Errorf("the summary does not match %s:\n%s", want, got)
+		}
+	}
+}
+
 // A prefix may name a cassette that does not exist yet, and `record` creates
 // it. That is what lets a build record a new scenario without anything having
 // declared it, which is the whole of the configuration this replaced.

@@ -272,6 +272,12 @@ func summarize(out io.Writer, st proxy.Stats, offline bool) error {
 	fmt.Fprintf(tw, "misses\t%d\n", st.Misses)
 	fmt.Fprintf(tw, "unknown cassette\t%d\n", st.UnknownCassette)
 	fmt.Fprintf(tw, "rejected\t%d\n", st.Rejected)
+	// Only when it happened, and outside `requests`: somebody checked that the
+	// proxy was up, which says nothing about the session and must not make its
+	// arithmetic stop adding up.
+	if st.Probes > 0 {
+		fmt.Fprintf(tw, "probes\t%d\n", st.Probes)
+	}
 	// Only when it happened. A zero is the ordinary case and would be one more
 	// number to read past; a non-zero is a provider call this session paid for
 	// and did not keep, which is otherwise visible only as arithmetic that does
