@@ -3,19 +3,30 @@
   "title": "The scrubber cannot be told a username, because it refuses a value under twelve characters",
   "type": "improvement",
   "severity": "med",
-  "status": "open",
+  "status": "closed",
   "foundBy": "session agent working in the tour repository, which records and replays a three member campaign through cs-vcr, while building a gate that refuses a recording holding anything of the recorder",
   "opened": "2026-09-19",
-  "resolved": null,
-  "stint": null,
+  "resolved": "2026-09-20",
+  "stint": "2026-09-20 scrubber identity and addresses",
   "evidence": {
-    "commits": [],
+    "commits": [
+      "0d453cc"
+    ],
     "integrated": [],
-    "verified": null
+    "verified": "go test ./internal/cassette/ -run TestScrub -count=20 and go test ./internal/cli/ -run TestScrub -count=20: PASS. The reproduction in this record, run against bin/cs-vcr, gave `found 4 env:WHO` and exit status 4, where it had said `WHO was not looked for`. `cs-vcr cassette scrub --recorder` over the committed cassettes, with a real identity, reported every one clean."
   },
-  "resolution": null,
+  "resolution": "A named value under 12 characters is matched as a whole word, and `--recorder` names the caller without any variable being exported.",
   "details": "With `--from-env VAR`, the `cs-vcr cassette scrub` command is told to find the literal value of a variable. A value under twelve characters is refused with `was not looked for: under 12 characters, so it would match ordinary text`. The scrubber carries on and reports the cassette clean of it.\n\nThe reason is sound, and it leaves a gap. A sandbox gives its guest the username of whoever launched it. So the recorder's username is the personal value most likely to be in a cassette. Usernames are short. In one recorded campaign the username was in 51 files of a cassette that the scrubber reported `clean`. It appeared as `home/<name>/hello-app` with no leading slash, and as `/tmp/<name>-verify.js`, which an agent had made up. A capture rule written for `/home/<name>` matches neither.\n\nThe scrubber also has no way to learn the recorder's git name or hostname unless they are passed the same way. Both reach a cassette when an agent prints its git configuration, which the sandbox record SBX-043 describes.\n\nMatching a short value as a whole word would avoid the ordinary-text problem the limit guards against. A flag that adds the recorder's own username, git name, git address and hostname to the search would make the common case one command.\n\nThe tour's gate does this outside cs-vcr today, with `grep -rlwF` over the cassette for each of those values.\n\nTo reproduce, add `drwxr-xr-x 2 alovelace alovelace 4096 .` to a request in any cassette, then run `WHO=alovelace cs-vcr cassette scrub <name> --from-env WHO`.",
-  "notes": [],
+  "notes": [
+    {
+      "date": "2026-09-20",
+      "text": "Both requests shipped, with two limits the record did not ask for. A value under 3 characters is still refused. So is a word the API itself uses, such as `user`, `system` or `root`, however it was named. Every request holds `\"role\":\"user\"`, so a recorder whose login is `user` would have `--force` rewrite the protocol. Both refusals are reported, as the 12 character one was."
+    },
+    {
+      "date": "2026-09-20",
+      "text": "The filer should know the names. The flag is `--recorder`, and it looks for the username, the hostname, and git `user.name` and `user.email`. Findings are reported as `recorder:username` and so on, and `--force` writes `<USER>`, `<HOST>`, `<NAME>` and `<EMAIL>`. A short value matches on `\\\\b` boundaries, which treats `_` as part of a word, as `grep -w` does. SPEC rule R50a holds the contract."
+    }
+  ],
   "links": [
     "VCR-024"
   ]

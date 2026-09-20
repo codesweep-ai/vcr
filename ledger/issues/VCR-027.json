@@ -24,7 +24,7 @@
     },
     {
       "date": "2026-09-20",
-      "text": "What shipped, for the filer. `GET` or `HEAD` on the bare address answers 200 with `{\"cassette\",\"mode\",\"source\"}`, and is counted on a `probes` summary line that is left out of `requests`. Two limits go beyond the request. A probe of a cassette that `replay` does not hold still answers 404 `unknown_cassette`, so a checker finds a mistyped name. A `POST` to the bare address is still a miss, because that is a client whose base URL lost its path. SPEC rule R21 holds the contract."
+      "text": "What shipped, for the filer. `GET` or `HEAD` on the bare address answers 200 with `{\"cassette\",\"mode\",\"source\"}`, and is counted on a `probes` summary line that is left out of `requests`. The fix has two limits that the record did not ask for. A probe of a cassette that `replay` does not hold still answers 404 `unknown_cassette`, so a checker finds a mistyped name. A `POST` to the bare address is still a miss, because that is a client whose base URL lost its path. SPEC rule R21 holds the contract."
     }
   ],
   "links": [

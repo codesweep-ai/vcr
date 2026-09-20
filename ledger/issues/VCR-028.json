@@ -24,7 +24,7 @@
     },
     {
       "date": "2026-09-20",
-      "text": "A second difference. The line goes in a new file, `<step>.request`, beside the body file, and the body file is unchanged. `diff` against the cassette and `cs-vcr calibrate` both read `<step>.json` as a bare body, so adding lines to it would break both. `calibrate` now reads only the `.json` files. SPEC rule R37a holds the contract."
+      "text": "The fix differs in a second way. The line is written to `<step>.request`, and the body in `<step>.json` is unchanged. `diff` against the cassette and `cs-vcr calibrate` both read `<step>.json` as a bare body, so adding lines to it would break both. `calibrate` now reads only the `.json` files. SPEC rule R37a holds the contract."
     }
   ],
   "links": [

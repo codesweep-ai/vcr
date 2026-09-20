@@ -3,19 +3,30 @@
   "title": "The scrubber refuses a reserved documentation address, and nothing lets one through",
   "type": "improvement",
   "severity": "low",
-  "status": "open",
+  "status": "closed",
   "foundBy": "session agent working in the tour repository, which records and replays a three member campaign through cs-vcr, while gating a recording on the scrubber's exit status",
   "opened": "2026-09-19",
-  "resolved": null,
-  "stint": null,
+  "resolved": "2026-09-20",
+  "stint": "2026-09-20 scrubber identity and addresses",
   "evidence": {
-    "commits": [],
+    "commits": [
+      "0d453cc"
+    ],
     "integrated": [],
-    "verified": null
+    "verified": "go test ./internal/cassette/ -run TestScrubLetsReservedAndAllowedAddressesThrough -count=20 and go test ./internal/cli/ -run TestScrubPassesAddressesThatBelongToNobody -count=20: PASS. Against bin/cs-vcr, a request holding one address under example.com, one under .invalid and one under another domain gave `found 1 email`, and `clean` with exit status 0 once `--allow-email` named that domain."
   },
-  "resolution": null,
+  "resolution": "A reserved address is not a finding, and `--allow-email` lets a gate pass the public addresses a real session prints.",
   "details": "`cs-vcr cassette scrub` reports every mail address it finds, and exits 4 while any is left. It has no allow-list. So it refuses a cassette for `developer@example.com`, which an agent invented for a commit. It refuses one as readily for any public address that a tool prints.\n\n`example.com`, `example.org` and `example.net` are reserved for documentation, and an address there belongs to nobody. The `.invalid` domain already passes: `agent@example.invalid` is not reported.\n\nThe cost is that a gate built on the exit status cannot pass a real agent session. Two recordings of one campaign were refused this way. The first held the invented address above. The second held two addresses in the orchestrator's tool output, and they were never identified, because the gate of the time deleted what it refused. The model chooses afresh each time, so the next recording can hold another. The only remedy today is a `capture` rule that blanks every address in the cassette, which the tour now uses. That works, and it has a side effect. An address the model writes into a file, where the request never held it, is replayed as a placeholder.\n\nLetting the reserved domains through, and an allow-list for the rest, would let a gate tell a leak from a harmless address. cs-lint has `emailAllow` for the same reason.\n\nTo reproduce, add `see maintainer@example.com` to a request in any cassette and run `cs-vcr cassette scrub <name>`.",
-  "notes": [],
+  "notes": [
+    {
+      "date": "2026-09-20",
+      "text": "One statement in this record did not hold when measured. `agent@example.invalid` was reported like any other address: the reproduction, with that address added, gave `found 3 email`. The committed fixtures only look clean of it because recording scrubs them with `--force`. The `.invalid` names now pass with the other reserved ones."
+    },
+    {
+      "date": "2026-09-20",
+      "text": "One difference from what was asked, for the filer. The allow-list is a flag, `--allow-email`, and not a config key like `emailAllow` in cs-lint. Everything else `scrub` is told arrives as a flag, and a gate is a script that can carry one. A value is a whole address, or `@domain`, which also covers every name under that domain. What passes with no flag is `example.com`, `example.org`, `example.net` and their subdomains, and any name ending in `.example`, `.invalid`, `.test` or `.localhost`. SPEC rule R50b holds the contract."
+    }
+  ],
   "links": [
     "VCR-025"
   ]
