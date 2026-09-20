@@ -11,7 +11,7 @@
           "caller": {
             "type": "direct"
           },
-          "id": "toolu_01MRJm1Uc9AT4b9ieR8Fvfou",
+          "id": "toolu_01RbWxa4hGWoANSsMQYJb9fx",
           "input": {
             "content": "hello world",
             "filePath": "<ROOT>/work/hello.txt"
@@ -26,7 +26,7 @@
       "content": [
         {
           "content": "Wrote file successfully.",
-          "tool_use_id": "toolu_01MRJm1Uc9AT4b9ieR8Fvfou",
+          "tool_use_id": "toolu_01RbWxa4hGWoANSsMQYJb9fx",
           "type": "tool_result"
         }
       ],

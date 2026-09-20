@@ -600,7 +600,12 @@ func Default() *Config {
 			// v13 blanks the month Claude Code writes into its web-search
 			// tool description. It is the fourth rendering of the day, and the
 			// first one that lives in a tool rather than in the prompt.
-			Version: 13,
+			//
+			// v14 tolerates a picture or a file an agent sends inline. It
+			// changes no stored byte, and it moves the number anyway: the
+			// ruleset is a claim about which requests are equivalent, and two
+			// builds that disagree about that must not share a version.
+			Version: 14,
 			// The minimum names: markers and identifiers that change
 			// between two requests the model would answer identically.
 			Strip: []string{

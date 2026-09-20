@@ -624,11 +624,12 @@ func TestAShallowRootHasNoBareForm(t *testing.T) {
 //
 // The version is pinned here so that moving it is an edit somebody makes on
 // purpose. v13 is the web-search month, which moved it for the same reason a
-// drop does: the committed fixtures have to follow in the same change.
+// drop does: the committed fixtures have to follow in the same change. v14 is
+// the inline picture paths.
 func TestTheShippedRulesetDropsBothPreambleBlocks(t *testing.T) {
 	n := Default().Normalize
-	if n.Version != 13 {
-		t.Fatalf("normalize ruleset version = %d, want 13", n.Version)
+	if n.Version != 14 {
+		t.Fatalf("normalize ruleset version = %d, want 14", n.Version)
 	}
 	for _, want := range []string{"<plugins_instructions>", "<skills_instructions>"} {
 		if !slices.Contains(n.Drop, want) {
