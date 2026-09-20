@@ -486,6 +486,11 @@ by guesswork is how a proposal names the wrong path with total confidence.*
 **MUST** be off unless asked for. *Replay reads a cassette and should not dirty the checkout it was
 given.*
 
+**R37a.** `--dump-misses` **MUST** write the method and the target of each missed request beside its
+body, and **MUST NOT** write a header that can carry a credential. *A bodiless request dumps as an
+empty file, which names nothing. R29 keeps request headers out of a cassette, and a miss directory
+sits in the same checkout.*
+
 ## 9. The cassette format
 
 A cassette is a directory. Each request and response is its own file, so a one-word prompt change

@@ -4,6 +4,8 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -138,5 +140,49 @@ func TestAPostToTheBareAddressIsNotAProbe(t *testing.T) {
 	}
 	if st := rep.Snapshot(); st.Misses != 1 || st.Probes != 0 {
 		t.Errorf("misses = %d, probes = %d, want 1 and 0", st.Misses, st.Probes)
+	}
+}
+
+// A miss with no body used to dump as an empty file and nothing else, so the
+// dump said a request had been written and held nothing that named it. The file
+// beside it does, and it names who sent it, which is the fastest way to tell a
+// stray caller from the agent.
+//
+// Never the credential: a miss directory sits in a checkout, and request headers
+// are the one thing cs-vcr keeps off disk everywhere else.
+func TestADumpedMissNamesTheRequestAndNotTheCredential(t *testing.T) {
+	misses := filepath.Join(t.TempDir(), "misses")
+	rep, _ := cassetteServer(t, filepath.Join(t.TempDir(), "dumped"), offline, func(http.ResponseWriter, *http.Request) {
+		t.Error("replay contacted the provider")
+	})
+	rep = rep.WithMissDump(misses)
+
+	r := httptest.NewRequest(http.MethodGet, onCassette("/v1/models?limit=5"), http.NoBody)
+	r.Header.Set("User-Agent", "codex_cli_rs/0.149.1")
+	r.Header.Set("Authorization", "Bearer "+clientCred)
+	r.Header.Set("X-Api-Key", clientCred)
+	rep.ServeHTTP(httptest.NewRecorder(), r)
+
+	names, err := filepath.Glob(filepath.Join(misses, "*.request"))
+	if err != nil || len(names) != 1 {
+		t.Fatalf("request files = %v (%v), want one", names, err)
+	}
+	b, err := os.ReadFile(names[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := string(b)
+	for _, want := range []string{"GET /v1/models?limit=5\n", "User-Agent: codex_cli_rs/0.149.1\n"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("the request file does not hold %q:\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, clientCred) || strings.Contains(strings.ToLower(got), "authorization") {
+		t.Errorf("the request file carries the credential:\n%s", got)
+	}
+	// The body file is still there beside it, under the same name, so `diff`
+	// and `calibrate` find what they always did.
+	if _, err := os.Stat(strings.TrimSuffix(names[0], ".request") + ".json"); err != nil {
+		t.Errorf("the body file is gone: %v", err)
 	}
 }

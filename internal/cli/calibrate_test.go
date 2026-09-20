@@ -206,3 +206,20 @@ func TestCalibrateOutputParsesAsConfig(t *testing.T) {
 		t.Errorf("the proposed rule does not make the turn align: %+v", al)
 	}
 }
+
+// A dumped miss has a file beside it naming the request, which is not a request
+// body. Counting it as one that could not be paired would report a fault in
+// every miss directory there is.
+func TestCalibrateReadsOnlyTheDumpedBodies(t *testing.T) {
+	c, misses := recordAndMiss(t, turn("0.2", "a\\n"), turn("0.6", "a\\n"))
+	if err := os.WriteFile(filepath.Join(misses, "0001.request"), []byte("POST /responses\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out := &bytes.Buffer{}
+	if err := calibrate(out, c, misses, nil); err != nil {
+		t.Fatal(err)
+	}
+	if got := out.String(); strings.Contains(got, "matched no step") {
+		t.Errorf("the request line was read as a body:\n%s", got)
+	}
+}

@@ -362,7 +362,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			// A miss like any other: there is nothing to serve, and the client
 			// needs the same answer whether the cassette is empty or absent.
 			s.count(func(st *Stats) { st.Rejected++; st.Misses++ })
-			s.reportMiss(w, nil, &cassette.Miss{Expected: 1}, key, name, r.URL.Path)
+			s.reportMiss(w, r, nil, &cassette.Miss{Expected: 1}, key, name, r.URL.Path)
 			return
 		}
 		sel, miss := store.Next(cassette.Request{
@@ -376,7 +376,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			// /v1/messages?beta=true then reads as "this run asked for
 			// /v1/messages instead", and the reader goes looking for a routing
 			// fault that is not there.
-			s.reportMiss(w, store, miss, key, name, key.Target)
+			s.reportMiss(w, r, store, miss, key, name, key.Target)
 			return
 		}
 		s.serveFromCassette(w, store, sel, name, key.Captured)
@@ -582,7 +582,7 @@ func (s *Server) serveFromCassette(w http.ResponseWriter, store *cassette.Store,
 // single most likely cause of this tool being abandoned. The reply names the
 // nearest recorded request and shows how it differs, so the usual cause — a
 // prompt that changed by one line — is visible without opening the cassette.
-func (s *Server) reportMiss(w http.ResponseWriter, store *cassette.Store, miss *cassette.Miss, key cassette.Key, name, target string) {
+func (s *Server) reportMiss(w http.ResponseWriter, r *http.Request, store *cassette.Store, miss *cassette.Miss, key cassette.Key, name, target string) {
 	// The request is named in the reply, not only in the log. An agent shows its
 	// user the message body and nothing else, so a miss that says only that it
 	// missed sends whoever is watching to go and find the server's log — which,
@@ -596,7 +596,7 @@ func (s *Server) reportMiss(w http.ResponseWriter, store *cassette.Store, miss *
 	s.log.Error("cassette miss",
 		slog.Int("expected", miss.Expected), slog.String("cassette", name),
 		slog.String("target", target), slog.String("why", detail))
-	s.dumpMiss(miss, key, target)
+	s.dumpMiss(r, miss, key, target)
 	// 400, and the status is chosen by what the client does with it rather than
 	// by what it means. It must not be retryable: Stainless SDKs retry a 5xx,
 	// which turns two misses into sixteen requests and a run that hangs to its
@@ -619,9 +619,14 @@ func (s *Server) reportMiss(w http.ResponseWriter, store *cassette.Store, miss *
 // A request that matched no step at all cannot be paired, and says so in its
 // name rather than borrowing a number that would pair it with the wrong turn.
 //
+// Beside it goes `<name>.request`: the method, the target, and the few headers
+// that say who was asking. A bodiless miss leaves an empty body file, and the
+// empty file alone named nothing — the cause of one was found three times over
+// in the proxy log by readers who had the dump open.
+//
 // A failure to write is logged and no more: the miss is already being reported,
 // and losing its copy must not change what the client is told.
-func (s *Server) dumpMiss(miss *cassette.Miss, key cassette.Key, target string) {
+func (s *Server) dumpMiss(r *http.Request, miss *cassette.Miss, key cassette.Key, target string) {
 	if s.missDir == "" {
 		return
 	}
@@ -638,7 +643,31 @@ func (s *Server) dumpMiss(miss *cassette.Miss, key cassette.Key, target string) 
 		s.log.Error("could not dump the missed request", slog.Any("err", err))
 		return
 	}
-	s.log.Info("missed request written", slog.String("file", file), slog.String("target", target))
+	line := filepath.Join(s.missDir, name+".request")
+	if err := os.WriteFile(line, requestLine(r, target), 0o644); err != nil {
+		s.log.Error("could not dump the missed request's line", slog.Any("err", err))
+		return
+	}
+	s.log.Info("missed request written", slog.String("file", file),
+		slog.String("request", line), slog.String("target", target))
+}
+
+// dumpedHeaders are the request headers a miss dump may hold. Named one at a
+// time and never as a class: request headers carry the credential, which cs-vcr
+// keeps off disk everywhere, and a miss directory sits in a checkout. These say
+// which program sent the request and what it sent, and authenticate nobody.
+var dumpedHeaders = []string{"User-Agent", "Content-Type", "Content-Length"}
+
+// requestLine is the text of a `.request` file.
+func requestLine(r *http.Request, target string) []byte {
+	b := &bytes.Buffer{}
+	fmt.Fprintf(b, "%s %s\n", r.Method, target)
+	for _, h := range dumpedHeaders {
+		if v := r.Header.Get(h); v != "" {
+			fmt.Fprintf(b, "%s: %s\n", h, v)
+		}
+	}
+	return b.Bytes()
 }
 
 // explain turns an alignment into the sentence a miss has to be, which is the

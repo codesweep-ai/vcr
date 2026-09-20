@@ -73,6 +73,10 @@ serves with none.
 
 Exits **4** if any request had no recording. With `--dump-misses`, each missed request is written to
 `DIR/<step>.json`, named after the step it was compared against, ready for `diff` or `calibrate`.
+A request with no body leaves that file empty. `DIR/<step>.request` beside it holds the method, the
+target, and the `User-Agent`, `Content-Type` and `Content-Length` headers, which say what was asked
+and which program asked it. No other header is written, because request headers carry the
+credential.
 
 To check that a session is up for one cassette, ask for the base URL itself:
 
@@ -306,6 +310,35 @@ providers:
 | `VCR_ROOT` | Checkout root, where it is not the working directory. |
 
 Flags beat the environment, which beats the config file.
+
+## The summary
+
+`record` and `replay` print a summary when they stop. A line marked *when non-zero* is left out
+otherwise.
+
+| Line | Counts |
+|---|---|
+| `requests` | Requests received. A probe and a `CONNECT` are counted on their own lines. |
+| `replayed` | Steps served from a cassette. |
+| `recorded` | Steps appended to a cassette. |
+| `upstream calls` | Requests that reached a provider. Always 0 under `replay`. |
+| `misses` | Requests `replay` had no recording for. One or more makes the exit status 4. |
+| `unknown cassette` | Requests whose base URL named no cassette, or one that would not open. |
+| `rejected` | Requests cs-vcr answered with an error of its own. See below. |
+| `probes` | Requests for a cassette's bare address. Not part of `requests`. *When non-zero.* |
+| `abandoned` | Requests still being answered when the session stopped. *When non-zero.* |
+| `drifted observations` | Differences tolerated under a `volatile` path. *When non-zero.* |
+| `bookkeeping calls answered` | Title and summary calls answered from a recorded one. *When non-zero.* |
+| `tunnelled`, `tunnel refused` | `CONNECT` requests carried and refused. *When either is non-zero.* |
+| `commands that failed here` | Tolerated tool results that failed in this run and succeeded when recorded. *When non-zero.* |
+| `out of recorded order` | Steps served at another position than the recording's. *When non-zero.* |
+| `surface …`, `cassette …` | Requests per surface, and per cassette. |
+
+`rejected` is the total of every refusal, and `misses` is one kind of refusal. Every miss adds one
+to both, so `rejected 3` beside `misses 3` is three misses and no second fault. `rejected` is larger
+than `misses` when something else was refused: an `unknown cassette`, a provider the session does
+not have, or a step whose response file is absent. The `error.type` of each reply, and the proxy
+log, say which.
 
 ## Exit status
 

@@ -113,7 +113,7 @@ prefix at all. Run "cs-vcr config <agent>" for the exact URL a client wants.`
 	if offline {
 		// Only on replay: it is the command that can miss.
 		cmd.Flags().StringVar(&dumpMisses, "dump-misses", "",
-			"write each missed request's normalized body to this directory, to diff against the cassette")
+			"write each missed request's normalized body, and the line naming it, to this directory")
 	}
 	return cmd
 }

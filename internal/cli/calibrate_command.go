@@ -78,6 +78,11 @@ func calibrate(out io.Writer, c *cassette.Cassette, missDir string, declared []s
 	var unpaired, paired int
 
 	for _, f := range files {
+		// The bodies only. A dump also holds a `.request` beside each one, which
+		// names the request for a reader and is nothing to align.
+		if filepath.Ext(f.Name()) != ".json" {
+			continue
+		}
 		name := strings.TrimSuffix(f.Name(), ".json")
 		seq, err := strconv.Atoi(name)
 		if err != nil {
