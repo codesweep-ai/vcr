@@ -841,6 +841,9 @@ mechanisms, in the order they matter:
 2. **Each run gets a fresh home and agent config directory**, seeded with the same fixed identity.
    Nothing carries over from the developer's own configuration, and nothing a first run cached
    changes what a second sends.
+   OpenCode is also told not to read Claude Code's files. It finds them by walking up from its
+   working directory, and the workspace sits under the developer's real home, so a fresh home alone
+   does not hide `~/.claude/skills` from it.
 3. **Each run is given the same explicit environment and the same flags**, so what the agent reports
    about its machine is the same sentence. Every customization that would become prompt content is
    off: memory files, skills, plugins, hooks and MCP servers.

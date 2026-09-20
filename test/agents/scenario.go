@@ -466,7 +466,16 @@ func openCode(name, auth, model, provider, upstream, key string) scenario {
 				"--pure", "--auto",
 				"--model", sc.model,
 				prompt)
-			cmd.Env = ws.env(agentEnv(c, m))
+			// OpenCode reads Claude Code's skills and memory files as its own, and
+			// looks for them by walking up from the working directory. The
+			// workspace is not a git repository, so nothing stops the walk, and it
+			// sits in the developer's cache directory, under their home. A fresh
+			// HOME does not help: the walk reaches the real `~/.claude/skills`, and
+			// every skill there goes into the system prompt, by name and by path.
+			cmd.Env = ws.env(mergeEnv(map[string]string{
+				"OPENCODE_DISABLE_CLAUDE_CODE":     "1",
+				"OPENCODE_DISABLE_EXTERNAL_SKILLS": "1",
+			}, agentEnv(c, m)))
 			cmd.Dir = ws.work
 			cmd.Stdin = strings.NewReader("")
 			return cmd
