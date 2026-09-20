@@ -3,17 +3,20 @@
   "title": "A picture inside a request is matched byte for byte, so an agent that shows the model a screenshot misses on the next run",
   "type": "improvement",
   "severity": "med",
-  "status": "in-progress",
+  "status": "closed",
   "foundBy": "session agent replaying a multi-member campaign through cs-vcr, several replays at a time on one shared host",
   "opened": "2026-09-20",
-  "resolved": null,
+  "resolved": "2026-09-20",
   "stint": "2026-09-20 image payloads",
   "evidence": {
-    "commits": [],
+    "commits": [
+      "37b62fd",
+      "65ce8c1"
+    ],
     "integrated": [],
-    "verified": null
+    "verified": "go test ./internal/proxy/ -run TestAChangedPictureIsServedAndReported: 7 shapes PASS, and all 7 answered 400 before the rules. On each shape, a request with a changed question beside an unchanged picture still misses. With the pinned agents on the PATH, `make ci` exits 0 and its live tier passes all 8 scenarios against the fixtures recorded under v14. `cs-vcr cassette scrub --recorder` reports all 8 clean."
   },
-  "resolution": null,
+  "resolution": "cs-vcr ships a volatile path for an inline picture, document, file or audio payload on each surface it knows. A changed payload is served and counted as drift, and everything beside it stays exact.",
   "details": "**What happened.** An agent in a recorded campaign takes a screenshot of a web page and shows it to the model. The picture travels inside a request, as `messages[].content[].image_url.url` holding base64 data. On a busy host the second rendering differed by three bytes out of about fifteen thousand, and the replay missed at that step twice in a row. `cs-vcr calibrate` named the path from the real miss, and declaring it under `normalize.extend.volatile` cured it.\n\n**Why it matters.** `cs-vcr` already matches loosely on what a tool printed, because that is an observation of the world and not a decision. A picture a tool took is the same kind of thing. It is only compared exactly because it sits in a field that the shipped rules do not know. Every agent with a browser or a vision tool will meet this, and each author will have to find it through a miss. A rule written for one path covers one path. A picture in a tool result, or in another provider's content block, would miss again.\n\n**What is asked for.** Treat an inline image or other binary payload as a volatile observation in the rules `cs-vcr` ships, for each surface it knows. The OpenAI form is `image_url` with a `data:` address, and the Anthropic form is an `image` block with a base64 `source`. Say so in the manual beside the text on changed tool output.\n\n**How to reproduce.** Record a session in which the agent sends a screenshot to the model. Replay it on a machine under other load, with `--dump-misses`, and run `cs-vcr calibrate` on the result.",
   "notes": [
     {
@@ -27,6 +30,14 @@
     {
       "date": "2026-09-20",
       "text": "The branch covers more than pictures, as the record's words `other binary payload` allow. It names Anthropic `document` blocks, OpenAI chat `file` and `input_audio` parts, and OpenAI responses `input_file` parts. A picture inside a tool result needed nothing, because the shipped tool result paths already cover it. The text beside a picture stays exact, and a test holds that on all seven shapes."
+    },
+    {
+      "date": "2026-09-20",
+      "text": "The bump and the recording are done, so the first note above is history. The ruleset is v14, and all eight fixtures were re-recorded with the agent versions already pinned, so `fixtures.json` changed only in its dates and two step counts. This build refuses a cassette recorded under v13 until it is recorded again. The change alters no stored byte, and the version moved anyway, because two builds that disagree about which requests are equivalent must not share a number."
+    },
+    {
+      "date": "2026-09-20",
+      "text": "The recording found two defects in the live suite, both fixed first. OpenCode listed the developer's own Claude Code skills in its prompt, which is the record VCR-032. A recording of the Codex subscription scenario could not be kept, which is the record VCR-033."
     }
   ],
   "links": [

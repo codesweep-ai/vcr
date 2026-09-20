@@ -1,0 +1,24 @@
+{
+  "id": "VCR-033",
+  "title": "A fresh recording of the Codex subscription scenario cannot be kept, because its replay asks for the model list fewer times",
+  "type": "defect",
+  "severity": "med",
+  "status": "closed",
+  "foundBy": "session agent, re-recording the fixtures under ruleset v14 for VCR-029",
+  "opened": "2026-09-20",
+  "resolved": "2026-09-20",
+  "stint": "2026-09-20 image payloads",
+  "evidence": {
+    "commits": [
+      "4742af1"
+    ],
+    "integrated": [],
+    "verified": "With codex 0.149.1, `CS_VCR_AGENTS_RECORD=1 CS_VCR_AGENTS_STRICT=1 go test ./test/agents -run 'TestRecordFixtures/codex-chatgpt$'` failed twice with `recorded 6 steps and replayed 3` and then `replayed 4`. After the change it passed and logged `served 4 of the 6 steps recorded`. `TestReplayFixtures` then passed all 8 scenarios, strictly, with no provider key in the environment."
+  },
+  "resolution": "The keep check fails a recording whose replay missed, fetched, or left the work undone, which `runScenario` asserts. It no longer fails one whose replay served fewer steps, and it logs the two counts.",
+  "details": "`TestRecordFixtures` replays each new recording before it keeps it, and failed unless the replay served exactly as many steps as were recorded. `TestReplayFixtures`, which CI runs, says the opposite in a comment. Fewer steps is not a failure there, because a client decides how often to ask for its model list.\n\nCodex 0.149.1 asks for `GET /models` four times while recording against the ChatGPT backend, and once or twice against a cassette, on every run. The cassette answers at once, so the first ask fills the cache before the others are sent. Held to equality, the `codex-chatgpt` scenario could not be recorded at all, however often it was tried. Each try spends a real session.\n\nThe unserved steps are harmless in replay. They sit inside the look-ahead window, and SPEC rule R6 covers the opposite case of a probe asked more often.",
+  "notes": [],
+  "links": [
+    "VCR-029"
+  ]
+}
