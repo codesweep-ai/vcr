@@ -1,0 +1,20 @@
+{
+  "id": "VCR-031",
+  "title": "A second `make ci` in a row fails its coverage check on a host whose live agent scenarios all skip",
+  "type": "defect",
+  "severity": "low",
+  "status": "open",
+  "foundBy": "session agent, running `make ci` on two branches in a row while fixing VCR-027 through VCR-029",
+  "opened": "2026-09-20",
+  "resolved": null,
+  "stint": null,
+  "evidence": {
+    "commits": [],
+    "integrated": [],
+    "verified": null
+  },
+  "resolution": null,
+  "details": "`make ci` runs the live agent tier near its end, and that tier writes `.coverage/integration`. On a host whose installed agents are not the versions in `test/agents/fixtures.json`, every scenario skips, so that directory holds a run that reached no package.\n\nThe next `make ci` starts with `make check`, whose coverage check reads every tier directory it finds. It then fails with `internal/proxy is no longer reached by the integration tier`. Nothing in the tree changed between the two runs.\n\nThe message sends the reader to look for a test that stopped running. The cause is a directory left by the run before. Deleting `.coverage` makes the next run pass, and the one after it fails again.\n\nTo reproduce, install an agent version other than the pinned one, then run `rm -rf .coverage && make ci && make ci`. The first run exits 0 and the second exits 2.\n\nA tier in which every scenario skipped could be left out of the check, or `make check` could clear the tiers it does not run.",
+  "notes": [],
+  "links": []
+}
