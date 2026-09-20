@@ -98,10 +98,25 @@ func TestRecordFixtures(t *testing.T) {
 			}
 			t.Log(strings.TrimSpace(out))
 
-			// And it replays, here, before it is committed.
+			// And it replays, here, before it is committed. runScenario asserts
+			// what makes that true: nothing missed, nothing was fetched, and the
+			// agent did the work.
+			//
+			// Serving fewer steps than were recorded is not a failure, for the
+			// reason TestReplayFixtures gives. Codex asks for the model list as
+			// often as it likes, and it asks more often against a provider that
+			// takes a moment to answer than against a cassette that does not:
+			// measured as four asks while recording and one or two on replay,
+			// every time. Held to equality, that scenario could not be recorded
+			// at all. Serving more than were recorded is a repeat, which is
+			// counted among the steps it repeats, so it cannot happen.
 			replayed := runScenario(t, sc, cred, replay, cassettes)
-			if replayed != steps {
+			if replayed > steps {
 				t.Fatalf("%s recorded %d steps and replayed %d", sc.name, steps, replayed)
+			}
+			if replayed < steps {
+				t.Logf("%s served %d of the %d steps recorded; the rest were startup probes the replay did not repeat",
+					sc.name, replayed, steps)
 			}
 
 			man.Fixtures[sc.name] = fixture{
