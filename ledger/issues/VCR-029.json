@@ -3,11 +3,11 @@
   "title": "A picture inside a request is matched byte for byte, so an agent that shows the model a screenshot misses on the next run",
   "type": "improvement",
   "severity": "med",
-  "status": "open",
+  "status": "in-progress",
   "foundBy": "session agent replaying a multi-member campaign through cs-vcr, several replays at a time on one shared host",
   "opened": "2026-09-20",
   "resolved": null,
-  "stint": null,
+  "stint": "2026-09-20 image payloads",
   "evidence": {
     "commits": [],
     "integrated": [],
@@ -15,7 +15,20 @@
   },
   "resolution": null,
   "details": "**What happened.** An agent in a recorded campaign takes a screenshot of a web page and shows it to the model. The picture travels inside a request, as `messages[].content[].image_url.url` holding base64 data. On a busy host the second rendering differed by three bytes out of about fifteen thousand, and the replay missed at that step twice in a row. `cs-vcr calibrate` named the path from the real miss, and declaring it under `normalize.extend.volatile` cured it.\n\n**Why it matters.** `cs-vcr` already matches loosely on what a tool printed, because that is an observation of the world and not a decision. A picture a tool took is the same kind of thing. It is only compared exactly because it sits in a field that the shipped rules do not know. Every agent with a browser or a vision tool will meet this, and each author will have to find it through a miss. A rule written for one path covers one path. A picture in a tool result, or in another provider's content block, would miss again.\n\n**What is asked for.** Treat an inline image or other binary payload as a volatile observation in the rules `cs-vcr` ships, for each surface it knows. The OpenAI form is `image_url` with a `data:` address, and the Anthropic form is an `image` block with a base64 `source`. Say so in the manual beside the text on changed tool output.\n\n**How to reproduce.** Record a session in which the agent sends a screenshot to the model. Replay it on a machine under other load, with `--dump-misses`, and run `cs-vcr calibrate` on the result.",
-  "notes": [],
+  "notes": [
+    {
+      "date": "2026-09-20",
+      "text": "The rules are written and tested on the branch `image-volatile`, and the record stays open. CONTRIBUTING.md asks for a ruleset change to bump `normalize.version` and re-record every committed fixture in the same change. That recording needs three API keys and two subscription logins, and has not been run."
+    },
+    {
+      "date": "2026-09-20",
+      "text": "What the branch ships differs from the request in one way. The record asks for a `data:` address to be tolerated. A volatile rule is a path, and SPEC rule R11 forbids inferring volatility from a value. So the OpenAI paths `messages[].content[].image_url.url` and `input[].content[].image_url` also tolerate a changed remote address, and report it as drift. The Anthropic path is `messages[].content[].source.data`, which leaves a `url` source exact."
+    },
+    {
+      "date": "2026-09-20",
+      "text": "The branch covers more than pictures, as the record's words `other binary payload` allow. It names Anthropic `document` blocks, OpenAI chat `file` and `input_audio` parts, and OpenAI responses `input_file` parts. A picture inside a tool result needed nothing, because the shipped tool result paths already cover it. The text beside a picture stays exact, and a test holds that on all seven shapes."
+    }
+  ],
   "links": [
     "VCR-017"
   ]
