@@ -1,0 +1,20 @@
+{
+  "id": "VCR-034",
+  "title": "The record summary does not say that the cassette it kept holds provider refusals",
+  "type": "improvement",
+  "severity": "low",
+  "status": "open",
+  "foundBy": "session agent, maintainer of a consumer of this tool, reading a recording made while a provider was throttling",
+  "opened": "2026-09-21",
+  "resolved": null,
+  "stint": null,
+  "evidence": {
+    "commits": [],
+    "integrated": [],
+    "verified": null
+  },
+  "resolution": null,
+  "details": "**What is there.** `record` keeps every response as a step of the session, refusals included. A throttle or a server error gets one warning in the log as it passes. A rejected credential gets none, because a 401 is not a status a client retries. The closing summary counts requests, recordings and upstream calls, and it has no line for refusals. The exit status is 0.\n\n**Why it matters.** Keeping the refusal is right, since a cassette holds the session as it happened. The gap is that nobody is told at the end. A cassette that holds a throttle replays it faithfully, the client retries as it did before, and the replay ends green. The recording looks healthy until somebody reads it. A cassette made on a provider's bad day then becomes the fixture every later run is judged against.\n\n**How to reproduce.** Record a session against an upstream that answers one request with a 429 and the retry with a 200. Read the summary.\n\n**What would help.** Add a summary line that counts the kept refusals by status, shown only when the count is above zero. A flag that makes such a recording exit non-zero would let a recording script refuse it. What is recorded should stay as it is.",
+  "notes": [],
+  "links": []
+}
