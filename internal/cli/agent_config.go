@@ -155,10 +155,10 @@ func openCode() agent {
 		},
 		command: func(provider, base string) string {
 			if v := openCodeVar(provider); v != "" {
-				return fmt.Sprintf("%s=%s opencode run --model %s/<model> %q", v, base, provider, prompt)
+				return fmt.Sprintf("%s=%s opencode run --model %s/<model> %q", v, base, openCodeID(provider), prompt)
 			}
 			return fmt.Sprintf("opencode run --model %s/<model> %q  # with the file below in place",
-				provider, prompt)
+				openCodeID(provider), prompt)
 		},
 		persist: func(provider, base string) (string, string) {
 			return "./opencode.json", fmt.Sprintf(`{
@@ -166,7 +166,7 @@ func openCode() agent {
   "provider": {
     %[1]q: {"options": {"baseURL": %[2]q}}
   }
-}`, provider, base)
+}`, openCodeID(provider), base)
 		},
 		notes: func(provider, base string) []string {
 			out := []string{
@@ -176,8 +176,8 @@ func openCode() agent {
 				"OpenCode also reads its whole configuration from OPENCODE_CONFIG_CONTENT, so",
 				"the file above can travel as one variable instead:",
 				"",
-				fmt.Sprintf(`  OPENCODE_CONFIG_CONTENT='{"provider":{%q:{"options":{"baseURL":%q}}}}' \`, provider, base),
-				fmt.Sprintf("    opencode run --model %s/<model> %q", provider, prompt),
+				fmt.Sprintf(`  OPENCODE_CONFIG_CONTENT='{"provider":{%q:{"options":{"baseURL":%q}}}}' \`, openCodeID(provider), base),
+				fmt.Sprintf("    opencode run --model %s/<model> %q", openCodeID(provider), prompt),
 			}
 			if openCodeVar(provider) != "" {
 				return out
@@ -222,6 +222,22 @@ func codexAuthInline(provider string) string {
 // openCodeVar is the base-URL variable OpenCode reads for one provider, or ""
 // for a provider it has none for. The name is OpenCode's own, and it is the one
 // a model carries: `anthropic` in `anthropic/claude-sonnet-5`.
+// openCodeID is OpenCode's own id for a provider: the name its config keys and
+// its --model prefix must carry. It is cs-vcr's provider name for every
+// provider but one. OpenCode files Fireworks under fireworks-ai, so a block
+// keyed fireworks configures a provider no run uses, and the agent goes around
+// the recorder to Fireworks' own address. Nothing is recorded, and the error
+// that follows never mentions the key.
+//
+// Only the client-facing names change. The base URL keeps cs-vcr's name,
+// because /c/<provider>/<cassette> is how the recorder routes a call.
+func openCodeID(provider string) string {
+	if provider == "fireworks" {
+		return "fireworks-ai"
+	}
+	return provider
+}
+
 func openCodeVar(provider string) string {
 	switch provider {
 	case "anthropic":

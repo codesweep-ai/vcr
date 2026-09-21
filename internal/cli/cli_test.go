@@ -422,8 +422,18 @@ func TestConfigPrintsTheProviderItWasGiven(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out, `"fireworks": {"options": {"baseURL": "http://127.0.0.1:8080/c/fireworks/build/v1"}}`) {
-		t.Errorf("the opencode.json block does not carry the provider:\n%s", out)
+	// The key is OpenCode's own id for the provider, and the base URL keeps
+	// cs-vcr's name. They differ for Fireworks and only for Fireworks: OpenCode
+	// files it under fireworks-ai, so a block keyed fireworks configures a
+	// provider no run uses and the agent goes around the recorder.
+	if !strings.Contains(out, `"fireworks-ai": {"options": {"baseURL": "http://127.0.0.1:8080/c/fireworks/build/v1"}}`) {
+		t.Errorf("the opencode.json block must key the provider by OpenCode's id and route by cs-vcr's name:\n%s", out)
+	}
+	if !strings.Contains(out, "--model fireworks-ai/<model>") {
+		t.Errorf("the run line must name the model under OpenCode's id for the provider:\n%s", out)
+	}
+	if strings.Contains(out, `"fireworks":`) || strings.Contains(out, "--model fireworks/") {
+		t.Errorf("a name OpenCode does not use for this provider was printed:\n%s", out)
 	}
 	if strings.Contains(out, "BASE_URL=") {
 		t.Errorf("a base-URL variable was printed for a provider OpenCode has none for:\n%s", out)
