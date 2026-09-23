@@ -219,8 +219,9 @@ fixtures-strict:
 ## test-integration: the live tier — replay every committed fixture with the
 ## real agents, fabricated credentials and no provider configured or reachable.
 ## This is what CI runs. Needs claude, codex and opencode installed at the
-## versions in test/agents/fixtures.json; anything missing is skipped, unless
-## CS_VCR_AGENTS_STRICT=1 makes it fail.
+## versions in test/agents/fixtures.json; an agent that is missing, or at
+## another version, is skipped with the reason, unless CS_VCR_AGENTS_STRICT=1
+## makes it fail.
 test-integration:
 	@scripts/coverage.sh reset integration
 	CS_VCR_AGENTS=1 CS_COVERDIR=$(COVER_ABS)/integration \
@@ -382,9 +383,11 @@ endef
 ## One Linux leg of .github/workflows/ci.yml, in the order CI runs it, so a
 ## red build is something you can see before you push rather than after.
 ##
-## The live tier runs without CS_VCR_AGENTS_STRICT, so an agent this host does
-## not carry skips with its reason instead of failing. CI sets it, because a
-## runner installs all three at the pinned versions.
+## The live tier runs without CS_VCR_AGENTS_STRICT, so a fixture this host
+## cannot replay skips instead of failing: its agent is not installed, or is
+## newer or older than the one the fixture was recorded with. The reason says
+## which, and ends with both versions. CI sets it, because a runner installs
+## all three at the pinned versions.
 ci:
 	$(call say,the gate a contributor runs before pushing)
 	@$(MAKE) --no-print-directory check

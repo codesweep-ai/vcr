@@ -15,8 +15,9 @@
 //
 // The fixtures are committed, so CI runs the second half on every push. Both
 // halves skip what this host cannot do — an agent that is not installed, a
-// credential that is not present — and say which, because a suite that fails
-// for want of a login teaches contributors to ignore it.
+// credential that is not present, and on replay an agent at another version
+// than the recording — and say which, because a suite that fails for want of a
+// login teaches contributors to ignore it.
 //
 // # What makes a real session replayable
 //

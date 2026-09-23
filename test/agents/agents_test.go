@@ -178,14 +178,12 @@ func TestReplayFixtures(t *testing.T) {
 				t.Fatalf("%s cannot be replayed by this build:\n%s\nre-record with `make fixtures`",
 					sc.name, strings.TrimSpace(out))
 			}
-			version := requireAgent(t, sc)
 			// The agent's own version is in its prompt, so a different build
 			// sends a different request. Said plainly here, because the
 			// alternative is a hundred lines of prompt diff that never mentions
 			// the cause.
-			if version != fx.Version {
-				skip(t, "%s was recorded with %s %s and this host has %s — install %s@%s, or re-record with `make fixtures`",
-					sc.name, sc.bin, fx.Version, version, sc.bin, fx.Version)
+			if reason := replaySkip(sc.name, sc.bin, fx.Version, installedAgent(t, sc.bin)); reason != "" {
+				skip(t, "%s", reason)
 			}
 			replayed := runScenario(t, sc, fabricated(sc), replay, cassettes)
 			// Fewer steps than were recorded is not a failure, and cannot be
@@ -385,10 +383,21 @@ func combined(ctx context.Context, cmd *exec.Cmd) (string, error) {
 // returns the version it found.
 func requireAgent(t *testing.T, sc scenario) string {
 	t.Helper()
-	if _, err := exec.LookPath(sc.bin); err != nil {
+	v := installedAgent(t, sc.bin)
+	if v == "" {
 		skip(t, "%s is not installed, so %s cannot run", sc.bin, sc.name)
 	}
-	v, err := agentVersion(sc.bin)
+	return v
+}
+
+// installedAgent returns the version of the agent on this host, or "" when it
+// is not installed.
+func installedAgent(t *testing.T, bin string) string {
+	t.Helper()
+	if _, err := exec.LookPath(bin); err != nil {
+		return ""
+	}
+	v, err := agentVersion(bin)
 	if err != nil {
 		t.Fatal(err)
 	}

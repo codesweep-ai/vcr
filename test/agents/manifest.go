@@ -1,12 +1,14 @@
 package agents
 
 import (
+	"cmp"
 	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -92,4 +94,40 @@ func agentVersion(bin string) (string, error) {
 		return "", fmt.Errorf("%s --version printed no version: %q", bin, strings.TrimSpace(string(out)))
 	}
 	return m, nil
+}
+
+// replaySkip says why a fixture cannot replay on this host, or "" when it can.
+// host is the agent's version here, "" when it is not installed.
+//
+// The words say which case it is, absent, newer or older, and stay the same
+// while the host's agent updates. Both versions go last, in brackets, so a run
+// compared against an earlier one can set them aside and still see the skip.
+func replaySkip(name, bin, recorded, host string) string {
+	versions := fmt.Sprintf("[recorded %s, host %s]", recorded, cmp.Or(host, "none"))
+	switch {
+	case host == "":
+		return fmt.Sprintf("%s cannot replay: %s is not installed on this host. Install %s@%s %s",
+			name, bin, bin, recorded, versions)
+	case host == recorded:
+		return ""
+	case newerVersion(host, recorded):
+		return fmt.Sprintf("%s cannot replay: %s on this host is newer than the one it was recorded with. "+
+			"Install %s@%s, or re-record with `make fixtures` %s", name, bin, bin, recorded, versions)
+	default:
+		return fmt.Sprintf("%s cannot replay: %s on this host is older than the one it was recorded with. "+
+			"Install %s@%s %s", name, bin, bin, recorded, versions)
+	}
+}
+
+// newerVersion compares two x.y.z versions field by field, as numbers.
+func newerVersion(a, b string) bool {
+	as, bs := strings.Split(a, "."), strings.Split(b, ".")
+	for i := range min(len(as), len(bs)) {
+		x, _ := strconv.Atoi(as[i])
+		y, _ := strconv.Atoi(bs[i])
+		if x != y {
+			return x > y
+		}
+	}
+	return len(as) > len(bs)
 }

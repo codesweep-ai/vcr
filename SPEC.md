@@ -837,6 +837,16 @@ was contacted, that no request missed, and that the agent did the work the promp
 scenario's settings say where its own upstream lives, and replay reads none of them. Serving every
 step to a client that then failed is not a replayed session.*
 
+A fixture this host cannot replay is skipped, and the reason says whether its agent is absent, newer
+or older than the recording. The words stay the same while an agent updates. Both versions come last,
+in brackets, so a run compared against an earlier one can set them aside:
+
+```console
+$ make test-integration
+--- SKIP: TestReplayFixtures/claude-code-api-key (0.02s)
+        claude-code-api-key cannot replay: claude on this host is newer than the one it was recorded with. Install claude@2.1.245, or re-record with `make fixtures` [recorded 2.1.245, host 2.1.280]
+```
+
 **R54.** Replay **MUST** skip a scenario whose agent is absent, or whose version is not the one the
 fixture was recorded with, and **MUST** be able to fail instead of skipping. *An agent's own version
 is in its prompt, so a different build sends a different request; and a job that silently skipped its
