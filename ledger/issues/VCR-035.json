@@ -1,0 +1,20 @@
+{
+  "id": "VCR-035",
+  "title": "The live tier's skip reason quotes the host's agent version, so it changes whenever an agent updates",
+  "type": "defect",
+  "severity": "low",
+  "status": "in-progress",
+  "foundBy": "deps-maintenance pilot2 campaign, from the qa seat's baseline of `make ci` (agents/qa/output/baseline.json, note on vcr)",
+  "opened": "2026-09-22",
+  "resolved": null,
+  "stint": "pilot2-tier3",
+  "evidence": {
+    "commits": [],
+    "integrated": [],
+    "verified": null
+  },
+  "resolution": null,
+  "details": "**What happens.** When a host's agent is not the version a fixture was recorded with, `make test-integration` skips the scenario with a reason that quotes the host's version: `claude-code-api-key was recorded with claude 2.1.245 and this host has 2.1.258`. The reason does not say whether the host's agent is newer or older than the recording. The Makefile's comment on `ci` says only that an agent the host does not carry is skipped with its reason.\n\n**Seen in the campaign.** On the pilot's host, `claude` and `codex` were installed and newer than the recordings, so five scenarios skipped on the version, not on a missing agent. The qa seat recorded those five reasons as the baseline every later `make ci` was compared against. The next day the host's `claude` was 2.1.280, so the same skip carried a different reason.\n\n**Why it matters.** A campaign compares a gate's skips before and after a change. A reason that moves with every agent update reads as a changed skip, although nothing in the repository changed.\n\n**What would help.** Say in fixed words whether the agent is absent, newer or older than the recording. Print both versions in one stable place that a comparison can set aside, and correct the Makefile comment.",
+  "notes": [],
+  "links": []
+}
