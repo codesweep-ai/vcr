@@ -3,17 +3,19 @@
   "title": "The live tier's skip reason quotes the host's agent version, so it changes whenever an agent updates",
   "type": "defect",
   "severity": "low",
-  "status": "in-progress",
+  "status": "closed",
   "foundBy": "deps-maintenance pilot2 campaign, from the qa seat's baseline of `make ci` (agents/qa/output/baseline.json, note on vcr)",
   "opened": "2026-09-22",
-  "resolved": null,
+  "resolved": "2026-09-22",
   "stint": "pilot2-tier3",
   "evidence": {
-    "commits": [],
+    "commits": [
+      "078ec20"
+    ],
     "integrated": [],
-    "verified": null
+    "verified": "At 078ec20, `go test ./test/agents/ -run 'ReplaySkip|NewerVersion' -count=1` passes 4 tests. With the old messages put back in `replaySkip`, the two tests on the reason fail, and with versions compared as text, three tests fail. On this host, `CS_VCR_AGENTS=1 go test ./test/agents -run TestReplayFixtures` skips five fixtures, and each reason says the host's claude or codex is newer than the one it was recorded with. Each of those reasons ends with `[recorded 2.1.245, host 2.1.280]` or `[recorded 0.149.1, host 0.152.1]`, and the three opencode fixtures replay and pass. With claude taken off the PATH, `claude-code-api-key` skips because `claude is not installed on this host`, ending with `[recorded 2.1.245, host none]`. Under `CS_VCR_AGENTS_STRICT=1` the same scenario fails instead. `make ci` passed at 078ec20, and its live tier reported the same skips and passes."
   },
-  "resolution": null,
+  "resolution": "A replay skip now names its case, absent, newer or older, in words that do not change when an agent updates. Both versions come last in brackets, where a comparison between two runs can set them aside. The Makefile, the package doc and SPEC describe it. The cassettes still hold claude 2.1.245 and codex 0.149.1, and when to re-record them is a separate decision.",
   "details": "**What happens.** When a host's agent is not the version a fixture was recorded with, `make test-integration` skips the scenario with a reason that quotes the host's version: `claude-code-api-key was recorded with claude 2.1.245 and this host has 2.1.258`. The reason does not say whether the host's agent is newer or older than the recording. The Makefile's comment on `ci` says only that an agent the host does not carry is skipped with its reason.\n\n**Seen in the campaign.** On the pilot's host, `claude` and `codex` were installed and newer than the recordings, so five scenarios skipped on the version, not on a missing agent. The qa seat recorded those five reasons as the baseline every later `make ci` was compared against. The next day the host's `claude` was 2.1.280, so the same skip carried a different reason.\n\n**Why it matters.** A campaign compares a gate's skips before and after a change. A reason that moves with every agent update reads as a changed skip, although nothing in the repository changed.\n\n**What would help.** Say in fixed words whether the agent is absent, newer or older than the recording. Print both versions in one stable place that a comparison can set aside, and correct the Makefile comment.",
   "notes": [],
   "links": []
