@@ -1,0 +1,22 @@
+{
+  "id": "VCR-038",
+  "title": "A replay that refuses every request still exits 0, so a CI step trusting the exit status passes a replay that served nothing",
+  "type": "defect",
+  "severity": "med",
+  "status": "open",
+  "foundBy": "session agent, while building a replayed test of the campaign viewer's agent Q&A on this host",
+  "opened": "2026-09-24",
+  "resolved": null,
+  "stint": null,
+  "evidence": {
+    "commits": [],
+    "integrated": [],
+    "verified": null
+  },
+  "resolution": null,
+  "details": "A `cs-vcr replay` that has refused every request it received still ends with exit status 0. R33 in SPEC.md requires exit 4 only for a miss, and a request refused as `unknown_cassette` or `cassette_unusable` is not counted as one.\n\nReproduced at `41c67be`: start `cs-vcr replay` on an empty store, POST once to `/c/anthropic/nosuch/v1/messages`, and stop it. The summary reads `requests 1`, `replayed 0`, `misses 0`, `unknown cassette 1`, `rejected 1`, and the exit status is 0.\n\nA real test ran into the same thing. A cs-vcr built on 2026-09-10 refused two cassettes recorded at ruleset v14, each request answered \"recorded by a different build\", and it exited 0. A script that gated on the exit status reported a pass. The script now reads the summary and fails on `rejected` above 0 or `replayed` of 0.\n\nThe manual says replay exits 4 \"if any request had no recording\", which a reader takes to include these. Either the exit status or R33 and the manual should say what a refused request means for a replay.",
+  "notes": [],
+  "links": [
+    "VCR-011"
+  ]
+}

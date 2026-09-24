@@ -1,0 +1,20 @@
+{
+  "id": "VCR-039",
+  "title": "scrub reads the n of an escaped newline as the start of an email address, and --force then writes invalid JSON",
+  "type": "defect",
+  "severity": "med",
+  "status": "open",
+  "foundBy": "session agent, while scrubbing a Claude Code cassette recorded against a site whose CLAUDE.md holds `@AGENTS.md`",
+  "opened": "2026-09-24",
+  "resolved": null,
+  "stint": null,
+  "evidence": {
+    "commits": [],
+    "integrated": [],
+    "verified": null
+  },
+  "resolution": null,
+  "details": "The email pattern in `internal/cassette/scrub.go` runs over the file's raw bytes, where a newline is the two characters `\\n`. Claude Code puts the text `\\n\\n@AGENTS.md` in its prompt when a project's `CLAUDE.md` imports `AGENTS.md`, and scrub reports `n@AGENTS.md` as an email address, since `md` passes as a top-level domain.\n\nThis was reproduced at `41c67be` on a Claude Code cassette of four requests. `cassette scrub` finds one email in each. With the escaped newline replaced by a space, it finds none.\n\nWith `--force` it replaces `n@AGENTS.md` with `<EMAIL>` and leaves the backslash, so each request holds `\\<EMAIL>`. That is an invalid JSON escape, and Python's `json.load` refuses the file. scrub still exits 0. A real address after any escape, such as `\\n` or `\\t`, would be cut and corrupted the same way.\n\nMatching on the decoded strings would avoid both. Until then, `--allow-email @AGENTS.md` lets the import through.",
+  "notes": [],
+  "links": []
+}
