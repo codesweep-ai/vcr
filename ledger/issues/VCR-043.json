@@ -3,17 +3,20 @@
   "title": "Claude Code's working-directory and background-task reminders make a replay miss when the machine behaves differently",
   "type": "defect",
   "severity": "high",
-  "status": "in-progress",
+  "status": "closed",
   "foundBy": "session agent, replaying campaign cassettes recorded on Claude Code 2.1.283",
   "opened": "2026-09-26",
-  "resolved": null,
+  "resolved": "2026-09-26",
   "stint": "agent-cli-bump",
   "evidence": {
-    "commits": [],
+    "commits": [
+      "4b0cad9",
+      "7bfe30d"
+    ],
     "integrated": [],
-    "verified": null
+    "verified": "`go test ./internal/config/ ./internal/cassette/ -count=1` passes on 7bfe30d, TestDefaultCutsWhatTheMachineMadeClaudeCodeSay and TestAVolatileFieldOnOneSideOnlyIsTolerated among it. GitHub CI's `ci` passed on 7bfe30d. Campaign pinned to that build ran `make ci` on 2026-09-26. Its claude-api-key, claude-subscription and claude-fault-capacity replays served 54, 49 and 52 requests with 0 misses, where each had missed at the same step on every run."
   },
-  "resolution": null,
+  "resolution": "The same `remove` rule cuts the `# Environment update` reminder and the `[SYSTEM NOTIFICATION - NOT USER INPUT]` item, on both sides of a replay. Alignment tolerates a volatile field present on one side only, as SPEC.md R10 requires, which is how Claude Code writes `is_error`. The proxy reads a recording with no `is_error` as a command that succeeded, so one that failed only on replay is still counted.",
   "details": "Claude Code 2.1.283 adds two reminders because of what happened on the machine, and a replay reproduces neither by design. After a command that changed directory and succeeded, it adds `# Environment update` with the new working directory. After a command outlived its timeout and moved to the background, it adds a `[SYSTEM NOTIFICATION - NOT USER INPUT]` item once the command finishes.\n\nA replayed command runs for real. In campaign's replay, a command named a commit that only the recording's checkout had, so it failed and the shell stayed where it was. A command that timed out while recording finished in time while replaying. Either way the replay's request lacks the reminder, and the step misses on every run. Three of campaign's nine scenarios failed this way, at steps 16, 19 and 29.\n\nClaude Code can turn both off, with `CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR=1` and `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1`. Each changes what the agent can do, since a `cd` no longer persists and a long command is killed rather than backgrounded. Turning them off would record an agent unlike the one campaigns run.",
   "notes": [
     {

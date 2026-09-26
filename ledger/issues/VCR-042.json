@@ -3,17 +3,19 @@
   "title": "Stripping the userEmail section leaves an empty reminder, which a run without an address never sends",
   "type": "defect",
   "severity": "med",
-  "status": "in-progress",
+  "status": "closed",
   "foundBy": "session agent, replaying sandbox and campaign cassettes recorded on Claude Code 2.1.283",
   "opened": "2026-09-26",
-  "resolved": null,
+  "resolved": "2026-09-26",
   "stint": "agent-cli-bump",
   "evidence": {
-    "commits": [],
+    "commits": [
+      "4b0cad9"
+    ],
     "integrated": [],
-    "verified": null
+    "verified": "`go test ./internal/config/ ./internal/cassette/ -count=1` passes on 7bfe30d, TestDefaultNormalizesAnAccountBlockThatComesAndGoes, TestAnItemACutEmptiesGoesWithIt and TestAnItemTheCutDidNotEmptyStays among it. GitHub CI's `ci` passed on 7bfe30d. Campaign pinned to that build ran `make ci` on 2026-09-26. Its claude-subscription replay, recorded with a real account and replayed with a fabricated one, served 49 requests with 0 misses. Sandbox's `make ci` on that build replayed its 14 agent cassettes, the lent Claude login among them, with none failing."
   },
-  "resolution": null,
+  "resolution": "Ruleset v15 adds a `remove` rule. It cuts a passage from the decoded text of every string before hashing, and removes an item the cut leaves empty. The address section moved from `replace` into it, beside a pattern for the reminder that section can leave empty. A run with an address and a run without one now normalize alike, so a consumer needs no fabricated account.",
   "details": "Claude Code writes the signed-in account's address into a system reminder at the head of the first user message. In 2.1.283 that reminder holds only the `# userEmail` section, because `# claudeMd` and `# currentDate` moved out of it. The normalize rule in `internal/config/config.go` strips the section and keeps the reminder around it.\n\nA run whose client knows the address therefore normalizes to an empty reminder. A run whose client does not know it sends no reminder at all. The rule exists so that present and absent normalize alike, and they no longer do. The replay then fails to match the request, and reports `messages[0].content: 4 items vs 3`.\n\nTwo consumers hit this on the same day, each recording with a real account and replaying with a fabricated one. They were sandbox's lent Claude login replay (SBX-086) and campaign's claude-subscription scenario (SAC-080). Each worked around it by giving its replay host a fabricated account.\n\nDropping the reminder when stripping leaves it empty would make the two cases normalize alike. The consumers would then need no fabricated account for this.",
   "notes": [
     {
