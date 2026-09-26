@@ -1079,7 +1079,12 @@ func failedLive(d cassette.Difference) bool {
 	if !strings.HasSuffix(d.Path, ".is_error") {
 		return false
 	}
+	// A recording without the flag succeeded: Claude Code 2.1.283 writes it
+	// only for a command that failed.
 	was, ok := d.Recorded.(bool)
+	if d.Recorded == nil {
+		was, ok = false, true
+	}
 	if !ok {
 		return false
 	}

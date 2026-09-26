@@ -142,6 +142,33 @@ func TestAVolatilePathCoversTheShapeBeneathIt(t *testing.T) {
 	}
 }
 
+// A volatile field present on one side only is tolerated like one whose value
+// changed. Claude Code 2.1.283 writes a tool result's `is_error` only when the
+// command failed, and a replayed command that names the recording's own commit
+// fails where the recorded one succeeded: measured on two campaign
+// orchestrators as `is_error: only in the live request`.
+func TestAVolatileFieldOnOneSideOnlyIsTolerated(t *testing.T) {
+	result := func(extra string) []byte {
+		return []byte(`{"messages":[{"role":"user","content":[` +
+			`{"type":"tool_result","tool_use_id":"toolu_1","content":"out"` + extra + `}]}]}`)
+	}
+	rules := []Rule{"messages[].content[].content", "messages[].content[].is_error"}
+	got, err := Align(result(""), result(`,"is_error":true`), rules)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got.Matches() {
+		t.Fatalf("a flag the client sends only on failure was a divergence: shape=%v leaf=%v", got.Shape, got.Leaf)
+	}
+	if len(got.Tolerated) != 1 || got.Tolerated[0].Path != "messages[0].content[0].is_error" || got.Tolerated[0].Live != true {
+		t.Errorf("tolerated = %+v, want the flag named with its live value", got.Tolerated)
+	}
+	// Undeclared, the same field is still a divergence.
+	if got, _ := Align(result(""), result(`,"is_error":true`), nil); got.Matches() {
+		t.Error("a field on one side only was tolerated with nothing declaring it volatile")
+	}
+}
+
 // Identical requests align with nothing to report, which is the ordinary case
 // and has to stay silent: a run that warned about every entry would train its
 // reader to ignore the warnings.

@@ -457,6 +457,7 @@ func TestAToleratedFailureIsCountedApartFromOrdinaryDrift(t *testing.T) {
 		wantFlag bool
 	}{
 		{"success became failure", cassette.Difference{Path: "messages[41].content[0].is_error", Recorded: false, Live: true}, true},
+		{"success without the flag became failure", cassette.Difference{Path: "messages[41].content[0].is_error", Recorded: nil, Live: true}, true},
 		{"failure became success", cassette.Difference{Path: "messages[41].content[0].is_error", Recorded: true, Live: false}, false},
 		{"unchanged flag", cassette.Difference{Path: "messages[41].content[0].is_error", Recorded: false, Live: false}, false},
 		{"an ordinary output drift", cassette.Difference{Path: "messages[41].content[0].content", Recorded: "a", Live: "b"}, false},

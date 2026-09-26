@@ -15,6 +15,13 @@
   },
   "resolution": null,
   "details": "Claude Code 2.1.283 adds two reminders because of what happened on the machine, and a replay reproduces neither by design. After a command that changed directory and succeeded, it adds `# Environment update` with the new working directory. After a command outlived its timeout and moved to the background, it adds a `[SYSTEM NOTIFICATION - NOT USER INPUT]` item once the command finishes.\n\nA replayed command runs for real. In campaign's replay, a command named a commit that only the recording's checkout had, so it failed and the shell stayed where it was. A command that timed out while recording finished in time while replaying. Either way the replay's request lacks the reminder, and the step misses on every run. Three of campaign's nine scenarios failed this way, at steps 16, 19 and 29.\n\nClaude Code can turn both off, with `CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR=1` and `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1`. Each changes what the agent can do, since a `cd` no longer persists and a long command is killed rather than backgrounded. Turning them off would record an agent unlike the one campaigns run.",
-  "notes": [],
-  "links": ["VCR-042"]
+  "notes": [
+    {
+      "date": "2026-09-26",
+      "text": "With both reminders cut, two orchestrators still missed on replay, at `is_error: only in the live request`. Claude Code 2.1.283 writes that flag only when a command failed, so a replayed command that failed differs by the field's presence. The path was already volatile, but alignment reported a field on one side only as a shape difference before consulting the rules. It now tolerates one, as R10 requires."
+    }
+  ],
+  "links": [
+    "VCR-042"
+  ]
 }

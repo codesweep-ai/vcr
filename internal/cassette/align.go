@@ -123,6 +123,15 @@ func (a *Alignment) walk(rec, live any, path, rulePath string, volatile []Rule) 
 			_, inRec := r[k]
 			_, inLive := l[k]
 			child := join(path, k)
+			// A volatile field on one side only is the world answering too,
+			// and whether the field is there at all is part of its shape (R10).
+			// Claude Code 2.1.283 writes a tool result's `is_error` only when
+			// the command failed, so a command that succeeded when recorded
+			// and failed here differs by the field's presence, not its value.
+			if (!inLive || !inRec) && covered(join(rulePath, k), volatile) {
+				a.Tolerated = append(a.Tolerated, Difference{Path: child, Recorded: r[k], Live: l[k]})
+				continue
+			}
 			switch {
 			case !inLive:
 				a.Shape = append(a.Shape, Difference{Path: child, Why: "only in the recorded request"})

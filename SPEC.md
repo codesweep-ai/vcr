@@ -216,9 +216,10 @@ There are no thresholds anywhere.
 **R9.** A difference under a volatile path **MUST** be tolerated, and **MUST** be reported and
 counted as drift.
 
-**R10.** A volatile declaration **MUST** cover the shape beneath the path as well as its values. *A
-per-run block gains and loses keys between runs, so a check that only excused leaves would report
-the client's own noise as a divergence.*
+**R10.** A volatile declaration **MUST** cover the shape beneath the path as well as its values,
+and whether the path is present at all. *A per-run block gains and loses keys between runs, so a
+check that only excused leaves would report the client's own noise as a divergence. A field can come
+and go the same way: Claude Code writes a tool result's `is_error` only when the command failed.*
 
 **R11.** Nothing **MUST** be treated as volatile that is not declared.
 
