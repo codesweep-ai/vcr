@@ -208,6 +208,17 @@ type Normalize struct {
 	// and a list of five items never aligns with one of four — the difference
 	// is the length, not the text.
 	Drop []string `yaml:"drop,omitempty"`
+	// Remove are patterns for passages a client writes into a string only
+	// sometimes. Every match is cut from every string in the body before
+	// hashing, on both sides, and the cut takes the list item it empties.
+	//
+	// Drop cannot answer these, because the passage shares its string with
+	// others: Claude Code sends a turn's reminders as one string, and adds one
+	// about the working directory only when a command it ran moved it. Replace
+	// cannot either, because a cut that empties a string has to take the item
+	// that held it — a text block, a message — and a substitution on the text
+	// leaves the item, empty, where the other run has none.
+	Remove []string `yaml:"remove,omitempty"`
 	// Replace are regex substitutions applied before hashing.
 	//
 	// Field stripping cannot reach what actually breaks a replay: the volatile
@@ -237,6 +248,7 @@ type Normalize struct {
 
 	compiled []compiledReplacement
 	captures []compiledCapture
+	removals []*regexp.Regexp
 }
 
 // Extension is the additive half of the ruleset: the same fields, appended to
@@ -252,6 +264,7 @@ type Extension struct {
 	Volatile []string      `yaml:"volatile,omitempty"`
 	Capture  []Capture     `yaml:"capture,omitempty"`
 	Drop     []string      `yaml:"drop,omitempty"`
+	Remove   []string      `yaml:"remove,omitempty"`
 	Replace  []Replacement `yaml:"replace,omitempty"`
 }
 
@@ -387,6 +400,38 @@ func (n *Normalize) StripFields() []string { return n.Strip }
 // DropBlocks names the blocks whose whole list item is removed before hashing.
 func (n *Normalize) DropBlocks() []string { return n.Drop }
 
+// CutPassages cuts every match of the removal patterns out of one string, the
+// patterns in order.
+//
+// A cut with nothing but whitespace between it and either end of the string
+// takes that whitespace too. The passage sat apart from its neighbours, and a
+// string that never carried it has no gap where it would have been.
+func (n *Normalize) CutPassages(s string) string {
+	for _, re := range n.removals {
+		locs := re.FindAllStringIndex(s, -1)
+		if len(locs) == 0 {
+			continue
+		}
+		var b strings.Builder
+		last, atStart, atEnd := 0, false, false
+		for _, l := range locs {
+			atStart = atStart || strings.TrimSpace(s[:l[0]]) == ""
+			atEnd = atEnd || strings.TrimSpace(s[l[1]:]) == ""
+			b.WriteString(s[last:l[0]])
+			last = l[1]
+		}
+		b.WriteString(s[last:])
+		s = b.String()
+		if atStart {
+			s = strings.TrimLeft(s, " \t\r\n")
+		}
+		if atEnd {
+			s = strings.TrimRight(s, " \t\r\n")
+		}
+	}
+	return s
+}
+
 // StripQuery satisfies the same ruleset, for the request target.
 func (n *Normalize) StripQuery() []string { return n.Query }
 
@@ -417,6 +462,14 @@ func (n *Normalize) Compile() error {
 			return fmt.Errorf("normalize.replace[%d]: %w", i, err)
 		}
 		n.compiled = append(n.compiled, compiledReplacement{re: re, with: r.With})
+	}
+	n.removals = nil
+	for i, p := range n.Remove {
+		re, err := regexp.Compile(p)
+		if err != nil {
+			return fmt.Errorf("normalize.remove[%d]: %w", i, err)
+		}
+		n.removals = append(n.removals, re)
 	}
 	return nil
 }
@@ -605,7 +658,10 @@ func Default() *Config {
 			// changes no stored byte, and it moves the number anyway: the
 			// ruleset is a claim about which requests are equivalent, and two
 			// builds that disagree about that must not share a version.
-			Version: 14,
+			//
+			// v15 cuts the passages Claude Code 2.1.283 writes only sometimes,
+			// and moves the account rule into that pass. See Remove below.
+			Version: 15,
 			// The minimum names: markers and identifiers that change
 			// between two requests the model would answer identically.
 			Strip: []string{
@@ -673,6 +729,40 @@ func Default() *Config {
 			// Same cause, same remedy: what the installation happens to carry
 			// is not what the model was asked.
 			Drop: []string{"<plugins_instructions>", "<skills_instructions>"},
+			// Cut from the decoded text, so a newline here is a newline.
+			Remove: []string{
+				// The account the agent is signed in as. Claude Code puts the
+				// address in a system reminder at the head of the first user
+				// message, so it is prompt text like the date and the working
+				// directory, and it is per-PERSON rather than per-machine.
+				// Without this, a cassette one developer records misses for every
+				// other one, and carries their address into the repository it is
+				// committed to.
+				//
+				// The whole section goes, not just the address. Claude Code learns
+				// the account from a subscription asynchronously, and a replay
+				// holding a fabricated login may not know it at all, so the
+				// section is there on one run and absent on the next.
+				`\n# userEmail\nThe user's email address is [^\n]*`,
+				// And the reminder that section can leave empty. Until 2.1.258 it
+				// also carried `# claudeMd` and `# currentDate`, so it outlived the
+				// cut. 2.1.283 moved both out, and a reminder left holding only its
+				// header and its footer is `4 items vs 3` against a run that never
+				// learned the account. It goes only when nothing is left in it.
+				`<system-reminder>\nAs you answer the user's questions, you can use the following context:\s*IMPORTANT:[^<]*</system-reminder>\s*`,
+				// Claude Code tells the model its shell moved, after a command
+				// that changed directory and succeeded. A replayed command runs
+				// for real, and can name a commit that only the recording's
+				// checkout had, so it fails, the shell stays, and the replay's
+				// request has no reminder. Measured on a campaign orchestrator,
+				// at the same step on every replay.
+				`<system-reminder>\n# Environment update\n[^<]*</system-reminder>\s*`,
+				// A command that outlives its timeout is moved to the background,
+				// and the client reports later that it finished. Whether it
+				// outlived the timeout is the machine's pace: the recording's
+				// command did, and the replay's, answered from a cassette, did not.
+				`(?s)<system-reminder>\n\[SYSTEM NOTIFICATION - NOT USER INPUT\].*?</system-reminder>\s*`,
+			},
 			Volatile: []string{
 				// OpenAI responses: what a tool call answered, in both shapes
 				// that surface uses — a list of typed blocks for a custom
@@ -784,25 +874,8 @@ func Default() *Config {
 				// backslash followed by an `n` — hence the excluded backslash.
 				{Pattern: `(OS Version: )[^\n"\\]+`, With: `${1}<OS>`},
 				{Pattern: `(Platform: )[^\n"\\]+`, With: `${1}<PLATFORM>`},
-				// The account the agent is signed in as. Claude Code puts the
-				// address in a system reminder at the head of the first user
-				// message, so it is prompt text like the date and the working
-				// directory — and it is per-PERSON rather than per-machine. Without
-				// this, a cassette one developer records misses for every other
-				// one, and carries their address into the repository it is
-				// committed to.
-				//
-				// The whole block goes, not just the address. Claude Code learns
-				// the account from a subscription asynchronously, so the reminder
-				// carries a `# userEmail` section on one run of a task and none at
-				// all on the next — measured between a recording and its replay,
-				// where blanking the address alone still left `2 items vs 3` and
-				// missed every request of the session. Removing the section makes
-				// present and absent normalize to the same thing, which is the only
-				// way a rule can answer a block that comes and goes.
-				{Pattern: `\\n# userEmail\\nThe user's email address is [^"\\]*`, With: ``},
-				// The same address wherever else it is written, for the clients
-				// that place it outside that block.
+				// The signed-in account's address, wherever a client writes it
+				// outside the reminder Remove cuts it from.
 				{Pattern: `(The user's email address is )[^@\s"\\]+@[^\s"\\]+`, With: `${1}<EMAIL>`},
 			},
 			// The scratchpad directory Claude Code is told to use carries a
@@ -884,6 +957,7 @@ func (n *Normalize) extend() {
 	n.Volatile = append(n.Volatile, e.Volatile...)
 	n.Capture = append(n.Capture, e.Capture...)
 	n.Drop = append(n.Drop, e.Drop...)
+	n.Remove = append(n.Remove, e.Remove...)
 	n.Replace = append(n.Replace, e.Replace...)
 	n.Extend = nil
 }
@@ -907,6 +981,9 @@ func replacedShipped(loaded, shipped *Normalize) []string {
 	}
 	if len(shipped.Drop) > 0 && !slices.Equal(loaded.Drop, shipped.Drop) {
 		out = append(out, "drop")
+	}
+	if len(shipped.Remove) > 0 && !slices.Equal(loaded.Remove, shipped.Remove) {
+		out = append(out, "remove")
 	}
 	if len(shipped.Capture) > 0 && !slices.Equal(loaded.Capture, shipped.Capture) {
 		out = append(out, "capture")

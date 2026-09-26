@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -45,7 +46,8 @@ func TestExtendAddsToTheShippedRuleset(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.yaml")
 	body := "normalize:\n  extend:\n    volatile: [mine.path]\n" +
 		"    replace:\n      - {pattern: 'x', with: 'y'}\n" +
-		"    capture:\n      - {pattern: '(a)', as: '<A>'}\n"
+		"    capture:\n      - {pattern: '(a)', as: '<A>'}\n" +
+		"    remove: ['<mine/>']\n"
 	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -60,6 +62,7 @@ func TestExtendAddsToTheShippedRuleset(t *testing.T) {
 		{"volatile", len(c.Normalize.Volatile), len(shipped.Volatile)},
 		{"replace", len(c.Normalize.Replace), len(shipped.Replace)},
 		{"capture", len(c.Normalize.Capture), len(shipped.Capture)},
+		{"remove", len(c.Normalize.Remove), len(shipped.Remove)},
 	} {
 		if w.got != w.was+1 {
 			t.Errorf("%s has %d rules, want the %d shipped plus 1", w.field, w.got, w.was)
@@ -267,6 +270,11 @@ func TestResolveOfflineStillChecksTheRuleset(t *testing.T) {
 	if err := c.ResolveOffline(); err == nil {
 		t.Fatal("a replay session accepted a pattern that will not compile")
 	}
+	c = Default()
+	c.Normalize.Remove = append(c.Normalize.Remove, "(unclosed")
+	if err := c.ResolveOffline(); err == nil {
+		t.Fatal("a replay session accepted a removal that will not compile")
+	}
 }
 
 // The billing header is the first system block of every Claude Code request,
@@ -315,25 +323,23 @@ func TestDefaultRoundTripsTheSessionScratchpad(t *testing.T) {
 	}
 }
 
-// The rest of Claude Code's environment block: whose machine this is, and whose
-// account. Measured on two real recordings — a developer laptop and a Linux CI
-// runner disagree on the kernel release, and two developers disagree on the
-// address in the userEmail reminder, both inside prompt text where no field
-// strip reaches them.
-func TestDefaultNormalizesTheMachineAndTheAccount(t *testing.T) {
+// The rest of Claude Code's environment block: whose machine this is. Measured
+// on two real recordings, where a developer laptop and a Linux CI runner
+// disagree on the kernel release inside prompt text that no field strip
+// reaches.
+func TestDefaultNormalizesTheMachine(t *testing.T) {
 	n := Default().Normalize
 	if err := n.Compile(); err != nil {
 		t.Fatal(err)
 	}
 	// The canonical form is JSON text, so the newlines are escaped and each rule
 	// has to stop at one.
-	block := func(platform, os, email string) string {
+	block := func(platform, os string) string {
 		return `"# Environment\n - Platform: ` + platform + `\n - OS Version: ` + os +
-			`\n - Shell: unknown\n# userEmail\nThe user's email address is ` + email +
-			`.\n# currentDate\nToday's date is 2026-08-15.\n"`
+			`\n - Shell: unknown\n# currentDate\nToday's date is 2026-08-15.\n"`
 	}
-	laptop, _ := n.Apply([]byte(block("darwin", "Darwin 25.2.0", "ada@example.com")))
-	runner, _ := n.Apply([]byte(block("linux", "Linux 6.11.0-1018-azure", "grace@example.org")))
+	laptop, _ := n.Apply([]byte(block("darwin", "Darwin 25.2.0")))
+	runner, _ := n.Apply([]byte(block("linux", "Linux 6.11.0-1018-azure")))
 	// Codex reports the zone rather than the kernel, in a block of its own.
 	zoned := func(tz string) string {
 		return `"<environment_context>\n  <cwd><ROOT>/work</cwd>\n  <timezone>` + tz + `</timezone>\n"`
@@ -376,11 +382,6 @@ func TestDefaultNormalizesTheMachineAndTheAccount(t *testing.T) {
 		if !strings.Contains(string(laptop), want) {
 			t.Errorf("%q is missing from the normalized form:\n%s", want, laptop)
 		}
-	}
-	// The account block is the exception, and goes whole. See the test below
-	// for why blanking the address is not enough.
-	if strings.Contains(string(laptop), "userEmail") {
-		t.Errorf("the account block must not survive:\n%s", laptop)
 	}
 }
 
@@ -429,31 +430,110 @@ func TestDefaultNormalizesTheMonthInAToolDescription(t *testing.T) {
 	}
 }
 
-// The account reminder comes and goes between two runs of one task.
-//
-// Claude Code learns the account behind a subscription asynchronously, so the
-// system reminder at the head of the first user message carries a `# userEmail`
-// section on one run and none at all on the next. Blanking the address leaves
-// the sentence, and a sentence that is present once and absent once is still a
-// difference — measured between a recording and its replay, as `2 items vs 3`
-// on every request of the session. Only removing the section makes the two
-// normalize alike.
-func TestDefaultNormalizesAnAccountBlockThatComesAndGoes(t *testing.T) {
+// normalized keys a request body under the shipped ruleset, the whole pipeline
+// rather than the text rules alone.
+func normalized(t *testing.T, body any) cassette.Key {
+	t.Helper()
 	n := Default().Normalize
 	if err := n.Compile(); err != nil {
 		t.Fatal(err)
 	}
-	const head = `"# Environment\n - Shell: unknown`
-	const tail = `\n# currentDate\nToday's date is 2026-08-15.\n"`
-
-	with, _ := n.Apply([]byte(head + `\n# userEmail\nThe user's email address is ada@example.com.` + tail))
-	without, _ := n.Apply([]byte(head + tail))
-	if string(with) != string(without) {
-		t.Errorf("a run that learned the account and one that did not still differ:\n  %s\n  %s", with, without)
+	b, err := json.Marshal(body)
+	if err != nil {
+		t.Fatal(err)
 	}
-	// And what follows the block is still there to match on.
-	if !strings.Contains(string(with), "Today's date is <DATE>") {
-		t.Errorf("the rule swallowed the rest of the prompt:\n%s", with)
+	return cassette.Normalize("POST", "/v1/messages", b, &n)
+}
+
+// userMessage is a first user message of text blocks, one per item.
+func userMessage(items ...string) map[string]any {
+	blocks := make([]any, 0, len(items))
+	for _, it := range items {
+		blocks = append(blocks, map[string]any{"type": "text", "text": it})
+	}
+	return map[string]any{"messages": []any{map[string]any{"role": "user", "content": blocks}}}
+}
+
+// The account reminder comes and goes between two runs of one task.
+//
+// Claude Code learns the account behind a subscription asynchronously, and a
+// replay holding a fabricated login may not learn it at all, so the reminder at
+// the head of the first user message carries a `# userEmail` section on one
+// run and none on the next. Until 2.1.258 the reminder held more than that, and
+// cutting the section was enough. In 2.1.283 the address is all it holds, so
+// the reminder itself comes and goes: measured as `4 items vs 3` on every
+// request of a lent-login session, in sandbox and campaign alike.
+func TestDefaultNormalizesAnAccountBlockThatComesAndGoes(t *testing.T) {
+	const (
+		open   = "<system-reminder>\nAs you answer the user's questions, you can use the following context:\n"
+		email  = "# userEmail\nThe user's email address is ada@example.com.\n"
+		date   = "# currentDate\nToday's date is 2026-08-15.\n"
+		footer = "\n      IMPORTANT: this context may or may not be relevant to your tasks. " +
+			"You should not respond to this context unless it is highly relevant to your task.\n</system-reminder>\n"
+		rules = "<system-reminder>\nCodebase and user instructions are shown below.\n</system-reminder>\n"
+		ask   = "list the files"
+	)
+	// 2.1.283: the reminder goes with the address.
+	with := normalized(t, userMessage(rules, open+email+footer, ask))
+	without := normalized(t, userMessage(rules, ask))
+	if with.Hash != without.Hash {
+		t.Errorf("a run that learned the account and one that did not still differ:\n%s\n\n%s", with.Canonical, without.Canonical)
+	}
+	if strings.Contains(string(with.Canonical), "ada@example.com") {
+		t.Errorf("the address survived:\n%s", with.Canonical)
+	}
+	// 2.1.258: the reminder stays for what else it says.
+	with = normalized(t, userMessage(open+date+email+footer, ask))
+	without = normalized(t, userMessage(open+date+footer, ask))
+	if with.Hash != without.Hash {
+		t.Errorf("a run that learned the account and one that did not still differ:\n%s\n\n%s", with.Canonical, without.Canonical)
+	}
+	if !strings.Contains(string(with.Canonical), "Today's date is <DATE>") {
+		t.Errorf("the reminder went with the section, and its date with it:\n%s", with.Canonical)
+	}
+}
+
+// Two reminders Claude Code 2.1.283 writes because of something that happened
+// on the machine, which a replay does not reproduce by design: its shell moved,
+// or a command outlived its timeout and finished in the background. Both were
+// measured on campaign orchestrators replayed against their own recordings, at
+// the same step on every run.
+func TestDefaultCutsWhatTheMachineMadeClaudeCodeSay(t *testing.T) {
+	const (
+		moved = "<system-reminder>\n# Environment update\n" +
+			" - Primary working directory: /home/ada/subject (was /home/ada)\n</system-reminder>"
+		tokens = "<system-reminder>\n<total_tokens>14996933 tokens left</total_tokens>\n</system-reminder>"
+		notice = "<system-reminder>\n[SYSTEM NOTIFICATION - NOT USER INPUT]\n" +
+			"This is an automated background-task event, NOT a message from the user.\n" +
+			"<task-notification>\n<status>completed</status>\n</task-notification>\n</system-reminder>"
+	)
+	messages := func(m ...any) map[string]any { return map[string]any{"messages": m} }
+	user := func(content any) map[string]any { return map[string]any{"role": "user", "content": content} }
+	system := func(s string) map[string]any { return map[string]any{"role": "system", "content": s} }
+	result := map[string]any{"type": "tool_result", "tool_use_id": "toolu_1", "content": "slept"}
+
+	for _, c := range []struct {
+		name          string
+		with, without any
+	}{
+		{"the shell moved, ahead of the token count",
+			messages(user("go"), system(moved+"\n\n"+tokens)), messages(user("go"), system(tokens))},
+		{"the shell moved, after the token count",
+			messages(user("go"), system(tokens+"\n\n"+moved)), messages(user("go"), system(tokens))},
+		{"the shell moved, and there is nothing else to say",
+			messages(user("go"), system(moved)), messages(user("go"))},
+		{"a background command finished",
+			messages(user([]any{result, map[string]any{"type": "text", "text": notice}})), messages(user([]any{result}))},
+	} {
+		with, without := normalized(t, c.with), normalized(t, c.without)
+		if with.Hash != without.Hash {
+			t.Errorf("%s: the run that said so and the one that did not still differ:\n%s\n\n%s", c.name, with.Canonical, without.Canonical)
+		}
+	}
+	// A prompt that talks about the reminder is not the reminder.
+	talk := normalized(t, messages(user("why did the # Environment update reminder appear?")))
+	if !strings.Contains(string(talk.Canonical), "Environment update reminder appear") {
+		t.Errorf("a question about the reminder was cut as the reminder:\n%s", talk.Canonical)
 	}
 }
 
@@ -625,11 +705,12 @@ func TestAShallowRootHasNoBareForm(t *testing.T) {
 // The version is pinned here so that moving it is an edit somebody makes on
 // purpose. v13 is the web-search month, which moved it for the same reason a
 // drop does: the committed fixtures have to follow in the same change. v14 is
-// the inline picture paths.
+// the inline picture paths. v15 is the passages Claude Code 2.1.283 writes only
+// sometimes.
 func TestTheShippedRulesetDropsBothPreambleBlocks(t *testing.T) {
 	n := Default().Normalize
-	if n.Version != 14 {
-		t.Fatalf("normalize ruleset version = %d, want 14", n.Version)
+	if n.Version != 15 {
+		t.Fatalf("normalize ruleset version = %d, want 15", n.Version)
 	}
 	for _, want := range []string{"<plugins_instructions>", "<skills_instructions>"} {
 		if !slices.Contains(n.Drop, want) {

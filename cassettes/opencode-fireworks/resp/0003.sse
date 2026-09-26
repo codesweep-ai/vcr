@@ -1,12 +1,12 @@
-data: {"id":"chatcmpl-cf42965531914f57b0b01b0c17340573","object":"chat.completion.chunk","created":1789884244,"model":"accounts/fireworks/models/kimi-k3","choices":[{"index":0,"delta":{"role":"assistant"},"finish_reason":null,"raw_output":null}],"usage":null}
+data: {"id":"chatcmpl-9d7847711e474655b6ed3af76eabe905","object":"chat.completion.chunk","created":1790414574,"model":"accounts/fireworks/models/kimi-k3","choices":[{"index":0,"delta":{"role":"assistant"},"finish_reason":null,"raw_output":null}],"usage":null}
 
-data: {"choices":[{"delta":{"reasoning_content":"done"},"finish_reason":null,"index":0,"raw_output":null}],"created":1789884244,"id":"chatcmpl-cf42965531914f57b0b01b0c17340573","model":"accounts/fireworks/models/kimi-k3","object":"chat.completion.chunk","usage":null}
+data: {"choices":[{"delta":{"reasoning_content":"The file has been created. Now I need to reply with the single word \"done\"."},"finish_reason":null,"index":0,"raw_output":null}],"created":1790414574,"id":"chatcmpl-9d7847711e474655b6ed3af76eabe905","model":"accounts/fireworks/models/kimi-k3","object":"chat.completion.chunk","usage":null}
 
-data: {"id":"chatcmpl-cf42965531914f57b0b01b0c17340573","object":"chat.completion.chunk","created":1789884244,"model":"accounts/fireworks/models/kimi-k3","choices":[{"index":0,"delta":{"content":"done"},"finish_reason":null,"raw_output":null}],"usage":null}
+data: {"id":"chatcmpl-9d7847711e474655b6ed3af76eabe905","object":"chat.completion.chunk","created":1790414574,"model":"accounts/fireworks/models/kimi-k3","choices":[{"index":0,"delta":{"content":"done"},"finish_reason":null,"raw_output":null}],"usage":null}
 
-data: {"id":"chatcmpl-cf42965531914f57b0b01b0c17340573","object":"chat.completion.chunk","created":1789884244,"model":"accounts/fireworks/models/kimi-k3","choices":[{"index":0,"delta":{},"finish_reason":"stop","raw_output":null}],"usage":null}
+data: {"id":"chatcmpl-9d7847711e474655b6ed3af76eabe905","object":"chat.completion.chunk","created":1790414574,"model":"accounts/fireworks/models/kimi-k3","choices":[{"index":0,"delta":{},"finish_reason":"stop","raw_output":null}],"usage":null}
 
-data: {"id":"chatcmpl-cf42965531914f57b0b01b0c17340573","object":"chat.completion.chunk","created":1789884244,"model":"accounts/fireworks/models/kimi-k3","choices":[],"usage":{"prompt_tokens":7017,"total_tokens":7032,"completion_tokens":15,"prompt_tokens_details":{"cached_tokens":6821},"completion_tokens_details":{"reasoning_tokens":1},"output_tokens_details":{"reasoning_tokens":1}}}
+data: {"id":"chatcmpl-9d7847711e474655b6ed3af76eabe905","object":"chat.completion.chunk","created":1790414574,"model":"accounts/fireworks/models/kimi-k3","choices":[],"usage":{"prompt_tokens":6970,"total_tokens":7002,"completion_tokens":32,"prompt_tokens_details":{"cached_tokens":6823},"completion_tokens_details":{"reasoning_tokens":18},"output_tokens_details":{"reasoning_tokens":18}}}
 
 data: [DONE]
 

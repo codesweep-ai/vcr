@@ -66,6 +66,7 @@ func Normalize(method, path string, body []byte, rules Ruleset) Key {
 	for _, field := range rules.StripFields() {
 		v = strip(v, strings.Split(field, "."))
 	}
+	v, _ = cutPassages(v, rules.CutPassages)
 	v = dropBlocks(v, rules.DropBlocks())
 	v = sortToolResults(v)
 	v = collapseSingleTextBlocks(v)
@@ -273,12 +274,51 @@ type Ruleset interface {
 	// DropBlocks names the openings of blocks whose whole list ITEM is
 	// removed before hashing.
 	DropBlocks() []string
+	// CutPassages cuts what the ruleset removes out of one string of the body,
+	// and returns what is left.
+	CutPassages(string) string
 	// StripQuery names the query parameters removed from the request target
 	// before it is hashed.
 	StripQuery() []string
 	// Apply normalizes canonical request text and reports what its
 	// run-specific captures matched.
 	Apply([]byte) ([]byte, map[string]string)
+}
+
+// cutPassages applies cut to every string in the body, and removes each list
+// item that a cut left with nothing to say. It reports whether v itself was
+// emptied, for the list holding it to act on.
+//
+// Emptied means the cut took everything: a string that was blank before it is
+// not the cut's doing, and stays. An object is emptied when a string it holds,
+// or a list it holds, is: a text block whose text went, a message whose
+// content did. Removing it is what makes a run that sent the passage key the
+// same as one that did not, because a list with an empty item in it is one
+// item longer than a list without.
+func cutPassages(v any, cut func(string) string) (any, bool) {
+	switch t := v.(type) {
+	case string:
+		out := cut(t)
+		return out, out != t && strings.TrimSpace(out) == ""
+	case map[string]any:
+		emptied := false
+		for k, val := range t {
+			var e bool
+			t[k], e = cutPassages(val, cut)
+			emptied = emptied || e
+		}
+		return t, emptied
+	case []any:
+		kept := make([]any, 0, len(t))
+		for _, e := range t {
+			out, gone := cutPassages(e, cut)
+			if !gone {
+				kept = append(kept, out)
+			}
+		}
+		return kept, len(t) > 0 && len(kept) == 0
+	}
+	return v, false
 }
 
 // dropBlocks removes every list item that opens with one of these markers.

@@ -3,11 +3,11 @@
   "title": "Stripping the userEmail section leaves an empty reminder, which a run without an address never sends",
   "type": "defect",
   "severity": "med",
-  "status": "open",
+  "status": "in-progress",
   "foundBy": "session agent, replaying sandbox and campaign cassettes recorded on Claude Code 2.1.283",
   "opened": "2026-09-26",
   "resolved": null,
-  "stint": null,
+  "stint": "agent-cli-bump",
   "evidence": {
     "commits": [],
     "integrated": [],
@@ -15,6 +15,11 @@
   },
   "resolution": null,
   "details": "Claude Code writes the signed-in account's address into a system reminder at the head of the first user message. In 2.1.283 that reminder holds only the `# userEmail` section, because `# claudeMd` and `# currentDate` moved out of it. The normalize rule in `internal/config/config.go` strips the section and keeps the reminder around it.\n\nA run whose client knows the address therefore normalizes to an empty reminder. A run whose client does not know it sends no reminder at all. The rule exists so that present and absent normalize alike, and they no longer do. The replay then fails to match the request, and reports `messages[0].content: 4 items vs 3`.\n\nTwo consumers hit this on the same day, each recording with a real account and replaying with a fabricated one. They were sandbox's lent Claude login replay (SBX-086) and campaign's claude-subscription scenario (SAC-080). Each worked around it by giving its replay host a fabricated account.\n\nDropping the reminder when stripping leaves it empty would make the two cases normalize alike. The consumers would then need no fabricated account for this.",
-  "notes": [],
+  "notes": [
+    {
+      "date": "2026-09-26",
+      "text": "The fix is a new `remove` rule, cut from the decoded text of every string before hashing. An item that a cut empties is removed with it. The address section moved into it, beside a pattern for the reminder that section can leave empty. The same rule answers the two reminders in VCR-043."
+    }
+  ],
   "links": []
 }

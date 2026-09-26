@@ -465,6 +465,7 @@ ones that need a decision:
 | a screenshot or a file sent inline, in a field the defaults do not name | `volatile`, on the payload field alone | it is what a tool saw, and the question beside it stays exact |
 | a sentence the client includes only sometimes | `replace` | not part of the question |
 | a whole list ITEM the client includes only sometimes | `drop` | it changes the list's length, which no substitution reaches |
+| a passage the client writes into a string only sometimes, which can be all the string holds | `remove` | an item the cut empties goes too, which a substitution cannot do |
 | the `tools` list, when MCP servers connect on one run and not the next | `strip_fields` | see below |
 
 The `tools` row needs thought before you copy it. A model offered different tools can answer
@@ -492,6 +493,22 @@ normalize:
 
 A marker matches where a block opens, not wherever it appears. A prompt that mentions the tag is
 discussing the block, not being it.
+
+`remove` is the one for a passage that shares a string with others. Claude Code sends a turn's
+reminders as one string, and adds one saying its shell moved only when a command moved it. A
+replayed command runs for real and can fail where the recorded one did not, so the reminder is in
+one run and not the next. The pattern is cut from every string, and an item it leaves empty goes
+too:
+
+```yaml
+normalize:
+  extend:
+    remove: ['<my_note>[^<]*</my_note>\s*']
+```
+
+The pattern is matched against the text itself, where a newline is a newline, and not against the
+JSON the canonical form holds. The shipped rules use it for the account, working-directory and
+background-task reminders Claude Code writes this way.
 
 Write a `capture` pattern by enumerating the contexts an identifier appears in, such as a path, a
 tool argument or a tag. Do not match its shape:

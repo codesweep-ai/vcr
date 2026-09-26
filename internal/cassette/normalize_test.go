@@ -16,6 +16,8 @@ func (testRules) StripQuery() []string { return nil }
 
 func (testRules) DropBlocks() []string { return nil }
 
+func (testRules) CutPassages(s string) string { return s }
+
 func (testRules) Apply(b []byte) ([]byte, map[string]string) { return b, nil }
 
 // queryRules is testRules with the default query strip list, for the cases
@@ -227,5 +229,49 @@ func TestTheInstallationsOwnPreambleIsDropped(t *testing.T) {
 	}
 	if !strings.Contains(string(a.Canonical), "list the files") {
 		t.Fatalf("the question itself was dropped:\n%s", a.Canonical)
+	}
+}
+
+// cutRules is testRules that cuts one passage, for the cases about a client
+// that writes it into a string only sometimes.
+type cutRules struct{ testRules }
+
+func (cutRules) CutPassages(s string) string { return strings.ReplaceAll(s, "<moved/>", "") }
+
+// A passage that was all an item held takes the item with it, whether the item
+// is a text block or a whole message, so the run that wrote the passage keys
+// the same as the run that did not.
+func TestAnItemACutEmptiesGoesWithIt(t *testing.T) {
+	with := Normalize("POST", "/v1/messages", []byte(`{"messages":[`+
+		`{"role":"user","content":[{"type":"text","text":"<moved/>"},{"type":"text","text":"list the files"}]},`+
+		`{"role":"system","content":"<moved/>"},`+
+		`{"role":"user","content":"go on"}]}`), cutRules{})
+	without := Normalize("POST", "/v1/messages", []byte(`{"messages":[`+
+		`{"role":"user","content":[{"type":"text","text":"list the files"}]},`+
+		`{"role":"user","content":"go on"}]}`), cutRules{})
+	if with.Hash != without.Hash {
+		t.Errorf("a run that wrote the passage keys differently:\n%s\n\n%s", with.Canonical, without.Canonical)
+	}
+	for _, want := range []string{"list the files", "go on"} {
+		if !strings.Contains(string(with.Canonical), want) {
+			t.Errorf("%q went with the passage:\n%s", want, with.Canonical)
+		}
+	}
+}
+
+// Only an item the cut emptied goes. One that was blank already, or that keeps
+// something besides the passage, is what the client sent.
+func TestAnItemTheCutDidNotEmptyStays(t *testing.T) {
+	blank := Normalize("POST", "/v1/messages", []byte(`{"messages":[{"role":"user","content":[`+
+		`{"type":"text","text":""},{"type":"text","text":"x"}]}]}`), cutRules{})
+	bare := Normalize("POST", "/v1/messages", []byte(`{"messages":[{"role":"user","content":[`+
+		`{"type":"text","text":"x"}]}]}`), cutRules{})
+	if blank.Hash == bare.Hash {
+		t.Errorf("a block the client sent blank was removed as if a cut had emptied it:\n%s", blank.Canonical)
+	}
+	kept := Normalize("POST", "/v1/messages", []byte(`{"messages":[{"role":"user","content":[`+
+		`{"type":"text","text":"<moved/>keep this"},{"type":"text","text":"x"}]}]}`), cutRules{})
+	if !strings.Contains(string(kept.Canonical), "keep this") {
+		t.Errorf("the rest of a string the cut touched was lost:\n%s", kept.Canonical)
 	}
 }

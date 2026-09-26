@@ -273,6 +273,13 @@ before comparing. *Codex assembles its instruction preamble from what the instal
 sends each part as a content item of its own. An item present in one run and absent in the next
 changes the list's length, and a list whose length differs aligns with nothing.*
 
+**R13b.** Each `remove` pattern **MUST** be cut from every string in the body, on both sides, before
+comparing. A list item that a cut leaves empty **MUST** be removed with it. *Claude Code writes some
+passages only when something happened on the machine, such as its shell moving or a command
+finishing in the background. A replayed command runs for real and can turn out differently, so the
+passage comes and goes between two runs the model would answer alike. When the passage was all an
+item held, the item comes and goes too, and that is R13a's length difference again.*
+
 **R14.** Each `strip_query` parameter **MUST** be removed from the request target. The query
 **MUST NOT** be dropped as a class, because a parameter can select provider behaviour.
 
@@ -656,6 +663,7 @@ normalize:
     volatile: ["tool.output.mine"]
     strip_fields: [my_client_metadata]
     drop: ["<my_preamble>"]
+    remove: ['<my_note>[^<]*</my_note>\s*']
     replace:
       - {pattern: "(ticket )[0-9]+", with: "${1}<TICKET>"}
     capture:
@@ -681,7 +689,8 @@ there is a typo. A session that shrugged at it would run on settings its caller 
 is R43's failure again, one step before the file is opened. `CS_VCR_HOME` names a place to look
 rather than a file, so it is not this case.*
 
-**R44.** An invalid `replace` or `capture` pattern **MUST** fail at startup, not per request.
+**R44.** An invalid `replace`, `capture` or `remove` pattern **MUST** fail at startup, not per
+request.
 
 **R44a.** A provider's `base_url` **MUST** be a URL with a scheme and a host, checked at startup with
 the parser the request path uses. *Otherwise what passes validation is not what forwards.*
@@ -695,7 +704,9 @@ request reaches a provider, so a key no prefix can ever carry is an entry nothin
 of an array and a path covers everything beneath it. A volatile path may instead name an array
 element by the role it carries, as in `messages[role=tool]`. That reaches a tool result on a surface
 which puts one beside the prompt in the same list. `drop` is not a path: it names the opening of a
-block, and removes whichever list item carries it.
+block, and removes whichever list item carries it. `remove` is not a path either. It is a pattern,
+matched against the text of every string rather than against the canonical form, so a newline in it
+is a newline.
 
 | Variable | Effect |
 |---|---|
