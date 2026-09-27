@@ -156,11 +156,16 @@ type Stats struct {
 	// Apart from Requests, and that separation is load-bearing: a recording
 	// session asserts that everything Requests counted was recorded, and a
 	// tunnel is by definition not.
-	TunnelOpened  int            `json:"tunnel_opened"`
-	TunnelBlocked int            `json:"tunnel_blocked"`
-	InFlight      int            `json:"in_flight"`
-	BySurface     map[string]int `json:"by_surface"`
-	ByCassette    map[string]int `json:"by_cassette"`
+	TunnelOpened  int `json:"tunnel_opened"`
+	TunnelBlocked int `json:"tunnel_blocked"`
+	// BackendAnswered and BackendRefused count calls to a vendor's own backend,
+	// which cs-vcr answers or refuses itself (backend.go). Apart from Requests
+	// for the reason tunnels are: none of them is recorded.
+	BackendAnswered int            `json:"backend_answered"`
+	BackendRefused  int            `json:"backend_refused"`
+	InFlight        int            `json:"in_flight"`
+	BySurface       map[string]int `json:"by_surface"`
+	ByCassette      map[string]int `json:"by_cassette"`
 }
 
 // New builds a server. The logger is required: every rejection path logs, and
@@ -254,6 +259,12 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// agent launched, asking to reach somewhere on its own. See connect.go.
 	if r.Method == http.MethodConnect {
 		s.serveConnect(w, r)
+		return
+	}
+	// A vendor's own backend next, and before the prefix is read, because it
+	// carries none: a client reaches it by a base URL of its own. See backend.go.
+	if isBackend(r.URL.Path) {
+		s.serveBackend(w, r)
 		return
 	}
 	// WHERE IT IS GOING and WHICH CASSETTE first, and from the connection: a

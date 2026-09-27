@@ -358,6 +358,7 @@ otherwise.
 | `drifted observations` | Differences tolerated under a `volatile` path. *When non-zero.* |
 | `bookkeeping calls answered` | Title and summary calls answered from a recorded one. *When non-zero.* |
 | `tunnelled`, `tunnel refused` | `CONNECT` requests carried and refused. *When either is non-zero.* |
+| `backend answered`, `backend refused` | Calls to a vendor's own backend, answered or refused here. *When either is non-zero.* |
 | `commands that failed here` | Tolerated tool results that failed in this run and succeeded when recorded. *When non-zero.* |
 | `out of recorded order` | Steps served at another position than the recording's. *When non-zero.* |
 | `surface …`, `cassette …` | Requests per surface, and per cassette. |
@@ -565,6 +566,22 @@ decides on is the one in the `CONNECT` line, before any of that begins.
 
 This is why a `replay` session can say of itself that no provider will be contacted. Nothing it
 serves reaches one, and nothing it tunnels does either.
+
+### A vendor's own backend
+
+Codex 0.156 and later will not start on a ChatGPT login until one call to ChatGPT's own backend
+succeeds: `GET /backend-api/wham/accounts/check`, which names the workspace the login belongs to.
+Left at chatgpt.com, that call is a tunnel this proxy refuses. So point Codex's `chatgpt_base_url`
+here as well, under a second name for the same listener:
+
+```sh
+codex -c 'chatgpt_base_url="http://cs-vcr-chatgpt:8080/backend-api"' ...
+```
+
+cs-vcr answers that call itself, recording and replaying alike. The answer names the account the
+request named, and lists `https://chatgpt.com` as its origin. It refuses every other call under
+`/backend-api`, and records none of them. The second name matters: Codex moves a model provider on
+the backend's own origin onto the origin in the answer, which is past cs-vcr.
 
 ## Notes for agents
 

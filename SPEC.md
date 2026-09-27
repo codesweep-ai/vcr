@@ -380,6 +380,14 @@ recorded, and the replay then has nothing to serve.*
 **R33.** A tunnel **MUST NOT** count as a request. *Requests are what a session can record, and a
 recording asserts that it recorded every one of them. A tunnel records nothing.*
 
+**R33a.** A client's workspace discovery at `/backend-api/wham/accounts/check` **MUST** be answered by
+cs-vcr itself, in a recording session and a replaying one alike. The answer **MUST** name the account
+the request named and an HTTPS origin. Every other call under `/backend-api` **MUST** be refused. None
+of them **MUST** be forwarded, recorded or counted as a request. *Codex 0.156 and later will not start
+on a ChatGPT login until that call succeeds. At chatgpt.com it is a tunnel R32 refuses, and let through
+it succeeds for a real login and fails for a fabricated one. Codex requires the origin in the answer to
+be HTTPS, and cs-vcr is plain HTTP.*
+
 No certificate is involved. A `CONNECT` proxy pipes bytes, and TLS stays end to end between the
 client and the host it dialled. The hostname this decides on is the one in the `CONNECT` line.
 
@@ -491,6 +499,7 @@ Both commands print a summary on exit. It is the artifact a CI log shows.
 | `drifted observations` | Printed when a difference was tolerated at a volatile path. |
 | `out of recorded order` | Printed when a step was served out of sequence. |
 | `tunnelled` / `tunnel refused` | Printed when the session was used as a proxy. See section 6.1. |
+| `backend answered` / `backend refused` | Printed when a client reached a vendor's own backend here. See R33a. |
 | `surface …` / `cassette …` | Requests per surface, and per cassette the session touched. |
 
 ### 8.2 Calibrate

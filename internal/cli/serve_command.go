@@ -306,6 +306,12 @@ func summarize(out io.Writer, st proxy.Stats, offline bool) error {
 		fmt.Fprintf(tw, "tunnelled\t%d\n", st.TunnelOpened)
 		fmt.Fprintf(tw, "tunnel refused\t%d\n", st.TunnelBlocked)
 	}
+	// The same for a vendor's own backend, which cs-vcr answers or refuses
+	// itself and never records.
+	if st.BackendAnswered > 0 || st.BackendRefused > 0 {
+		fmt.Fprintf(tw, "backend answered\t%d\n", st.BackendAnswered)
+		fmt.Fprintf(tw, "backend refused\t%d\n", st.BackendRefused)
+	}
 	// Its own line, and worded as a warning rather than a count, because it is
 	// the one tolerance that can cost a session its result: the client was
 	// handed the answer to a command that did not succeed here. A run can pass
