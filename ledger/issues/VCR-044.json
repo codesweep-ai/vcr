@@ -3,17 +3,19 @@
   "title": "Codex 0.156 and later cannot start on a ChatGPT login behind cs-vcr, because its workspace discovery goes to a host cs-vcr refuses",
   "type": "defect",
   "severity": "high",
-  "status": "in-progress",
+  "status": "closed",
   "foundBy": "session agent, moving sandbox's agent fixtures past Codex 0.155.1 (sandbox SBX-084)",
   "opened": "2026-09-26",
-  "resolved": null,
+  "resolved": "2026-09-26",
   "stint": "codex-discovery",
   "evidence": {
-    "commits": [],
+    "commits": [
+      "21f4c2e"
+    ],
     "integrated": [],
-    "verified": null
+    "verified": "`go test ./internal/proxy/ -count=1` passes on 21f4c2e. Its new tests cover the discovery answered while recording and while replaying, the rest of the backend refused, a discovery with no account refused, and a prefixed call left alone. `make ci` passed on 21f4c2e. In a Firecracker sandbox holding the host's real Codex login, Codex 0.157.1 ran a real turn through this build in record mode, and answered pong. The session summary read 4 recorded, 1 backend call answered and 36 refused. The same turn replayed from that cassette with no provider reachable: 3 replayed, 0 misses, 0 upstream calls, and the discovery answered again. Sandbox's `make ci`, pinned to this build and rebuilt with its new wrapper, replayed all 14 of its agent cassettes, codex-login-shared among them."
   },
-  "resolution": null,
+  "resolution": "cs-vcr answers `/backend-api/wham/accounts/check` itself, recording and replaying alike, with the account the request named and `https://chatgpt.com` as its origin (R33a). It refuses every other call under `/backend-api`, and records none of them. A client reaches that route by a second name for the listener. Sandbox's agent matrix now gives its shared Codex login that name as `chatgpt_base_url`, which is a separate origin from its model base URL.",
   "details": "Codex 0.156 and later make a workspace routing discovery before their TUI starts on a ChatGPT login: `GET {chatgpt_base_url}/wham/accounts/check`, with the token they hold. The TUI exits when it fails, with `account/read failed during TUI bootstrap: workspace routing discovery failed`.\n\nBehind cs-vcr the call cannot succeed. `chatgpt_base_url` defaults to chatgpt.com, which arrives as a `CONNECT` that R32 refuses. Let through, it would succeed for a real login and fail for a fabricated one, so a recording could not be replayed. Pointing `chatgpt_base_url` at cs-vcr does not help by itself. For an account with no residency rule the answer is `NO_CONSTRAINT`, which Codex resolves to the origin of `chatgpt_base_url` and requires to be HTTPS.\n\nSandbox's agent matrix records its codex-login-shared case exactly this way, so that case cannot be recorded or replayed on any Codex past 0.155.1.",
   "notes": [],
   "links": []
