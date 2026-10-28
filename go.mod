@@ -10,8 +10,8 @@ require (
 require (
 	github.com/bmatcuk/doublestar/v4 v4.10.0 // indirect
 	github.com/clipperhouse/uax29/v2 v2.7.0 // indirect
-	github.com/codesweep-ai/ledger v0.0.0-20260928070835-f7813e9546f9 // indirect
-	github.com/codesweep-ai/lint v0.0.0-20260928070756-b0b5bce85aad // indirect
+	github.com/codesweep-ai/ledger v0.0.0-20261028210519-41bd9aa98722 // indirect
+	github.com/codesweep-ai/lint v0.0.0-20260929191516-795f6d166613 // indirect
 	github.com/fatih/color v1.19.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/mattn/go-colorable v0.1.14 // indirect
