@@ -447,11 +447,13 @@ func openCode(name, auth, model, provider, upstream, key string) scenario {
 		prepare: func(_ scenario, ws *workspace, _ credential, _ mode, base string) error {
 			// The provider's base URL, in the project's own config file. The
 			// environment variable OpenCode reads is per provider and does not
-			// exist for all of them; this route works for every one.
+			// exist for all of them; this route works for every one. The native
+			// OpenCode 2 shape: settings.baseURL sends a catalog provider to
+			// another endpoint and keeps everything else it knows about it.
 			cfg := map[string]any{
 				"$schema": "https://opencode.ai/config.json",
-				"provider": map[string]any{
-					providerID(model): map[string]any{"options": map[string]any{"baseURL": base}},
+				"providers": map[string]any{
+					providerID(model): map[string]any{"settings": map[string]any{"baseURL": base}},
 				},
 			}
 			b, err := json.MarshalIndent(cfg, "", "  ")
@@ -462,8 +464,13 @@ func openCode(name, auth, model, provider, upstream, key string) scenario {
 		},
 		command: func(sc scenario, ws *workspace, c credential, m mode, _, prompt string) *exec.Cmd {
 			cmd := exec.Command("opencode", "run",
-				// No plugins, and no permission prompt to answer.
-				"--pure", "--auto",
+				// A private server rather than the background service. The
+				// service keeps the environment it was started with, so the
+				// base URL, the key and the proxy this run sets would reach
+				// only a server started for it.
+				"--standalone",
+				// No permission prompt to answer.
+				"--auto",
 				"--model", sc.model,
 				prompt)
 			// OpenCode reads Claude Code's skills and memory files as its own, and
@@ -472,9 +479,13 @@ func openCode(name, auth, model, provider, upstream, key string) scenario {
 			// sits in the developer's cache directory, under their home. A fresh
 			// HOME does not help: the walk reaches the real `~/.claude/skills`, and
 			// every skill there goes into the system prompt, by name and by path.
+			//
+			// And no update check: an agent that replaced itself mid-run would
+			// have recorded against a build the fixture does not name.
 			cmd.Env = ws.env(mergeEnv(map[string]string{
-				"OPENCODE_DISABLE_CLAUDE_CODE":     "1",
-				"OPENCODE_DISABLE_EXTERNAL_SKILLS": "1",
+				"OPENCODE_DISABLE_CLAUDE_CODE":        "1",
+				"OPENCODE_DISABLE_CLAUDE_CODE_SKILLS": "1",
+				"OPENCODE_DISABLE_AUTOUPDATE":         "1",
 			}, agentEnv(c, m)))
 			cmd.Dir = ws.work
 			cmd.Stdin = strings.NewReader("")
