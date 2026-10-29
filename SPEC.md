@@ -799,7 +799,8 @@ without anyone's hands.
 
 ### 11.6 The live agent suite
 
-One cassette per agent, login and surface, recorded from a real session and committed:
+One scenario per agent, login and surface. Each is recorded from a real session and committed
+where a host can sign in for it, and replay skips a scenario with no committed cassette:
 
 | Scenario | Client | Signed in with | Surface |
 |---|---|---|---|
