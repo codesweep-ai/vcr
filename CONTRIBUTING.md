@@ -110,7 +110,9 @@ format rather than asking the reviewer to cope.
 
 `make fixtures` records what this host can sign in for and skips the rest with the reason.
 `make fixtures-strict` fails on a skip instead, which is what a host holding every credential
-wants. `scripts/record-fixtures.sh` sets the environment for both and checks it first.
+wants. `scripts/record-fixtures.sh` sets the environment for both and checks it first. It takes
+the API keys from `.env` alone, and skips the scenarios whose key is not there. A fixture one of
+them is left holding from another version of its agent is dropped, because CI cannot replay it.
 
 Recording asks each agent for one word against its real provider before it opens a cassette, so a
 revoked key costs nothing and leaves the committed fixture where it was.
