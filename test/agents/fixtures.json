@@ -3,35 +3,35 @@
   "fixtures": {
     "claude-code-fireworks": {
       "agent": "claude",
-      "agent_version": "2.1.283",
+      "agent_version": "2.1.312",
       "auth": "a Fireworks API key",
       "model": "accounts/fireworks/models/kimi-k3",
       "steps": 2,
-      "recorded": "2026-09-26"
+      "recorded": "2026-10-29"
     },
     "claude-code-subscription": {
       "agent": "claude",
-      "agent_version": "2.1.283",
+      "agent_version": "2.1.312",
       "auth": "a Claude Pro/Max subscription",
       "model": "claude-sonnet-5",
       "steps": 2,
-      "recorded": "2026-09-26"
+      "recorded": "2026-10-29"
     },
     "codex-chatgpt": {
       "agent": "codex",
-      "agent_version": "0.157.1",
+      "agent_version": "0.165.0",
       "auth": "a ChatGPT subscription",
       "model": "gpt-5.6-sol",
-      "steps": 5,
-      "recorded": "2026-09-26"
+      "steps": 4,
+      "recorded": "2026-10-29"
     },
     "opencode-fireworks": {
       "agent": "opencode",
-      "agent_version": "1.18.32",
+      "agent_version": "1.19.5",
       "auth": "a Fireworks API key",
       "model": "fireworks-ai/accounts/fireworks/models/kimi-k3",
       "steps": 3,
-      "recorded": "2026-09-26"
+      "recorded": "2026-10-29"
     }
   }
 }
