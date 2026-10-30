@@ -121,7 +121,10 @@ func serveSessionOver(t *testing.T, cfgYAML string, existing []string, args ...s
 		once.Do(func() {
 			cancel()
 			select {
-			case <-done:
+			case err := <-done:
+				// How serve exited is the test's to judge: a replay that missed
+				// exits 4. Stopping only waits for it.
+				_ = err
 			case <-time.After(30 * time.Second):
 				t.Error("serve did not shut down")
 			}
@@ -546,7 +549,9 @@ func TestReplaySummaryReportsMisses(t *testing.T) {
 	postMessages(t, listen, `{"model":"m","messages":[]}`)
 	cancel()
 	select {
-	case <-done:
+	case err := <-done:
+		// This replay misses on purpose, so it exits 4; the summary is what is checked.
+		_ = err
 	case <-time.After(10 * time.Second):
 		t.Fatal("serve did not shut down")
 	}
