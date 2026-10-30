@@ -27,7 +27,7 @@
     },
     "opencode-fireworks": {
       "agent": "opencode",
-      "agent_version": "2.2.2",
+      "agent_version": "1.19.5",
       "auth": "a Fireworks API key",
       "model": "fireworks-ai/accounts/fireworks/models/kimi-k3",
       "steps": 3,

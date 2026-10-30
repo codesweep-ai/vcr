@@ -415,8 +415,8 @@ func TestConfigPrintsTheProviderItWasGiven(t *testing.T) {
 		t.Errorf("output does not carry %q:\n%s", want, out)
 	}
 
-	// OpenCode 2 reads no base-URL variable, so every provider is pointed by
-	// the file instead.
+	// OpenCode reads a base URL per provider and has one for some of them, so
+	// a provider it has no variable for is pointed by the file instead.
 	out, err = runWithConfig(t, "", nil, "config", "opencode",
 		"--cassette", "build", "--provider", "fireworks")
 	if err != nil {
@@ -426,7 +426,7 @@ func TestConfigPrintsTheProviderItWasGiven(t *testing.T) {
 	// cs-vcr's name. They differ for Fireworks and only for Fireworks: OpenCode
 	// files it under fireworks-ai, so a block keyed fireworks configures a
 	// provider no run uses and the agent goes around the recorder.
-	if !strings.Contains(out, `"fireworks-ai": {"settings": {"baseURL": "http://127.0.0.1:8080/c/fireworks/build/v1"}}`) {
+	if !strings.Contains(out, `"fireworks-ai": {"options": {"baseURL": "http://127.0.0.1:8080/c/fireworks/build/v1"}}`) {
 		t.Errorf("the opencode.json block must key the provider by OpenCode's id and route by cs-vcr's name:\n%s", out)
 	}
 	if !strings.Contains(out, "--model fireworks-ai/<model>") {
@@ -437,24 +437,6 @@ func TestConfigPrintsTheProviderItWasGiven(t *testing.T) {
 	}
 	if strings.Contains(out, "BASE_URL=") {
 		t.Errorf("a base-URL variable was printed for a provider OpenCode has none for:\n%s", out)
-	}
-
-	// Not for Anthropic either, which OpenCode 1 took one for: OpenCode 2 reads
-	// none. And every run line takes a private server, because the background
-	// service keeps the environment it was started with and would not see the
-	// proxy or the key this shell sets.
-	out, err = runWithConfig(t, "", nil, "config", "opencode",
-		"--cassette", "build", "--provider", "anthropic")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.Contains(out, "BASE_URL=") {
-		t.Errorf("OpenCode 2 reads no base-URL variable, and one was printed:\n%s", out)
-	}
-	for line := range strings.SplitSeq(out, "\n") {
-		if strings.Contains(line, "opencode run") && !strings.Contains(line, "--standalone") {
-			t.Errorf("a run line without --standalone reaches the background service: %q", line)
-		}
 	}
 
 	// Both names are required, and a name no prefix could carry is refused

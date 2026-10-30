@@ -265,16 +265,16 @@ base_url = "http://127.0.0.1:8080/c/openai/build/v1"
 env_key = "OPENAI_API_KEY"
 ```
 
-**OpenCode** is given a base URL that already ends in the version. OpenCode 2 reads none from the
-environment, so the URL goes under `providers.<name>.settings.baseURL` in `opencode.json`:
+**OpenCode** is given a base URL that already ends in the version:
 
-```json
-{"providers": {"anthropic": {"settings": {"baseURL": "http://127.0.0.1:8080/c/anthropic/build/v1"}}}}
+```bash
+ANTHROPIC_BASE_URL=http://127.0.0.1:8080/c/anthropic/build/v1 opencode run --model anthropic/claude-sonnet-5 "…"
+OPENAI_BASE_URL=http://127.0.0.1:8080/c/openai/build/v1 opencode run --model openai/gpt-5 "…"
 ```
 
-`cs-vcr config opencode` prints the block, and `OPENCODE_CONFIG_CONTENT` carries the same JSON as one
-variable. Run it with `opencode run --standalone`. The background service keeps the environment it
-was started with, so it would not see this shell's proxy or key.
+To pin OpenCode per project instead, put the same URL under `provider.<name>.options.baseURL` in
+`opencode.json`. `cs-vcr config opencode` prints the block, and it is the route that works for a
+provider OpenCode has no base-URL variable for.
 
 **A cassette per test.** Switching between them is that one string, and no restart. Several agents
 share one cs-vcr the same way:
@@ -289,8 +289,7 @@ codex exec -c 'model_provider="cs-vcr"' \
   "…"
 
 # OpenCode
-OPENCODE_CONFIG_CONTENT='{"providers":{"anthropic":{"settings":{"baseURL":"http://127.0.0.1:8080/c/anthropic/'$TEST'/v1"}}}}' \
-  opencode run --standalone --model anthropic/claude-sonnet-5 "…"
+ANTHROPIC_BASE_URL=http://127.0.0.1:8080/c/anthropic/$TEST/v1 opencode run --model anthropic/claude-sonnet-5 "…"
 ```
 
 Each name is one path segment of letters, digits, dot, dash or underscore.

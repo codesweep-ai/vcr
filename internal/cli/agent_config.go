@@ -147,36 +147,46 @@ func openCode() agent {
 		name:   "opencode",
 		title:  "OpenCode",
 		suffix: withVersion,
-		// OpenCode 2 reads no base-URL variable for any provider, so the file
-		// is the route, or the same file in one variable (see notes).
-		env: func(string, string) []envVar { return nil },
-		command: func(provider, _ string) string {
-			return fmt.Sprintf("opencode run --standalone --model %s/<model> %q  # with the file below in place",
+		env: func(provider, base string) []envVar {
+			if v := openCodeVar(provider); v != "" {
+				return []envVar{{v, base}}
+			}
+			return nil
+		},
+		command: func(provider, base string) string {
+			if v := openCodeVar(provider); v != "" {
+				return fmt.Sprintf("%s=%s opencode run --model %s/<model> %q", v, base, openCodeID(provider), prompt)
+			}
+			return fmt.Sprintf("opencode run --model %s/<model> %q  # with the file below in place",
 				openCodeID(provider), prompt)
 		},
 		persist: func(provider, base string) (string, string) {
 			return "./opencode.json", fmt.Sprintf(`{
   "$schema": "https://opencode.ai/config.json",
-  "providers": {
-    %[1]q: {"settings": {"baseURL": %[2]q}}
+  "provider": {
+    %[1]q: {"options": {"baseURL": %[2]q}}
   }
 }`, openCodeID(provider), base)
 		},
 		notes: func(provider, base string) []string {
-			return []string{
-				"OpenCode 2 reads no base-URL variable, so the file above is how it is",
-				"pointed here.",
-				"",
-				"--standalone runs a private server on this shell's environment. The",
-				"background service keeps the environment it was started with, so the",
-				"proxy and the key this shell sets would not reach it.",
+			out := []string{
+				"The file is the route that works for every provider. OpenCode's base-URL",
+				"variable is per provider, and only some providers have one.",
 				"",
 				"OpenCode also reads its whole configuration from OPENCODE_CONFIG_CONTENT, so",
 				"the file above can travel as one variable instead:",
 				"",
-				fmt.Sprintf(`  OPENCODE_CONFIG_CONTENT='{"providers":{%q:{"settings":{"baseURL":%q}}}}' \`, openCodeID(provider), base),
-				fmt.Sprintf("    opencode run --standalone --model %s/<model> %q", openCodeID(provider), prompt),
+				fmt.Sprintf(`  OPENCODE_CONFIG_CONTENT='{"provider":{%q:{"options":{"baseURL":%q}}}}' \`, openCodeID(provider), base),
+				fmt.Sprintf("    opencode run --model %s/<model> %q", openCodeID(provider), prompt),
 			}
+			if openCodeVar(provider) != "" {
+				return out
+			}
+			return append([]string{
+				fmt.Sprintf("OpenCode has no base-URL variable for %s, so the file above is how it", provider),
+				"is pointed here.",
+				"",
+			}, out...)
 		},
 	}
 }
@@ -209,6 +219,9 @@ func codexAuthInline(provider string) string {
 	return `env_key="OPENAI_API_KEY"`
 }
 
+// openCodeVar is the base-URL variable OpenCode reads for one provider, or ""
+// for a provider it has none for. The name is OpenCode's own, and it is the one
+// a model carries: `anthropic` in `anthropic/claude-sonnet-5`.
 // openCodeID is OpenCode's own id for a provider: the name its config keys and
 // its --model prefix must carry. It is cs-vcr's provider name for every
 // provider but one. OpenCode files Fireworks under fireworks-ai, so a block
@@ -223,6 +236,16 @@ func openCodeID(provider string) string {
 		return "fireworks-ai"
 	}
 	return provider
+}
+
+func openCodeVar(provider string) string {
+	switch provider {
+	case "anthropic":
+		return "ANTHROPIC_BASE_URL"
+	case "openai":
+		return "OPENAI_BASE_URL"
+	}
+	return ""
 }
 
 // agentNames lists what `cs-vcr config` accepts, for its usage line.
