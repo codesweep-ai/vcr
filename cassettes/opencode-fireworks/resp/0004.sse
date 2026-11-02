@@ -1,0 +1,12 @@
+data: {"id":"chatcmpl-1cb3b9a801364b05838605abda31c644","object":"chat.completion.chunk","created":1793603086,"model":"accounts/fireworks/models/kimi-k3","choices":[{"index":0,"delta":{"role":"assistant"},"finish_reason":null,"raw_output":null}],"usage":null}
+
+data: {"choices":[{"delta":{"reasoning_content":"The file hello.txt has been created and contains exactly \"hello world\". Now I reply with the single word \"done\" as requested."},"finish_reason":null,"index":0,"raw_output":null}],"created":1793603086,"id":"chatcmpl-1cb3b9a801364b05838605abda31c644","model":"accounts/fireworks/models/kimi-k3","object":"chat.completion.chunk","usage":null}
+
+data: {"id":"chatcmpl-1cb3b9a801364b05838605abda31c644","object":"chat.completion.chunk","created":1793603086,"model":"accounts/fireworks/models/kimi-k3","choices":[{"index":0,"delta":{"content":"done"},"finish_reason":null,"raw_output":null}],"usage":null}
+
+data: {"id":"chatcmpl-1cb3b9a801364b05838605abda31c644","object":"chat.completion.chunk","created":1793603086,"model":"accounts/fireworks/models/kimi-k3","choices":[{"index":0,"delta":{},"finish_reason":"stop","raw_output":null}],"usage":null}
+
+data: {"id":"chatcmpl-1cb3b9a801364b05838605abda31c644","object":"chat.completion.chunk","created":1793603086,"model":"accounts/fireworks/models/kimi-k3","choices":[],"usage":{"prompt_tokens":6503,"total_tokens":6544,"completion_tokens":41,"prompt_tokens_details":{"cached_tokens":6387},"completion_tokens_details":{"reasoning_tokens":27},"output_tokens_details":{"reasoning_tokens":27}}}
+
+data: [DONE]
+

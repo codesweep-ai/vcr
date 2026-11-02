@@ -27,11 +27,11 @@
     },
     "opencode-fireworks": {
       "agent": "opencode",
-      "agent_version": "1.19.5",
+      "agent_version": "2.2.5",
       "auth": "a Fireworks API key",
       "model": "fireworks-ai/accounts/fireworks/models/kimi-k3",
-      "steps": 3,
-      "recorded": "2026-10-29"
+      "steps": 4,
+      "recorded": "2026-11-02"
     }
   }
 }
