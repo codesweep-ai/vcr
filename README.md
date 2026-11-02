@@ -212,21 +212,21 @@ The provider changes with it: an API key is accepted at `openai`, which points a
 
 ### 3. OpenCode
 
-OpenCode takes a base URL from the environment, and ends it with `/v1`:
+OpenCode 2 reads its base URL from `opencode.json` rather than the environment, ending in `/v1`.
+`cs-vcr config opencode` prints the block for one cassette and one provider:
 
 ```bash
 cs-vcr record
 
-# Terminal 2: an Anthropic model, then an OpenAI-shaped one. One session per
-# cassette, so the two runs name two of them.
-ANTHROPIC_BASE_URL=http://127.0.0.1:8080/c/anthropic/oc-anthropic/v1 opencode run --model anthropic/claude-sonnet-5 "add a /version endpoint"
-OPENAI_BASE_URL=http://127.0.0.1:8080/c/openai/oc-openai/v1 opencode run --model openai/gpt-5 "add a /version endpoint"
+# Terminal 2: paste the printed block into the project's opencode.json, then run
+# OpenCode on a private server of its own. One session per cassette.
+cs-vcr config opencode --cassette oc-anthropic --provider anthropic
+opencode run --standalone --model anthropic/claude-sonnet-5 "add a /version endpoint"
 ```
 
-Set the variable for the provider the model belongs to, and name that provider in the URL. To pin
-the URL per project instead, run
-`cs-vcr config opencode --cassette <name> --provider <name>` for an `opencode.json` block to
-paste.
+Name the provider the model belongs to. `--standalone` is what makes the run use this shell's
+environment: the background service keeps the one it was started with, and never sees the proxy or
+the key set here.
 
 ## Running it
 
