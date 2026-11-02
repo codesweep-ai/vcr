@@ -1,6 +1,6 @@
 {
   "id": "VCR-046",
-  "title": "The agent suite, CI and config opencode target OpenCode 1, which OpenCode 2 runs differently",
+  "title": "The agent suite, CI and the config command still assume OpenCode 1",
   "type": "improvement",
   "severity": "med",
   "status": "closed",
@@ -15,10 +15,10 @@
       "1ce87b1"
     ],
     "integrated": [],
-    "verified": "On 1ce87b1's tree with OpenCode 2.2.5 on the host, `make ci` exited 0. `make test-smoke` passed all four committed cassettes, opencode-fireworks among them. `CS_VCR_AGENTS=1 CS_VCR_AGENTS_STRICT=1 go test ./test/agents -run 'TestReplayFixtures/opencode-fireworks$' -count=1` passed, as CI runs it. The re-recording on 2.2.5 reported the cassette clean of host identity."
+    "verified": "`make ci` passed on 1ce87b1's tree, with OpenCode 2.2.5 on the host. `make test-smoke` passed all four committed cassettes, opencode-fireworks among them. `CS_VCR_AGENTS=1 CS_VCR_AGENTS_STRICT=1 go test ./test/agents -run 'TestReplayFixtures/opencode-fireworks$' -count=1` passed, as CI runs it. The re-recording on 2.2.5 reported the cassette clean of host identity."
   },
-  "resolution": "The suite runs OpenCode 2 with `--standalone` and points it at cs-vcr through `providers.<id>.settings.baseURL` in `opencode.json`. CI installs it with the v2 installer. `cs-vcr config opencode` prints that block, or the same JSON in `OPENCODE_CONFIG_CONTENT`, and no base-URL variable. opencode-fireworks is re-recorded on 2.2.5. The port lives on the opencode-v2.x branch, and main stays on OpenCode 1.19.5.",
-  "details": "OpenCode 2 changes three things cs-vcr relies on. It reads no base-URL variable for any provider, so `ANTHROPIC_BASE_URL` and `OPENAI_BASE_URL` no longer point it at cs-vcr. Its config file keys a provider's base URL as `providers.<id>.settings.baseURL` rather than `provider.<id>.options.baseURL`. And `opencode run` reaches a background service that keeps the environment it was started with, so the proxy, key and base URL a run sets never reach it unless the run takes `--standalone`.\n\nThe agent suite, CI's installer, `cs-vcr config opencode`, README and MANUAL all assumed OpenCode 1. The committed opencode-fireworks cassette was recorded on 1.19.5, so no OpenCode 2 host could replay it.",
+  "resolution": "The suite runs OpenCode 2 with `--standalone` and points it at cs-vcr through `providers.<id>.settings.baseURL` in `opencode.json`. CI runs the v2 installer to get it. `cs-vcr config opencode` prints that block, or the same JSON in `OPENCODE_CONFIG_CONTENT`, and no base-URL variable. opencode-fireworks is re-recorded on 2.2.5. The port lives on the opencode-v2.x branch, and main stays on OpenCode 1.19.5.",
+  "details": "OpenCode 2 changes three things cs-vcr relies on. It reads no base-URL variable for any provider, so `ANTHROPIC_BASE_URL` and `OPENAI_BASE_URL` no longer point it at cs-vcr. Its config file keys a provider's base URL as `providers.<id>.settings.baseURL` rather than `provider.<id>.options.baseURL`. And `opencode run` reaches a background service that keeps the environment it was started with. The proxy, key and base URL a run sets reach it only when the run takes `--standalone`.\n\nThe agent suite, CI's installer, `cs-vcr config opencode`, README and MANUAL all assumed OpenCode 1. The committed opencode-fireworks cassette was recorded on 1.19.5, so no OpenCode 2 host could replay it.",
   "notes": [],
   "links": []
 }
