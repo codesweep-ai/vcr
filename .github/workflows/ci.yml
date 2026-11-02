@@ -245,7 +245,7 @@ jobs:
             case "$name" in
               claude)   npm install -g "@anthropic-ai/claude-code@$version" ;;
               codex)    npm install -g "@openai/codex@$version" ;;
-              opencode) curl -fsSL https://opencode.ai/install | VERSION="$version" bash ;;
+              opencode) curl -fsSL https://opencode.ai/v2/install | bash -s -- --version "$version" --no-modify-path ;;
               *) echo "no installer for $name" >&2; exit 1 ;;
             esac
           done
